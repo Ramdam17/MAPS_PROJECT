@@ -92,11 +92,48 @@ python AGL_TMLR.py
 
 ### 3. Single-Agent Reinforcement Learning (SARL)
 
-The SARL experiments are conducted on MinAtar environments, specifically "Seaquest" and "Asterix". Instructions for running these experiments will be provided separately.
+The SARL experiments are conducted on MinAtar environments. The experiments recorded on the short version of our paper use "Seaquest" and "Asterix". However, you can run "Breakout", "Space Invaders", "Freeway", "Seaquest" and "Asterix". To run SARL, there are 3 experiments: standard (running a single environment), transfer learning, and continuous learning. 
+
+For each of this cases, you need to change the generic variable = $general_dir to $local_repo_directory/SARL/MinAtar. Then for each case you need to run:
+
+Standard run ( environment, seed, setting) 
+```bash
+cd SARL/ 
+./SARL_Training_Standard.sh BREAK 1 1
+```
+You can change BREAK for the corresponding environment. Please see the script in SARL_Training_Standard.sh to change the corresponding flag name for each environment.
+
+Transfer learning ( setting, number_steps)
+```bash
+cd SARL/ 
+./SARL_Training_TransferLearning_TernaryPlot.sh 1 100000
+```
+
+Continuous learning ( seed, setting)
+```bash
+cd SARL/ 
+./SARL_Training_ContinuousLearning.sh 1 1
+```
 
 ### 4. Multi-Agent Reinforcement Learning (MARL)
 
-MARL experiments include Harvest Cleaner, Harvest Planter, Chemistry 3D, and Territory Inside Out environments. Instructions for running these experiments will be provided separately.
+MARL experiments include Harvest Cleaner, Harvest Planter, Chemistry 3D, and Territory Inside Out environments. However there are more than 20 environments compatible that you can try.
+
+For each of this cases, you need to change the generic variable = $general_dir to $local_repo_directory/MARL. Then for each case you need to run:
+
+Standard run (with 2nd order network)
+```bash
+cd MARL/
+./meltingpot.sh TERRITORY_I 10 LSTM 100 1 1 META ADAM 101 1 True 0
+```
+
+Standard run (without 2nd order network)
+```bash
+cd MARL/
+./meltingpot.sh TERRITORY_I 10 LSTM 100 1 1 META ADAM 101 1 False 0
+```
+
+You can change TERRITORY_I for the corresponding environment. Please see the script in meltingpot.sh to change the corresponding flag name for each environment.
 
 ## Results Summary
 
