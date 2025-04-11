@@ -7,6 +7,7 @@ step_current=${2:-base_number_steps}
 substrate="space_invaders"
 
 # Define hyperparameters
+#CHANGE THIS TO YOUR DIRECTORY,  /$local_repo_directory/SARL/MinAtar
 general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/WorkshopPaper/REPO/MinAtar"
 
 # For conda to work in scripts, you need to initialize it first

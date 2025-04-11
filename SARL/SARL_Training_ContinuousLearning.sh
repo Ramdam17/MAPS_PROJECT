@@ -4,7 +4,7 @@ seed=${1:-default_seed}
 setting=${2:-default_setting}
 base=100000
 
-
+#CHANGE THIS TO YOUR DIRECTORY,  /$local_repo_directory/SARL/MinAtar
 general_dir="/home/$USER/projects/def-gdumas85/$USER/MinAtar"
 
 module load gcc python/3.11 opencv mpi4py arrow cuda cudnn rust

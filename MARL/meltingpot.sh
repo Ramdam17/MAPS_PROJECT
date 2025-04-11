@@ -20,44 +20,15 @@ rollout=${10:-default_rollout}
 meta=${11:-META_PARAMETER}
 combination=${12:-GRID_SEARCH}
 
-
 # Define hyperparameters
 entropy_coeffs=(0.006 0.006 0.006 0.02 0.02 0.02 0.01 0.01 0.01)
 lr_actors=(0.00009 0.00009 0.00002 0.00009 0.00009 0.00002 0.00009 0.00009 0.00002)
 lr_critics=(0.0001 0.00009 0.00002 0.0001 0.00009 0.00002 0.0001 0.00009 0.00002)
 
-
-
+#CHANGE THIS TO YOUR DIRECTORY,  /$local_repo_directory/MARL
 general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/CODES"
 
-EMAS=("0.2" "0.25" "0.3" "0.35" "0.4" "0.5" "0.7" "1.0")
-
-
-if [ "$skill" = "SKILLS" ]; then
-    target='repo_skills'
-elif [ "$skill" = "RNN" ]; then
-    target='master_rnn'
-elif [ "$skill" = "META" ]; then
-    target='repo_meta'
-elif [ "$skill" = "SAF" ]; then
-    target='repo_saf'
-elif [ "$skill" = "SLOT" ]; then
-    target='repo_slot'
-elif [ "$skill" = "SLOT2" ]; then
-    target='repo_slot2'
-elif [ "$skill" = "SLOT3" ]; then
-    target='repo_LSTM_SLOT'
-elif [ "$skill" = "LSTM" ]; then
-    target='repo_LSTM'
-elif [ "$skill" = "LORA" ]; then
-    target='repo_lora'
-elif [ "$skill" = "LORASHARED" ]; then
-    target='repo_lora'
-else
-    target='repo_base'
-fi
-
-repo=$general_dir/$target/MAPPO-ATTENTIOAN
+repo=$general_dir/MAPPO-ATTENTIOAN
 
 # Default values in case the environment does not match
 agents=0
@@ -66,19 +37,7 @@ episode_length=0
 bottom=0
 sup=0
 
-
 conda activate marl
-
-
-#module load gcc python/3.11 opencv mujoco mpi4py arrow cuda cudnn scipy-stack rust
-
-#pip install -r requirements.txt
-
-#pip install --user --upgrade jaxlib>0.4.27
-#copy repo to scratch
-#cp -r $general_dir/$target $SLURM_TMPDIR
-#cd $SLURM_TMPDIR/$target
-
 
 #Copy to user dir to avoid disk quota error
 
@@ -436,8 +395,8 @@ for (( index=combination-1; index<${#entropy_coeffs[@]}; index++ )); do
     lr_actor=${lr_actors[$index]}
     lr_critic=${lr_critics[$index]}
     echo "the current combination is $index , entropy is $entropy , lr_actor is $lr_actor, lr_critic is $lr_critic, run num is $run"
-    env_steps=20000
-    episodes=20
+    env_steps=1000000
+    episodes=1000
 
 
     if [ "$skill" = "SKILLS" ]; then
