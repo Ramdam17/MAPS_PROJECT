@@ -2516,41 +2516,42 @@ def main():
         if args.loadfile:
             load_file_path = args.loadfile
             
-        #2nd order network, but no cascade model
-        if args.setting== 1:
-            cascade_1=1
-            cascade_2=1 
-            meta=True
-        
-        #2nd order network, and a cascade model on the 1st order network only
-        elif args.setting== 2:
-            cascade_1=args.cascade
-            cascade_2=1
-            meta=True
-
-        #2nd order network, and a cascade model on the 2nd order network only
-        elif args.setting== 3:
-            cascade_1=1
-            cascade_2=args.cascade
-            meta=True
-
-        #2nd order network, and a cascade model on both networks
-        elif args.setting== 4:
-            cascade_1=args.cascade
-            cascade_2=args.cascade
-            meta=True
             
         #No 2nd order network and no cascade model    
-        if args.setting== 5:
+        if args.setting== 1:
             cascade_1=1
             cascade_2=1 
             meta=False
         
         #Cascade model, but no 2nd order network
-        elif args.setting== 6:
+        elif args.setting== 2:
             cascade_1=args.cascade
             cascade_2=1
             meta=False
+            
+        #2nd order network, but no cascade model
+        if args.setting== 3:
+            cascade_1=1
+            cascade_2=1 
+            meta=True
+        
+        #2nd order network, and a cascade model on the 1st order network only
+        elif args.setting== 4:
+            cascade_1=args.cascade
+            cascade_2=1
+            meta=True
+
+        #2nd order network, and a cascade model on the 2nd order network only
+        elif args.setting== 5:
+            cascade_1=1
+            cascade_2=args.cascade
+            meta=True
+
+        #2nd order network, and a cascade model on both networks
+        elif args.setting== 6:
+            cascade_1=args.cascade
+            cascade_2=args.cascade
+            meta=True
             
         env = Environment(args.game)
 
