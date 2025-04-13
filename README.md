@@ -19,7 +19,10 @@ MAPS is a novel architecture that combines metacognitive components with advance
 1. A secondary network (2nd-Net) with a comparator matrix connected to wagering units
 2. A cascade model facilitating graded accumulation of activation
 
-Our experiments demonstrate significant performance improvements across multiple domains including Blindsight, Artificial Grammar Learning (AGL), Single-Agent Reinforcement Learning (SARL), and Multi-Agent Reinforcement Learning (MARL).
+Our experiments demonstrate significant performance improvements across multiple domains including Blindsight, Artificial Grammar Learning (AGL), Single-Agent Reinforcement Learning (SARL), and Multi-Agent Reinforcement Learning (MARL). We test our architecture over 6 settings, alternating with this 2 components on and off. 
+
+   ![](images/RLC_Figures.jpg)
+
 
 ## Methodology
 
@@ -139,12 +142,21 @@ You can change TERRITORY_I for the corresponding environment. Please see the scr
 
 Our results demonstrate significant improvements using the MAPS architecture:
 
-1. **Blindsight**: Achieved 97% accuracy (significant improvement with Z-score: 8.6)
-2. **AGL**: Achieved 62% accuracy (significant improvement with Z-score: 15.0)
-3. **MinAtar SARL**: 
+1. **Blindsight and AGL**: Achieved 97% accuracy for Blindsight (significant improvement with Z-score: 8.6), and a 62% accuracy for AGL (significant improvement with Z-score: 15.0)
+   ![](images/Perceptual_results.png)
+   
+2. **MinAtar SARL**: 
    - Seaquest: 6.15 rewards (Z-score: 2.97)
    - Asterix: 5.77 rewards (Z-score: 2.15)
-4. **MARL**: Notable improvement in Territory Inside Out (Z-score: 2.59)
+  
+   ![](images/SARL_results.jpg)
+
+4. **MinAtar SARL + continuous/transfer learning**: 
+   - Achieved a mean retention of 45.1% +/- 31.1% for transfer learning. Results for continuous learning are still exploratory.
+     ![](images/Ternary_space.png)
+
+5. **MARL**: improvement in Territory Inside Out (Z-score: 2.59). Other environments don't show substantial improvement. This are preliminary results with a 2nd order network and no cascade model.
+     ![](images/MARL_results.png)
 
 ## Citation
 
