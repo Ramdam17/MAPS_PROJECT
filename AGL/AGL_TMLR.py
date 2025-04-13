@@ -2175,5 +2175,7 @@ def main():
         title, list1, list2, list3, list4, list5, list6 = data
         plot_violin_conference(list1, list2, list3, list4, list5, list6, title, 1)
 
+    #SCALING CODE WAS REMOVED TEMPORARILY AS THE EXPERIMENTS ARE NOT AVAILABLE IN THE PAPER 
+    
 # Execute the main function
 main()

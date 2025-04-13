@@ -1614,5 +1614,7 @@ def main():
     for data in violin_data:
         title, list1, list2, list3, cascade_list1, cascade_list2, cascade_list3 = data
         plot_violin(list1, list2, list3, cascade_list1, cascade_list2, cascade_list3, title, 1)
+
+    #SCALING CODE WAS REMOVED TEMPORARILY AS THE EXPERIMENTS ARE NOT AVAILABLE IN THE PAPER 
     
 main()
