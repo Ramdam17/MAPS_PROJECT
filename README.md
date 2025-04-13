@@ -19,7 +19,7 @@ MAPS is a novel architecture that combines metacognitive components with advance
 1. A secondary network (2nd-Net) with a comparator matrix connected to wagering units
 2. A cascade model facilitating graded accumulation of activation
 
-Our experiments demonstrate significant performance improvements across multiple domains including Blindsight, Artificial Grammar Learning (AGL), Single-Agent Reinforcement Learning (SARL), and Multi-Agent Reinforcement Learning (MARL). We test our architecture over 6 settings, alternating with this 2 components on and off. 
+Our experiments demonstrate significant performance improvements across multiple domains including Blindsight, Artificial Grammar Learning (AGL), Single-Agent Reinforcement Learning (SARL), and Multi-Agent Reinforcement Learning (MARL). We test our architecture over 6 settings, alternating with these 2 components on and off. 
 
    ![](images/RLC_Figures.jpg)
 
