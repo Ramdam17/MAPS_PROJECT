@@ -24,7 +24,7 @@ import csv
 import ast  # To safely evaluate strings as Python expressions
 import re
 import torch_optimizer as optim2
-
+import os
 from torchmetrics.functional.regression import mean_absolute_percentage_error
 from torch.autograd import Variable
 
@@ -1455,29 +1455,344 @@ def load_violin_data_from_csv(file_path):
     return data
 
 
-# Function to load data from the CSV file
-def load_scaling_data_from_csv(file_path):
-    with open(file_path, mode='r') as file:
+
+
+def load_scaling_data_from_csv(filename):
+    """Loads scaling data from a CSV file"""
+    data = []
+    with open(filename, mode='r') as file:
         reader = csv.reader(file)
-        next(reader)  # Skip the header
-        data = []
+        next(reader)  # Skip header
         for row in reader:
-            scaling_factor = ast.literal_eval(row[0])
-            f1_scores_list = ast.literal_eval(row[1])
-            discr_perf_list = ast.literal_eval(row[2])
-            std_wager_list = ast.literal_eval(row[3])
-            std_discrimination_list = ast.literal_eval(row[4])
-            f1_scores_list_meta = ast.literal_eval(row[5])
-            discr_perf_list_meta = ast.literal_eval(row[6])
-            std_wager_list_meta = ast.literal_eval(row[7])
-            std_discrimination_list_meta = ast.literal_eval(row[8])
-            label = row[9]
-            data.append((
-                scaling_factor, f1_scores_list, discr_perf_list, std_wager_list, std_discrimination_list,
-                f1_scores_list_meta, discr_perf_list_meta, std_wager_list_meta, std_discrimination_list_meta, label
-            ))
+            # Convert string representations of lists back to actual lists
+            data.append([eval(col) if i < len(row)-1 else col for i, col in enumerate(row)])
     return data
 
+def plot_scaling_discrimination(scaling_factors, discrimination_data, factor_second_values, settings_data, std_data=None):
+    """
+    Plots discrimination performance with standard deviation bands for different secondary factors across multiple settings
+    
+    Args:
+        scaling_factors: List of primary scaling factors (x-axis)
+        discrimination_data: Dictionary where keys are settings (1-6) and values are nested lists
+                          where each sublist contains discrimination values for a specific
+                          secondary factor across all primary factors
+        factor_second_values: List of secondary factor values (for legend)
+        settings_data: List of settings to plot (1-6)
+        std_data: Dictionary with same structure as discrimination_data, containing standard deviation values
+    """
+    # Create figure with 6 subplots (2 columns, 3 rows)
+    fig, axs = plt.subplots(3, 2, figsize=(16, 18), sharex=True, sharey=True)
+    axs = axs.flatten()  # Flatten the 2D array of axes for easier indexing
+    
+    colors = plt.cm.viridis(np.linspace(0, 1, len(factor_second_values)))
+    
+    # For each setting (1-6)
+    for setting_idx, setting in enumerate(settings_data):
+        ax = axs[setting_idx]
+        
+        # Get data for this setting
+        setting_data = discrimination_data.get(setting, [[] for _ in range(len(factor_second_values))])
+        
+        # Get standard deviation data for this setting if available
+        setting_std_data = None
+        if std_data is not None:
+            setting_std_data = std_data.get(setting, [[] for _ in range(len(factor_second_values))])
+        
+        # Plot each secondary factor line
+        for i, factor_second in enumerate(factor_second_values):
+            # Plot the main line
+            ax.plot(
+                scaling_factors, 
+                setting_data[i],
+                marker='o',
+                linestyle='-',
+                color=colors[i],
+                label=f'Factor = {factor_second}'
+            )
+            
+            # Add standard deviation bands if available
+            if setting_std_data is not None and len(setting_std_data[i]) > 0:
+                # Calculate upper and lower bounds
+                upper_bound = [d + s for d, s in zip(setting_data[i], setting_std_data[i])]
+                lower_bound = [d - s for d, s in zip(setting_data[i], setting_std_data[i])]
+                
+                # Plot the filled area between upper and lower bounds
+                ax.fill_between(
+                    scaling_factors,
+                    lower_bound,
+                    upper_bound,
+                    color=colors[i],
+                    alpha=0.2  # Transparency
+                )
+        
+        ax.set_xscale('log', base=2)  # Log scale for x-axis
+        ax.set_title(f'Setting {setting}')
+        ax.grid(True, alpha=0.3)
+        
+        # Add setting-specific descriptions
+        setting_descriptions = {
+            1: "No 2nd-net, baseline",
+            2: "No 2nd-net, cascade",
+            3: "2nd-net, no cascade",
+            4: "2nd-net, cascade 1st",
+            5: "2nd-net, cascade 2nd",
+            6: "2nd-net, cascade both"
+        }
+        
+        ax.text(0.05, 0.95, setting_descriptions.get(setting, ""), transform=ax.transAxes,
+                fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    # Add common labels for all subplots
+    fig.text(0.5, 0.08, 'Primary Scaling Factor', ha='center', fontsize=14)
+    fig.text(0.08, 0.5, 'Discrimination Performance', va='center', rotation='vertical', fontsize=14)
+    
+    # Add a single legend for the entire figure
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98),
+               ncol=len(factor_second_values), fontsize=12, frameon=True)
+    
+    plt.tight_layout(rect=[0.1, 0.1, 0.9, 0.92])  # Adjust layout to make room for common labels
+    
+    # Add overall title
+    plt.suptitle('Discrimination Performance by Scaling Factor Across Settings', fontsize=16, y=0.995)
+    
+    # Save the plot
+    plt.savefig(f'blindsight_discrimination_scaling_plot_all_settings.png', dpi=300)
+    plt.show()
+    plt.close(fig)
+    print(f"plot saved as discrimination_scaling_plot_all_settings.png'.")
+
+ 
+# Function to run a single setting experiment and collect data
+def run_setting_experiment(setting, scaling_factors, factors_second, default_hidden_first, default_hidden_second, seeds_violin, cascade_off, cascade_mode  ):
+    """
+    Run experiments for a single setting and return the collected data
+    """
+    # Initialize data structure for this setting
+    discrimination_data = [[] for _ in range(len(factors_second))]
+    f1_scores_data = [[] for _ in range(len(factors_second))]
+    std_discrimination_data = [[] for _ in range(len(factors_second))]
+    std_wager_data = [[] for _ in range(len(factors_second))]
+    
+    # For each primary scaling factor
+    for p_idx, factor in enumerate(scaling_factors):
+        # For each secondary scaling factor
+        for s_idx, factor_second in enumerate(factors_second):
+            initialize_global()
+            
+            hidden_first_scaling = int(default_hidden_first)
+            hidden_second_scaling = int(default_hidden_first*factor_second)
+            data_factor=factor
+
+            # Select the appropriate training function based on setting
+            if setting == 1:
+                f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, std_discrimination, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_2nd=hidden_second_scaling, 
+                    factor=data_factor,
+                    gelu=False, 
+                    stepsize=25, 
+                    gam=0.98, 
+                    meta=False, 
+                    optimizer='ADAMAX', 
+                    seeds=seeds_violin, 
+                    noise_level=0.0012, 
+                    plotting=False, 
+                    cascade_rate=cascade_off, 
+                    type_cascade=4
+                )
+            elif setting == 2:
+                f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, std_discrimination, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_2nd=hidden_second_scaling, 
+                    factor=data_factor, 
+                    gelu=False, 
+                    stepsize=25, 
+                    gam=0.98,
+                    meta=False, 
+                    optimizer='ADAMAX', 
+                    seeds=seeds_violin, 
+                    noise_level=0.0012,
+                    plotting=False, 
+                    cascade_rate=cascade_mode, 
+                    type_cascade=2
+                )
+            elif setting == 3:
+                f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, std_discrimination, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_2nd=hidden_second_scaling, 
+                    factor=data_factor, 
+                    gelu=False, 
+                    stepsize=25, 
+                    gam=0.98,
+                    meta=True, 
+                    optimizer='ADAMAX', 
+                    seeds=seeds_violin, 
+                    noise_level=0.0012,
+                    plotting=False, 
+                    cascade_rate=cascade_off, 
+                    type_cascade=4
+                )
+            elif setting == 4:
+                f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, std_discrimination, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_2nd=hidden_second_scaling, 
+                    factor=data_factor, 
+                    gelu=False, 
+                    stepsize=25, 
+                    gam=0.98,
+                    meta=True, 
+                    optimizer='ADAMAX', 
+                    seeds=seeds_violin, 
+                    noise_level=0.0012,
+                    plotting=False, 
+                    cascade_rate=cascade_mode, 
+                    type_cascade=2
+                )
+            elif setting == 5:
+                f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, std_discrimination, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_2nd=hidden_second_scaling, 
+                    factor=data_factor, 
+                    gelu=False, 
+                    stepsize=25, 
+                    gam=0.98,
+                    meta=True, 
+                    optimizer='ADAMAX', 
+                    seeds=seeds_violin, 
+                    noise_level=0.0012,
+                    plotting=False, 
+                    cascade_rate=cascade_mode, 
+                    type_cascade=3
+                )
+            elif setting == 6:
+                f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, std_discrimination, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_2nd=hidden_second_scaling, 
+                    factor=data_factor, 
+                    gelu=False, 
+                    stepsize=25, 
+                    gam=0.98,
+                    meta=True, 
+                    optimizer='ADAMAX', 
+                    seeds=seeds_violin, 
+                    noise_level=0.0012,
+                    plotting=False, 
+                    cascade_rate=cascade_mode, 
+                    type_cascade=1
+                )
+            
+            # Store results by secondary factor
+            discrimination_data[s_idx].append(discrimination_performances[0])
+            f1_scores_data[s_idx].append(f1_scores_wager[0])
+            std_discrimination_data[s_idx].append(std_discrimination[0])
+            std_wager_data[s_idx].append(std_wager[0])
+            
+            # Save individual experiment result
+            experiment_log = {
+                'primary_factor': factor,
+                'secondary_factor': factor_second,
+                'f1_score': f1_scores_wager,
+                'std_wager': std_wager,
+                'discrimination_performance': discrimination_performances[0],
+                'std_discrimination': std_discrimination[0],
+                'meta': setting >= 3,  # settings 3-6 use meta=True
+                'cascade_type': [4, 2, 4, 2, 3, 1][setting-1],  # Map setting to cascade type
+                'hidden_first': default_hidden_first*factor,
+                'hidden_second': default_hidden_first*factor*factor_second
+            }
+            
+            # Save individual experiment details
+            log_filename = f'experiment_factor_{factor}_secondary_{factor_second}_setting_{setting}.csv'
+            with open(log_filename, mode='w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(experiment_log.keys())  # Header
+                writer.writerow([convert_arrays_to_lists(val) if isinstance(val, (list, np.ndarray)) 
+                                else val for val in experiment_log.values()])  # Values
+            
+            print(f"Completed experiment with setting {setting}, primary factor {factor} and secondary factor {factor_second}")
+    
+    # Save results for this setting
+    setting_data = {
+        'scaling_factors': scaling_factors,
+        'factors_second': factors_second,
+        'discrimination_data': convert_arrays_to_lists(discrimination_data),
+        'f1_scores_data': convert_arrays_to_lists(f1_scores_data),
+        'std_discrimination_data': convert_arrays_to_lists(std_discrimination_data),
+        'std_wager_data': convert_arrays_to_lists(std_wager_data),
+        'setting': setting
+    }
+    
+    # Save setting results to CSV
+    log_filename = f'Blindsight_scaling_plot_data_setting_{setting}.csv'
+    with open(log_filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        
+        # Write header
+        writer.writerow(setting_data.keys())
+        
+        # Write the data (one row)
+        writer.writerow([convert_arrays_to_lists(val) if isinstance(val, (list, np.ndarray)) 
+                        else val for val in setting_data.values()])
+    
+    print(f"Setting {setting} data saved to '{log_filename}'.")
+    
+    return discrimination_data, f1_scores_data, std_discrimination_data, std_wager_data
+
+# Loading data back from CSV for verification or later use
+def load_and_plot_from_csv(filename):
+    """Loads data from CSV and creates the discrimination plot"""
+    with open(filename, mode='r') as file:
+        reader = csv.reader(file)
+        header = next(reader)
+        row = next(reader)
+        
+        # Convert string representations back to lists/values
+        data = {header[i]: eval(row[i]) if i < len(row) else None for i in range(len(header))}
+        
+        # Create plot from loaded data
+        plot_scaling_discrimination(
+            data['scaling_factors'],
+            data['discrimination_data'],
+            data['factors_second'],
+            data['setting']
+        )
+    
+    return data
+
+    
+def load_setting_data_from_csv(setting):
+    """
+    Load experiment data for a specific setting from CSV file
+    Returns a dictionary with the loaded data
+    """
+    filename = f'Blindsight_scaling_plot_data_setting_{setting}.csv'
+    
+    if not os.path.exists(filename):
+        print(f"Warning: File {filename} not found")
+        return None
+    
+    with open(filename, mode='r', newline='') as file:
+        reader = csv.reader(file)
+        keys = next(reader)  # Read header row
+        values = next(reader)  # Read data row
+        
+        # Convert string representations back to Python objects
+        data = {}
+        for i, key in enumerate(keys):
+            try:
+                # Parse string representations of lists back to actual lists
+                if key in ['scaling_factors', 'factors_second', 'setting']:
+                    data[key] = ast.literal_eval(values[i])
+                else:
+                    # For the nested data structures
+                    data[key] = ast.literal_eval(values[i])
+            except (SyntaxError, ValueError) as e:
+                print(f"Error parsing {key}: {e}")
+                data[key] = values[i]  # Keep as string if parsing fails
+    
+    return data
 def main():
     # Hyperparameter configuration for model tuning
     hidden_sizes = [30, 40, 50, 60, 100]  # Hidden layer sizes for first-order network
@@ -1492,7 +1807,6 @@ def main():
     optimizer = ['ADAMAX']  # Optimizer choice
     seeds = 5  # Number of random seeds for basic experiments
     seeds_violin = 450  # Number of seeds for violin plot experiments (statistical significance)
-    seeds_scaling = 45  # Number of seeds for scaling experiments
     
     # Cascade model parameters
     cascade_mode = 0.02  # Cascade model rate parameter
@@ -1519,8 +1833,7 @@ def main():
     hyperparameters = list(product(hidden_sizes, factors, gelus, step_sizes, gammas, metalayers, optimizer))
     
     # Execution mode flags
-    Training = True  # Run training experiments
-    Scaling = False  # Don't run scaling experiments
+    Training = False  # Run training experiments
     
     # Cascade type explanations:
     # cascade type 1: both 1st and 2nd order networks use cascade mode
@@ -1607,14 +1920,94 @@ def main():
         
         print("Violin plot variables saved to 'Blindsight_violin_plot_logs_conference.csv'.")
     
-    # Load the saved experimental data
-    violin_data = load_violin_data_from_csv('Blindsight_violin_plot_logs_conference.csv')
-    
-    # Generate violin plots for visual comparison of all configurations
-    for data in violin_data:
-        title, list1, list2, list3, cascade_list1, cascade_list2, cascade_list3 = data
-        plot_violin(list1, list2, list3, cascade_list1, cascade_list2, cascade_list3, title, 1)
+        # Load the saved experimental data
+        violin_data = load_violin_data_from_csv('Blindsight_violin_plot_logs_conference.csv')
+        
+        # Generate violin plots for visual comparison of all configurations
+        for data in violin_data:
+            title, list1, list2, list3, cascade_list1, cascade_list2, cascade_list3 = data
+            plot_violin(list1, list2, list3, cascade_list1, cascade_list2, cascade_list3, title, 1)
 
-    #SCALING CODE WAS REMOVED TEMPORARILY AS THE EXPERIMENTS ARE NOT AVAILABLE IN THE PAPER 
+    default_hidden_first=40
+    default_hidden_second=100
+    #scaling_factors= [1, 2, 5 , 10,  15 , 25 , 50 ]
+    scaling_factors= [1, 5 ,  15 , 25 , 50 ]
+
+    #factors_second= [ 0.1, 0.2, 0.5, 1.0, 2.0]
+    factors_second= [ 0.1, 1.0]
     
+    seeds_scaling = 5 # Number of seeds for scaling experiments
+
+    setting=1
+    scaling=True
+    
+    load_data=True
+    
+    if scaling:
+        # Dictionary to store results for all settings
+        all_discrimination_data = {}
+        all_f1_scores_data = {}
+        all_std_discrimination_data = {}
+        all_std_wager_data = {}
+        
+        # Run experiments for all 6 settings
+        for setting in range(1, 7):
+            if load_data:
+                print(f"Loading data for setting {setting}")
+                # Load data from CSV
+                setting_data = load_setting_data_from_csv(setting)
+                
+                # Store data in respective dictionaries
+                all_discrimination_data[setting] = setting_data['discrimination_data']
+                all_f1_scores_data[setting] = setting_data['f1_scores_data']
+                all_std_discrimination_data[setting] = setting_data['std_discrimination_data']
+                all_std_wager_data[setting] = setting_data['std_wager_data']
+            else:
+                print(f"Starting experiments for setting {setting}")
+                discr_data, f1_data, std_discr_data, std_wager_data = run_setting_experiment(
+                    setting, scaling_factors, factors_second, default_hidden_first, 
+                    default_hidden_second, seeds_scaling, cascade_off, cascade_mode
+                )
+                
+                # Store results
+                all_discrimination_data[setting] = discr_data
+                all_f1_scores_data[setting] = f1_data
+                all_std_discrimination_data[setting] = std_discr_data
+                all_std_wager_data[setting] = std_wager_data
+        
+        # Create combined plots with data from all settings
+        plot_scaling_discrimination(
+            scaling_factors,
+            all_discrimination_data,
+            factors_second,
+            list(range(1, 7)),  # Settings 1-6
+            std_data=all_std_discrimination_data  # Add the standard deviation data
+        )
+        
+        # Save combined results if not loading from CSV
+        if not load_data:
+            combined_results = {
+                'scaling_factors': scaling_factors,
+                'factors_second': factors_second,
+                'all_discrimination_data': convert_arrays_to_lists(all_discrimination_data),
+                'all_f1_scores_data': convert_arrays_to_lists(all_f1_scores_data),
+                'all_std_discrimination_data': convert_arrays_to_lists(all_std_discrimination_data),
+                'all_std_wager_data': convert_arrays_to_lists(all_std_wager_data)
+            }
+            
+            # Save to CSV
+            log_filename = 'Blindsight_scaling_plot_data_all_settings.csv'
+            with open(log_filename, mode='w', newline='') as file:
+                writer = csv.writer(file)
+                
+                # Write header
+                writer.writerow(combined_results.keys())
+                
+                # Write the data (one row)
+                writer.writerow([convert_arrays_to_lists(val) if isinstance(val, (list, dict, np.ndarray))
+                            else val for val in combined_results.values()])
+            
+            print(f"Combined results for all settings saved to '{log_filename}'.")
+                    
+
 main()

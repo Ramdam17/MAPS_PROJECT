@@ -22,7 +22,7 @@ import matplotlib.patches as patches
 import csv
 import ast  # To safely evaluate strings as Python expressions
 import re
-
+import os
 #!pip install torch_optimizer torchmetrics
 import torch_optimizer as optim2
 
@@ -172,13 +172,13 @@ class FirstOrderNetwork(nn.Module):
 
 # %%
 class SecondOrderNetwork(nn.Module):
-    def __init__(self, use_gelu):
+    def __init__(self, use_gelu, hidden_second):
         super(SecondOrderNetwork, self).__init__()
         # Define a linear layer for comparing the difference between input and output of the first-order network
-        self.comparison_layer = nn.Linear(48, 48)
+        self.comparison_layer = nn.Linear(48, hidden_second)
 
         # Linear layer for determining wagers, mapping from 100 features to a single output
-        self.wager = nn.Linear(48, 1)
+        self.wager = nn.Linear(hidden_second, 1)
 
         # Dropout layer to prevent overfitting by randomly setting input units to 0 with a probability of 0.5 during training
         self.dropout = nn.Dropout(0.5)
@@ -505,9 +505,9 @@ def calculate_min(network_data, start_network, end_network):
 # %%
 #define the architecture, optimizers, loss functions, and schedulers for pre training
 
-def prepare_pre_training(hidden,factor,gelu,stepsize, gam):
+def prepare_pre_training(hidden, hidden_second,factor,gelu,stepsize, gam):
   first_order_network = FirstOrderNetwork(hidden,factor,gelu).to(device)
-  second_order_network = SecondOrderNetwork(gelu).to(device)
+  second_order_network = SecondOrderNetwork(gelu, hidden_second).to(device)
 
   #Binary Cross-Entropy Loss: especially used in classification tasks, either correctly classified it or not, or correctly high wager or not
   criterion_1 = CAE_loss
@@ -758,7 +758,7 @@ def pre_train_plots(epoch_1_order, epoch_2_order, precision , title):
 # # MODEL LOADING FOR TRAINING AND SET UP OF THE 30 NETWORKS
 
 # %%
-def create_networks(first_order_network , second_order_network,hidden,factor,gelu,stepsize, gam):
+def create_networks(first_order_network , second_order_network,hidden, hidden_second,factor,gelu,stepsize, gam):
   #SAVING THE MODELS
   PATH = './cnn1.pth'
   PATH_2 = './cnn2.pth'
@@ -771,7 +771,7 @@ def create_networks(first_order_network , second_order_network,hidden,factor,gel
 
   for i in range(num_networks):
       loaded_model_trai = FirstOrderNetwork(hidden,factor,gelu)
-      loaded_model_2_trai = SecondOrderNetwork(gelu)
+      loaded_model_2_trai = SecondOrderNetwork(gelu, hidden_second)
 
       loaded_model_trai.load_state_dict(torch.load(PATH))
       loaded_model_2_trai.load_state_dict(torch.load(PATH_2))
@@ -1135,8 +1135,8 @@ def testing(networks, factor, cascade_rate,seeds, type_cascade):
 
 
     with torch.no_grad():
-      Testing_grammar_A= Array_Words(2, 30 *factor)
-      Testing_grammar_B= Array_Words(3, 30*factor )
+      Testing_grammar_A= Array_Words(2, len(networks) *factor)
+      Testing_grammar_B= Array_Words(3, len(networks)*factor )
 
       Testing_patterns = torch.cat((Testing_grammar_A, Testing_grammar_B), dim=0)
       Testing_patterns= torch.Tensor(Testing_patterns).to(device)
@@ -1374,7 +1374,7 @@ def plots_testing(random_baseline, precision_networks, precision_2nd_order, reca
 # #MAIN CODE - TRAINING DEFINITION
 
 # %%
-def train(hidden, factor, gelu, stepsize, gam, meta, cascade_rate, seeds, type_cascade, optimizer='RANGERVA'):
+def train(hidden, hidden_second, factor, gelu, stepsize, gam, meta, cascade_rate, seeds, type_cascade, optimizer='RANGERVA'):
     """
     Main training function that orchestrates pre-training, training, and testing of the neural network system.
     
@@ -1423,7 +1423,7 @@ def train(hidden, factor, gelu, stepsize, gam, meta, cascade_rate, seeds, type_c
 
         # Prepare networks for pre-training phase
         # Creates first and second order networks with specified parameters
-        first_order_network, second_order_network, criterion_1, criterion_2, optimizer_1, optimizer_2, scheduler_1, scheduler_2, initial_first_order_weights = prepare_pre_training(hidden, factor, gelu, stepsize, gam)
+        first_order_network, second_order_network, criterion_1, criterion_2, optimizer_1, optimizer_2, scheduler_1, scheduler_2, initial_first_order_weights = prepare_pre_training(hidden, hidden_second, factor, gelu, stepsize, gam)
 
         # Pre-training phase - trains networks on random patterns
         # For AGL tasks, uses random strings to establish initial weights
@@ -1433,7 +1433,7 @@ def train(hidden, factor, gelu, stepsize, gam, meta, cascade_rate, seeds, type_c
             initial_first_order_weights, factor, meta, cascade_rate, type_cascade)
 
         # Create a set of networks for training, initialized with pre-trained weights
-        networks = create_networks(first_order_network_pre, second_order_network_pre, hidden, factor, gelu, stepsize, gam)
+        networks = create_networks(first_order_network_pre, second_order_network_pre, hidden, hidden_second, factor, gelu, stepsize, gam)
 
         # High consciousness training phase
         # In the context of AGL, this would use grammar A patterns
@@ -1594,7 +1594,7 @@ def initialize_global(optimizer):
   
   optimizer_name = optimizer
 
-  num_networks = 30 #default is 30
+  num_networks = 20 #default is 30
   num_training_high=12 #default is 12
   num_training_low=3 #default is 3
   n_epochs_pre = 30 #default is 60
@@ -2048,6 +2048,354 @@ def convert_arrays_to_lists(data):
         return data
 
 
+
+def run_setting_experiment(setting, scaling_factors, factors_second, default_hidden_first, default_hidden_second, seeds_violin, cascade_off, cascade_mode):
+    """
+    Run experiments for a single setting and return the collected data for both high and low consciousness
+    """
+    # Initialize data structures for high and low consciousness
+    high_consciousness_data = [[] for _ in range(len(factors_second))]
+    low_consciousness_data = [[] for _ in range(len(factors_second))]
+    high_wagering_data = [[] for _ in range(len(factors_second))]
+    low_wagering_data = [[] for _ in range(len(factors_second))]
+    
+    # Standard deviation data
+    high_consciousness_std = [[] for _ in range(len(factors_second))]
+    low_consciousness_std = [[] for _ in range(len(factors_second))]
+    high_wagering_std = [[] for _ in range(len(factors_second))]
+    low_wagering_std = [[] for _ in range(len(factors_second))]
+    
+    # For each primary scaling factor
+    for p_idx, factor in enumerate(scaling_factors):
+        # For each secondary scaling factor
+        for s_idx, factor_second in enumerate(factors_second):
+            
+            hidden_first_scaling = int(default_hidden_first)
+            hidden_second_scaling = int(default_hidden_first*factor_second)
+            data_factor = factor
+
+            # Select the appropriate training function based on setting
+            if setting == 1:
+                # No meta-learning, no cascade
+                list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_second=hidden_second_scaling, 
+                    factor=data_factor,
+                    gelu=False, 
+                    stepsize=1, 
+                    gam=0.999, 
+                    meta=False, 
+                    cascade_rate=cascade_off, 
+                    seeds=seeds_violin, 
+                    type_cascade=4
+                )
+            elif setting == 2:
+                # No meta-learning, with cascade type 2
+                list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_second=hidden_second_scaling, 
+                    factor=data_factor,
+                    gelu=False, 
+                    stepsize=1, 
+                    gam=0.999, 
+                    meta=False, 
+                    cascade_rate=cascade_mode, 
+                    seeds=seeds_violin, 
+                    type_cascade=2
+                )
+            elif setting == 3:
+                # With meta-learning, no cascade
+                list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_second=hidden_second_scaling, 
+                    factor=data_factor,
+                    gelu=False, 
+                    stepsize=1, 
+                    gam=0.999, 
+                    meta=True, 
+                    cascade_rate=cascade_off, 
+                    seeds=seeds_violin, 
+                    type_cascade=4
+                )
+            elif setting == 4:
+                # With meta-learning, with cascade type 2
+                list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_second=hidden_second_scaling, 
+                    factor=data_factor,
+                    gelu=False, 
+                    stepsize=1, 
+                    gam=0.999, 
+                    meta=True, 
+                    cascade_rate=cascade_mode, 
+                    seeds=seeds_violin, 
+                    type_cascade=2
+                )
+            elif setting == 5:
+                # With meta-learning, with cascade type 3
+                list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_second=hidden_second_scaling, 
+                    factor=data_factor,
+                    gelu=False, 
+                    stepsize=1, 
+                    gam=0.999, 
+                    meta=True, 
+                    cascade_rate=cascade_mode, 
+                    seeds=seeds_violin, 
+                    type_cascade=3
+                )
+            elif setting == 6:
+                # With meta-learning, with cascade type 1
+                list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data, list_violin_1st, list_violin_2nd = train(
+                    hidden=hidden_first_scaling, 
+                    hidden_second=hidden_second_scaling, 
+                    factor=data_factor,
+                    gelu=False, 
+                    stepsize=1, 
+                    gam=0.999, 
+                    meta=True, 
+                    cascade_rate=cascade_mode, 
+                    seeds=seeds_violin, 
+                    type_cascade=1
+                )
+            
+            # Store results: high consciousness [0] and low consciousness [1]
+            high_consciousness_data[s_idx].append(list_violin_1st[0])  # Main task performance - high consciousness
+            low_consciousness_data[s_idx].append(list_violin_1st[1])   # Main task performance - low consciousness
+            high_wagering_data[s_idx].append(list_violin_2nd[0])       # Wagering performance - high consciousness
+            low_wagering_data[s_idx].append(list_violin_2nd[1])        # Wagering performance - low consciousness
+            
+            # Store standard deviations
+            high_consciousness_std[s_idx].append(list_1s_metric_std[0])
+            low_consciousness_std[s_idx].append(list_1s_metric_std[1])
+            high_wagering_std[s_idx].append(list_2s_metric_std[0])
+            low_wagering_std[s_idx].append(list_2s_metric_std[1])
+            
+            # Save individual experiment result
+            experiment_log = {
+                'primary_factor': factor,
+                'secondary_factor': factor_second,
+                'high_consciousness_performance': list_violin_1st[0],
+                'low_consciousness_performance': list_violin_1st[1],
+                'high_wagering_performance': list_violin_2nd[0],
+                'low_wagering_performance': list_violin_2nd[1],
+                'high_consciousness_std': list_1s_metric_std[0],
+                'low_consciousness_std': list_1s_metric_std[1],
+                'high_wagering_std': list_2s_metric_std[0],
+                'low_wagering_std': list_2s_metric_std[1],
+                'meta': setting >= 3,  # settings 3-6 use meta=True
+                'cascade_type': [4, 2, 4, 2, 3, 1][setting-1],  # Map setting to cascade type
+                'hidden_first': default_hidden_first*factor,
+                'hidden_second': default_hidden_second*factor_second
+            }
+            
+            # Save individual experiment details
+            log_filename = f'AGL_experiment_factor_{factor}_secondary_{factor_second}_setting_{setting}.csv'
+            with open(log_filename, mode='w', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow(experiment_log.keys())  # Header
+                writer.writerow([convert_arrays_to_lists(val) if isinstance(val, (list, np.ndarray)) 
+                                else val for val in experiment_log.values()])  # Values
+            
+            print(f"Completed experiment with setting {setting}, primary factor {factor} and secondary factor {factor_second}")
+    
+    # Save results for this setting
+    setting_data = {
+        'scaling_factors': scaling_factors,
+        'factors_second': factors_second,
+        'high_consciousness_data': convert_arrays_to_lists(high_consciousness_data),
+        'low_consciousness_data': convert_arrays_to_lists(low_consciousness_data),
+        'high_wagering_data': convert_arrays_to_lists(high_wagering_data),
+        'low_wagering_data': convert_arrays_to_lists(low_wagering_data),
+        'high_consciousness_std': convert_arrays_to_lists(high_consciousness_std),
+        'low_consciousness_std': convert_arrays_to_lists(low_consciousness_std),
+        'high_wagering_std': convert_arrays_to_lists(high_wagering_std),
+        'low_wagering_std': convert_arrays_to_lists(low_wagering_std),
+        'setting': setting
+    }
+    
+    # Save setting results to CSV
+    log_filename = f'AGL_scaling_plot_data_setting_{setting}.csv'
+    with open(log_filename, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(setting_data.keys())  # Header
+        writer.writerow([convert_arrays_to_lists(val) if isinstance(val, (list, np.ndarray)) 
+                        else val for val in setting_data.values()])  # Values
+    
+    print(f"Setting {setting} data saved to '{log_filename}'.")
+    
+    return high_consciousness_data, low_consciousness_data, high_wagering_data, low_wagering_data, high_consciousness_std, low_consciousness_std, high_wagering_std, low_wagering_std
+
+
+def plot_scaling_consciousness(scaling_factors, all_data, factors_second, settings, consciousness_level, data_type="task", std_data=None):
+    """
+    Create a plot with 6 subplots showing performance across settings for specified consciousness level
+    
+    Args:
+        scaling_factors: List of primary scaling factors (x-axis)
+        all_data: Dictionary where keys are settings (1-6) and values are nested lists of performance values
+        factors_second: List of secondary factor values (for legend)
+        settings: List of settings to plot (1-6)
+        consciousness_level: String indicating "high" or "low" consciousness level
+        data_type: String indicating "task" or "wagering" performance
+        std_data: Dictionary with same structure as all_data, containing standard deviation values
+    """
+    # Create figure with 6 subplots (2 columns, 3 rows)
+    fig, axs = plt.subplots(3, 2, figsize=(16, 18), sharex=True, sharey=True)
+    axs = axs.flatten()  # Flatten the 2D array of axes for easier indexing
+    
+    colors = plt.cm.viridis(np.linspace(0, 1, len(factors_second)))
+    
+    # Determine title components based on params
+    consciousness_text = "High Consciousness" if consciousness_level.lower() == "high" else "Low Consciousness"
+    performance_text = "Task Performance" if data_type.lower() == "task" else "Wagering Performance"
+    
+    # For each setting (1-6)
+    for setting_idx, setting in enumerate(settings):
+        ax = axs[setting_idx]
+        
+        # Get data for this setting
+        setting_data = all_data.get(setting, [[] for _ in range(len(factors_second))])
+        
+        # Get standard deviation data for this setting if available
+        setting_std_data = None
+        if std_data is not None:
+            setting_std_data = std_data.get(setting, [[] for _ in range(len(factors_second))])
+        
+        # Plot each secondary factor line
+        for i, factor_second in enumerate(factors_second):
+            # For data with nested lists, compute means first
+            if setting_data[i] and isinstance(setting_data[i][0], list):
+                # Calculate means for each scaling factor
+                mean_data = []
+                for scale_idx in range(len(scaling_factors)):
+                    # For each scaling factor, get all trial values
+                    trials = []
+                    if scale_idx < len(setting_data[i]):
+                        trials = setting_data[i][scale_idx]
+                    # Calculate mean for this scaling factor
+                    if trials:
+                        mean_data.append(sum(trials) / len(trials))
+                    else:
+                        mean_data.append(0)  # Handle empty data
+                plot_data = mean_data
+            else:
+                # Data already in correct format
+                plot_data = setting_data[i]
+            
+            # Plot the main line
+            ax.plot(
+                scaling_factors, 
+                plot_data,
+                marker='o',
+                linestyle='-',
+                color=colors[i],
+                label=f'Factor = {factor_second}'
+            )
+            
+            # Add standard deviation bands if available
+            if setting_std_data is not None and len(setting_std_data[i]) > 0:
+                # Check if std data is a list or a single value
+                if isinstance(setting_std_data[i], (int, float)):
+                    # Use the same std for all points
+                    std_values = [setting_std_data[i]] * len(plot_data)
+                else:
+                    # Use the provided std values
+                    std_values = setting_std_data[i]
+                
+                # Calculate upper and lower bounds
+                upper_bound = [d + s for d, s in zip(plot_data, std_values)]
+                lower_bound = [d - s for d, s in zip(plot_data, std_values)]
+                
+                # Plot the filled area between upper and lower bounds
+                ax.fill_between(
+                    scaling_factors,
+                    lower_bound,
+                    upper_bound,
+                    color=colors[i],
+                    alpha=0.2  # Transparency
+                )
+        
+        # Use log scale for x-axis if there are multiple scaling factors with wide range
+        if len(scaling_factors) > 2 and max(scaling_factors) / min(scaling_factors) > 10:
+            ax.set_xscale('log', base=2)
+        
+        ax.set_title(f'Setting {setting}')
+        ax.grid(True, alpha=0.3)
+        
+        # Add setting-specific descriptions
+        setting_descriptions = {
+            1: "No 2nd-net, baseline",
+            2: "No 2nd-net, cascade",
+            3: "2nd-net, no cascade",
+            4: "2nd-net, cascade 1st",
+            5: "2nd-net, cascade 2nd",
+            6: "2nd-net, cascade both"
+        }
+        
+        ax.text(0.05, 0.95, setting_descriptions.get(setting, ""), transform=ax.transAxes,
+                fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    # Add common labels for all subplots
+    fig.text(0.5, 0.08, 'Primary Scaling Factor', ha='center', fontsize=14)
+    fig.text(0.08, 0.5, f'{performance_text} ({consciousness_text})', va='center', rotation='vertical', fontsize=14)
+    
+    # Add a single legend for the entire figure
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98),
+               ncol=len(factors_second), fontsize=12, frameon=True)
+    
+    plt.tight_layout(rect=[0.1, 0.1, 0.9, 0.92])  # Adjust layout to make room for common labels
+    
+    # Add overall title
+    plt.suptitle(f'AGL {performance_text} ({consciousness_text}) by Scaling Factor Across Settings', fontsize=16, y=0.995)
+    
+    # Create filename based on parameters
+    consciousness_filename = "high" if consciousness_level.lower() == "high" else "low"
+    performance_filename = "task" if data_type.lower() == "task" else "wagering"
+    
+    # Save the plot
+    filename = f'AGL_{consciousness_filename}_{performance_filename}_performance.png'
+    plt.savefig(filename, dpi=300)
+    plt.show()
+    plt.close(fig)
+    print(f"{consciousness_text} {performance_text} plot saved as '{filename}'.")
+    
+    
+def load_setting_data_from_csv(setting):
+    """
+    Load experiment data for a specific setting from CSV file
+    Returns a dictionary with the loaded data
+    """
+    filename = f'AGL_scaling_plot_data_setting_{setting}.csv'
+    
+    if not os.path.exists(filename):
+        print(f"Warning: File {filename} not found")
+        return None
+    
+    with open(filename, mode='r', newline='') as file:
+        reader = csv.reader(file)
+        keys = next(reader)  # Read header row
+        values = next(reader)  # Read data row
+        
+        # Convert string representations back to Python objects
+        data = {}
+        for i, key in enumerate(keys):
+            try:
+                # Parse string representations of lists back to actual lists
+                if key in ['scaling_factors', 'factors_second', 'setting']:
+                    data[key] = ast.literal_eval(values[i])
+                else:
+                    # For the nested data structures
+                    data[key] = ast.literal_eval(values[i])
+            except (SyntaxError, ValueError) as e:
+                print(f"Error parsing {key}: {e}")
+                data[key] = values[i]  # Keep as string if parsing fails
+    
+    return data
+
+
 def main():
     """
     Main function to run experiments on artificial grammar learning (AGL) with metacognitive networks.
@@ -2077,8 +2425,7 @@ def main():
     num_iterations = 1  # Number of training runs per configuration
 
     # Seeds for experiments
-    seeds_scaling = 3  # For scaling experiments
-    seeds_violin = 30  # For violin plot experiments (30*15 (number of different trained networks per iteration) = 450 total runs) 
+    seeds_violin = 45  # For violin plot experiments (45*10 (number of different trained networks per iteration) = 450 total runs) 
 
     # Cascade parameters
     cascade_mode = 0.02  # Cascade rate when enabled (smaller values mean more iterations)
@@ -2091,8 +2438,7 @@ def main():
     hyperparameters = list(product(hidden_sizes, factors, gelus, step_sizes, gammas, metalayers))
     
     # Experiment control flags
-    Training = True
-    Scaling = False
+    Training = False
   
     # Cascade types explanation:
     # cascade type 1: Both 1st and 2nd order networks use cascade mode
@@ -2105,27 +2451,27 @@ def main():
         
         # Run 1: Baseline - No metacognition, no cascade model (type 4)
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data2, list_violin_1st_no_meta, list_violin_2nd_no_meta = train(
-            40, 1, False, 1, 0.999, False, cascade_off, seeds_violin, 4)
+            40, 48, 1, False, 1, 0.999, False, cascade_off, seeds_violin, 4)
 
         # Run 2: No metacognition, with cascade model on 1st-Net only (type 2)
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data2, list_violin_1st_no_meta_conf2, list_violin_2nd_no_meta_conf2 = train(
-            40, 1, False, 1, 0.999, False, cascade_mode, seeds_violin, 2)
+            40,48, 1, False, 1, 0.999, False, cascade_mode, seeds_violin, 2)
 
         # Run 3: With metacognition, no cascade model (type 4)
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data3, list_violin_1st_cascade_conf3, list_violin_2nd_cascade_conf3 = train(
-            40, 1, False, 1, 0.999, True, cascade_off, seeds_violin, 4)
+            40, 48,1, False, 1, 0.999, True, cascade_off, seeds_violin, 4)
 
         # Run 4: With metacognition, cascade model on 1st-Net only (type 2)
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data3, list_violin_1st_cascade_conf4, list_violin_2nd_cascade_conf4 = train(
-            40, 1, False, 1, 0.999, True, cascade_mode, seeds_violin, 2)
+            40, 48,1, False, 1, 0.999, True, cascade_mode, seeds_violin, 2)
 
         # Run 5: With metacognition, cascade model on 2nd-Net only (type 3)
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data3, list_violin_1st_cascade_conf5, list_violin_2nd_cascade_conf5 = train(
-            40, 1, False, 1, 0.999, True, cascade_mode, seeds_violin, 3)
+            40, 48,  1, False, 1, 0.999, True, cascade_mode, seeds_violin, 3)
 
         # Run 6: With metacognition, cascade model on both networks (type 1) - full model
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data3, list_violin_1st_cascade, list_violin_2nd_cascade = train(
-            40, 1, False, 1, 0.999, True, cascade_mode, seeds_violin, 1)
+            40,48, 1, False, 1, 0.999, True, cascade_mode, seeds_violin, 1)
 
         # Prepare data for CSV logging and violin plots
         # Each row contains results for a different metric across all experimental conditions
@@ -2167,15 +2513,96 @@ def main():
 
         print("Variables saved to 'AGL_violin_plot_logs_conference.csv'.")
       
-    # Load the saved experimental data
-    violin_data = load_violin_data_from_csv('AGL_violin_plot_logs_conference.csv')
+        # Load the saved experimental data
+        violin_data = load_violin_data_from_csv('AGL_violin_plot_logs_conference.csv')
 
-    # Generate violin plots for each metric across all experimental conditions
-    for data in violin_data:
-        title, list1, list2, list3, list4, list5, list6 = data
-        plot_violin_conference(list1, list2, list3, list4, list5, list6, title, 1)
+        # Generate violin plots for each metric across all experimental conditions
+        for data in violin_data:
+            title, list1, list2, list3, list4, list5, list6 = data
+            plot_violin_conference(list1, list2, list3, list4, list5, list6, title, 1)
 
-    #SCALING CODE WAS REMOVED TEMPORARILY AS THE EXPERIMENTS ARE NOT AVAILABLE IN THE PAPER 
+
+    # Configuration
+    default_hidden_first = 40
+    default_hidden_second = 48
+    scaling_factors = [1, 2, 3, 5, 10,  15, 25, 50, 100]
+    factors_second = [0.1, 0.2 , 0.5, 1.0, 2.0]
+    seeds_scaling = 10  # Number of seeds for scaling experiments
+    
+    
+    # Dictionary to store results for all settings
+    all_high_consciousness_data = {}
+    all_low_consciousness_data = {}
+    all_high_wagering_data = {}
+    all_low_wagering_data = {}
+    all_high_consciousness_std = {}
+    all_low_consciousness_std = {}
+    all_high_wagering_std = {}
+    all_low_wagering_std = {}
+    
+    scaling=True
+    
+    load_data=False
+    
+    if scaling:
+      # Run experiments for all 6 settings
+      for setting in range(1, 7):
+        
+          if load_data==True:
+            print(f"Loading data for setting {setting}")
+            # Load data from CSV
+            setting_data = load_setting_data_from_csv(setting)
+                       # Store data in respective dictionaries
+            all_high_consciousness_data[setting] = setting_data['high_consciousness_data']
+            all_low_consciousness_data[setting] = setting_data['low_consciousness_data']
+            all_high_wagering_data[setting] = setting_data['high_wagering_data']
+            all_low_wagering_data[setting] = setting_data['low_wagering_data']
+            all_high_consciousness_std[setting] = setting_data['high_consciousness_std']
+            all_low_consciousness_std[setting] = setting_data['low_consciousness_std']
+            all_high_wagering_std[setting] = setting_data['high_wagering_std']
+            all_low_wagering_std[setting] = setting_data['low_wagering_std']
+                        
+          else:
+            
+            print(f"Starting experiments for setting {setting}")
+            
+            high_consciousness, low_consciousness, high_wagering, low_wagering, \
+            high_consciousness_std, low_consciousness_std, high_wagering_std, low_wagering_std = run_setting_experiment(
+                setting, scaling_factors, factors_second, default_hidden_first, 
+                default_hidden_second, seeds_scaling, cascade_off, cascade_mode
+            )
+          
+            # Store results
+            all_high_consciousness_data[setting] = high_consciousness
+            all_low_consciousness_data[setting] = low_consciousness
+            all_high_wagering_data[setting] = high_wagering
+            all_low_wagering_data[setting] = low_wagering
+            all_high_consciousness_std[setting] = high_consciousness_std
+            all_low_consciousness_std[setting] = low_consciousness_std
+            all_high_wagering_std[setting] = high_wagering_std
+            all_low_wagering_std[setting] = low_wagering_std
+      
+      # Create plots for high consciousness task performance
+      plot_scaling_consciousness(
+          scaling_factors,
+          all_high_consciousness_data,
+          factors_second,
+          list(range(1, 7)),  # Settings 1-6
+          consciousness_level="high",
+          data_type="task",
+          std_data=all_high_consciousness_std
+      )
+      
+      # Create plots for low consciousness task performance
+      plot_scaling_consciousness(
+          scaling_factors,
+          all_low_consciousness_data,
+          factors_second,
+          list(range(1, 7)),  # Settings 1-6
+          consciousness_level="low",
+          data_type="task",
+          std_data=all_low_consciousness_std
+      )
     
 # Execute the main function
 main()
