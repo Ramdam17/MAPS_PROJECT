@@ -39,7 +39,7 @@ import torch_optimizer as optim2
 # # DEVICE CONFIGURATION
 
 # %%
-device = torch.device('cpu' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # %% [markdown]
 # #CONTRACTIVE LOSS
