@@ -382,6 +382,10 @@ def AC_lambda(env, output_file_name, store_intermediate_result=False, load_path=
         
         elif e % CHECKPOINT_ITERATION == 0:
             # Log regular training metrics (non-validation episodes)
+            print("Episode " + str(e) + " | Return: " + str(G) + " | Avg return: " +
+                     str(numpy.around(avg_return, 2)) + " | Frame: " + str(t) + " | Time per frame: " +
+                     str((time.time()-t_start)/t))
+            
             logging.info("Episode " + str(e) + " | Return: " + str(G) + " | Avg return: " +
                      str(numpy.around(avg_return, 2)) + " | Frame: " + str(t) + " | Time per frame: " +
                      str((time.time()-t_start)/t))
@@ -411,6 +415,8 @@ def main():
     parser.add_argument("--alpha", "-a", type=float, default=ALPHA)
     parser.add_argument("--save", "-s", action="store_true")
     parser.add_argument("--steps", "-steps", type=int)
+    parser.add_argument("--seed", "-seed", type=str)
+
 
     args = parser.parse_args()
 
@@ -436,7 +442,7 @@ def main():
     if args.output:
         file_name = args.output
     else:
-        file_name = os.getcwd() + "/" + args.game
+        file_name = os.getcwd() + "/" + args.game + '_setting7'  + '_steps' + str(NUM_FRAMES) +'_' + args.seed
 
     load_file_path = None
     if args.loadfile:
