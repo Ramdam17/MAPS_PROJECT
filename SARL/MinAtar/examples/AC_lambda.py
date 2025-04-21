@@ -1,21 +1,3 @@
-################################################################################################################
-# Authors:                                                                                                     #
-# Kenny Young (kjyoung@ualberta.ca)                                                                            #
-# Tian Tian (ttian@ualberta.ca)                                                                                #
-#                                                                                                              #
-# python3 AC_lambda.py -g <game>                                                                               #
-#   -o, --output <directory/file name prefix>                                                                  #
-#   -v, --verbose: outputs the average returns every 1000 episodes                                             #
-#   -l, --loadfile <directory/file name of the saved model>                                                    #
-#   -a, --alpha <number>: custom step-size parameter                                                           #
-#   -s, --save: save model data every 1000 episodes                                                            #                                                              #
-#                                                                                                              #
-# References used for this implementation:                                                                     #
-#   https://pytorch.org/docs/stable/nn.html#                                                                   #
-#   https://pytorch.org/docs/stable/torch.html                                                                 #
-#   https://pytorch.org/tutorials/intermediate/reinforcement_q_learning.html                                   #
-################################################################################################################
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
@@ -31,7 +13,6 @@ from minatar import Environment
 # Constants
 #
 #####################################################################################################################
-NUM_FRAMES = 5000000
 ALPHA = 0.00048828125
 LAMBDA = 0.8
 GAMMA = 0.99
@@ -184,7 +165,9 @@ def train(sample, traces, grads, MSGs, network, alpha, time_step):
 
             # Update uses RMSProp with initialization debiasing
             for param, trace, MSG in zip(network.parameters(), traces, MSGs):
-                grad = trace*delta[0]+BETA*param.grad
+                # Check if param.grad is None and use 0 in that case
+                param_grad = 0 if param.grad is None else param.grad
+                grad = trace*delta[0]+BETA*param_grad
                 MSG.copy_(GAMMA_RMS*MSG+(1-GAMMA_RMS)*grad*grad)
                 param.copy_(param+alpha*grad/(torch.sqrt(MSG/(1-GAMMA_RMS**(time_step+1))+EPS_RMS)))
 
@@ -193,7 +176,54 @@ def train(sample, traces, grads, MSGs, network, alpha, time_step):
         for grad, trace in zip(grads, traces):
             trace.copy_(LAMBDA*GAMMA*trace+grad)
 
-
+#####################################################################################################################
+# validation
+#
+# Evaluates the agent's performance on a set of validation episodes.
+#
+# Inputs:
+#   env: environment of the game
+#   network: an instance of ACNetwork to evaluate
+#   num_episodes: number of episodes to run for validation
+#
+# Output: average return across all validation episodes
+#
+#####################################################################################################################
+def validation(env, network, num_episodes):
+    # Set network to evaluation mode
+    network.eval()
+    
+    validation_returns = []
+    
+    for _ in range(num_episodes):
+        # Initialize environment and state
+        env.reset()
+        s = get_state(env.state())
+        G = 0.0
+        is_terminated = False
+        
+        # Run until episode terminates
+        while not is_terminated:
+            # Get action based on policy
+            with torch.no_grad():
+                action = torch.multinomial(network(s)[0], 1)[0]
+            
+            # Execute action
+            reward, is_terminated = env.act(action)
+            
+            # Update return and state
+            G += reward
+            if not is_terminated:
+                s = get_state(env.state())
+        
+        # Store episode return
+        validation_returns.append(G)
+    
+    # Set network back to training mode
+    network.train()
+    
+    # Return average validation return
+    return numpy.mean(validation_returns), numpy.std(validation_returns)
 
 #####################################################################################################################
 # AC_lambda
@@ -235,7 +265,13 @@ def AC_lambda(env, output_file_name, store_intermediate_result=False, load_path=
     t = 0
     avg_return = 0.0
     returns = []
-    frame_stamps= []
+    frame_stamps = []
+    
+    # New validation metrics storage
+    validation_returns = []
+    validation_frames = []
+    validation_episodes = []
+    validation_returns_std = []
 
     # Load model and optimizer if load_path is not None
     if load_path is not None and isinstance(load_path, str):
@@ -246,6 +282,13 @@ def AC_lambda(env, output_file_name, store_intermediate_result=False, load_path=
         avg_return = checkpoint['avg_return']
         returns = checkpoint['returns']
         frame_stamps = checkpoint['frame_stamps']
+        
+        # Load validation metrics if available
+        if 'validation_returns' in checkpoint:
+            validation_returns = checkpoint['validation_returns']
+            validation_frames = checkpoint['validation_frames']
+            validation_episodes = checkpoint['validation_episodes']
+            validation_returns_std = checkpoint['validation_returns_std']
 
         # Set to training mode
         network.train()
@@ -291,38 +334,71 @@ def AC_lambda(env, output_file_name, store_intermediate_result=False, load_path=
         for trace in traces:
             trace.zero_()
 
-
         # Save the return for each episode
         returns.append(G)
         frame_stamps.append(t)
 
-        # Logging exponentiated return only when verbose is turned on and only at 1000 episode intervals
+        # Logging exponentiated return only when verbose is turned on and only at 100 episode intervals
         avg_return = 0.99 * avg_return + 0.01 * G
-        if e % 1000 == 0:
+        
+        # Run validation every 100 episodes
+        if e % CHECKPOINT_ITERATION == 0:
+            # Run validation episodes
+            val_reward, val_reward_std = validation(env, network, VALIDATION_ITERATIONS)
+            
+            # Store validation metrics
+            validation_returns.append(val_reward)
+            validation_returns_std.append(val_reward_std)
+            validation_frames.append(t)
+            validation_episodes.append(e)
+            
+            # Log training and validation metrics
+            print("Episode " + str(e) + " | Return: " + str(G) + " | Avg return: " +
+                     str(numpy.around(avg_return, 2)) + " | Val return: " +
+                     str(numpy.around(val_reward, 2)) +
+                     " | Frame: " + str(t) + " | Time per frame: " +
+                     str((time.time()-t_start)/t))
+            
             logging.info("Episode " + str(e) + " | Return: " + str(G) + " | Avg return: " +
-                         str(numpy.around(avg_return, 2)) + " | Frame: " + str(t)+" | Time per frame: " +
-                         str((time.time()-t_start)/t) )
-
-        # Save model data and other intermediate data if specified
-        if store_intermediate_result and e % 1000 == 0:
-            torch.save({
-                        'episode': e,
-                        'frame': t,
-                        'network_state_dict': network.state_dict(),
-                        'avg_return': avg_return,
-                        'returns': returns,
-                        'frame_stamps': frame_stamps,
-            }, output_file_name + "_checkpoint")
+                     str(numpy.around(avg_return, 2)) + " | Val return: " +
+                     str(numpy.around(val_reward, 2))  +
+                     " | Frame: " + str(t) + " | Time per frame: " +
+                     str((time.time()-t_start)/t))
+            
+            # Save model data and other intermediate data if specified
+            if store_intermediate_result:
+                torch.save({
+                    'episode': e,
+                    'frame': t,
+                    'network_state_dict': network.state_dict(),
+                    'avg_return': avg_return,
+                    'returns': returns,
+                    'frame_stamps': frame_stamps,
+                    'validation_returns': validation_returns,
+                    'validation_returns_std': validation_returns_std,
+                    'validation_frames': validation_frames,
+                    'validation_episodes': validation_episodes,
+                }, output_file_name + "_checkpoint")
+        
+        elif e % CHECKPOINT_ITERATION == 0:
+            # Log regular training metrics (non-validation episodes)
+            logging.info("Episode " + str(e) + " | Return: " + str(G) + " | Avg return: " +
+                     str(numpy.around(avg_return, 2)) + " | Frame: " + str(t) + " | Time per frame: " +
+                     str((time.time()-t_start)/t))
 
     # Print final logging info
     logging.info("Avg return: " + str(numpy.around(avg_return, 2)) + " | Time per frame: " +
-                 str((time.time()-t_start)/t) )
+                 str((time.time()-t_start)/t))
         
     # Write data to file
     torch.save({
         'returns': returns,
-        'frame_stamps': frame_stamps,
-        'network_state_dict': network.state_dict()
+        'unique_frames': frame_stamps,
+        'network_state_dict': network.state_dict(),
+        'returns_validation': validation_returns,
+        'validation_returns_std': validation_returns_std,
+        'unique_frames_validation': validation_frames,
+        'validation_episodes': validation_episodes,
     }, output_file_name + "_data_and_weights")
 
 
@@ -334,7 +410,23 @@ def main():
     parser.add_argument("--loadfile", "-l", type=str)
     parser.add_argument("--alpha", "-a", type=float, default=ALPHA)
     parser.add_argument("--save", "-s", action="store_true")
+    parser.add_argument("--steps", "-steps", type=int)
+
     args = parser.parse_args()
+
+    global NUM_FRAMES, VALIDATION_ITERATIONS, CHECKPOINT_ITERATION
+    
+    if args.game== 'freeway':
+        CHECKPOINT_ITERATION = 15
+        VALIDATION_ITERATIONS=2
+    else:
+        CHECKPOINT_ITERATION=600
+        VALIDATION_ITERATIONS=2
+
+    NUM_FRAMES = args.steps
+    print("number of steps to run is", NUM_FRAMES)
+    print("iterations before a checkpoint:", CHECKPOINT_ITERATION)
+    print("validation iterations per checkpoint:", VALIDATION_ITERATIONS)
 
     if args.verbose:
         logging.basicConfig(level=logging.INFO)
@@ -358,5 +450,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-

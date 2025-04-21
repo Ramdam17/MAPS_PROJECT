@@ -1125,7 +1125,7 @@ def dqn(env, replay_off, target_off, output_file_name, meta, alpha, cascade_iter
         # Standard parameters for other environments
         TARGET_NETWORK_UPDATE_FREQ = 500
         checkpoint_iteration = 600
-        validation_iterations = 2
+        validation_iterations = 80
     
     # Special parameters for curriculum evaluation mode
     if curriculum_evaluation:
@@ -2057,9 +2057,22 @@ def process_data(num_runs, file_name, window_size, window_size_validation, setti
         #print(data_and_weights['frame_stamps'][-1], len(data_and_weights['frame_stamps']))
 
         returns = data_and_weights['returns']
-        frame_stamps = data_and_weights['frame_stamps']
-        returns_validation = data_and_weights['validation_returns']
-        frame_stamps_validation = data_and_weights['validation_frame_stamps']
+        
+        try:
+            frame_stamps = data_and_weights['frame_stamps']
+            frame_stamps_validation = data_and_weights['validation_frame_stamps']
+            returns_validation = data_and_weights['validation_returns']
+
+
+        except KeyError:
+            # If frame_stamps doesn't exist, use unique_frames instead
+            frame_stamps = data_and_weights['unique_frames']
+            frame_stamps_validation = data_and_weights['unique_frames_validation']
+            returns_validation = data_and_weights['returns_validation']
+
+
+            print("Using 'unique_frames' as fallback since 'frame_stamps' was not found")
+    
 
         returns_runs_episodes.append(returns)
         frame_stamps_runs_episodes.append(frame_stamps)
@@ -2092,7 +2105,8 @@ def plot_avg_return(file_name, granularity, granularity_validation, setting, gam
         'setting3': '2nd Order Net\n(cascade, 2nd Net)',
         'setting4': 'MAPS* - 2nd Order\n(cascade, both Nets)',
         'setting5': 'Baseline* - DQN',
-        'setting6': 'DQN\n(cascade)'
+        'setting6': 'DQN\n(cascade)',
+        'setting7': 'Actor Critic\n Baseline'
     }
     
     setting_label = dictionary_settings[setting]
@@ -2224,10 +2238,10 @@ def z_score_results(returns_dict, label):
     return table_data
 
 def plot(filename):
-    #base_games = ["breakout", "space_invaders",  "seaquest"]
-    base_games = ["seaquest","asterix"]
+    #base_games = ["breakout", "space_invaders",  "seaquest","asterix","freeway"]
+    base_games = ["breakout"]
 
-    settings = ['setting1', 'setting2', 'setting3', 'setting4', 'setting5','setting6']
+    settings = ['setting1', 'setting2', 'setting3', 'setting4', 'setting5','setting6','setting7']
     #settings = ['setting1', 'setting5']
     
     # Global parameters
@@ -2246,7 +2260,9 @@ def plot(filename):
         'setting3': '2nd Order Net (cascade, 2nd Net)',
         'setting4': '2nd Order Net (cascade, both Nets)',
         'setting5': 'baseline DQN',
-        'setting6': 'baseline DQN (cascade)'
+        'setting6': 'baseline DQN (cascade)',
+        'setting7': 'Actor Critic Baseline'
+
     }
     
     # Create figure with gridspec to have a separate area for the legend
