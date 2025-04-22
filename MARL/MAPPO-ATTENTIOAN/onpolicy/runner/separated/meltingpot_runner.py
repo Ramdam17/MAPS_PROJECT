@@ -86,9 +86,10 @@ class MeltingpotRunner(Runner):
         episodes = int(self.num_episodes) 
 
         print('num episodes to run (separated):', episodes)
+        
+        print("using meta ", self.all_args.meta, " cascade 1st ", self.all_args.cascade_iterations1, " cascade 2nd ", self.all_args.cascade_iterations2)
 
         total_num_steps = 0
-        print( "using meta parameter: ", self.all_args.meta)
 
         for episode in range(episodes):
             self.envs.reset()

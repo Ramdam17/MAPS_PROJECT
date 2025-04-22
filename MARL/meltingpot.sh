@@ -1,8 +1,8 @@
 #!/bin/bash
-#EXAMPLE: 
-#./meltingpot.sh HARVEST 1 LSTM 64 1 1 META SWATS 1111
-#./meltingpot.sh TERRITORY_I 10 LSTM 100 1 1 META ADAM 101 1 True 0
-#./meltingpot.sh TERRITORY_I 10 LSTM 100 1 1 META ADAM 102 1 False 0
+#EXAMPLE using 2nd-net 
+#./meltingpot.sh TERRITORY_R 1 LSTM 64 1 1 ADAM 100 1 3
+#EXAMPLE using baseline 
+#./meltingpot.sh TERRITORY_R 1 LSTM 64 1 1 ADAM 100 1 1
 
 #pip install omegaconf ignite pytorch-ignite torchvision scikit-learn pytorch_lightning timm
 
@@ -13,20 +13,13 @@ module=${3:-default_module}
 hidden=${4:-default_hidden}
 units=${5:-default_units}
 topk=${6:-default_topk}
-skill=${7:-default_skill}
-optimizer=${8:-default_optimizer}
-run=${9:-default_run}
-rollout=${10:-default_rollout}
-meta=${11:-META_PARAMETER}
-combination=${12:-GRID_SEARCH}
-
-# Define hyperparameters
-entropy_coeffs=(0.006 0.006 0.006 0.02 0.02 0.02 0.01 0.01 0.01)
-lr_actors=(0.00009 0.00009 0.00002 0.00009 0.00009 0.00002 0.00009 0.00009 0.00002)
-lr_critics=(0.0001 0.00009 0.00002 0.0001 0.00009 0.00002 0.0001 0.00009 0.00002)
+optimizer=${7:-default_optimizer}
+run=${8:-default_run}
+rollout=${9:-default_rollout}
+setting=${10:-SETTING_NUMBER}
 
 #CHANGE THIS TO YOUR DIRECTORY,  /$local_repo_directory/MARL
-general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/CODES"
+general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thyself/MAPS_PROJECT/MARL"
 
 repo=$general_dir/MAPPO-ATTENTIOAN
 
@@ -46,7 +39,8 @@ export CUDA_HOME=/cvmfs/soft.computecanada.ca/easybuild/software/2023/x86-64-v3/
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 export XLA_FLAGS=--xla_gpu_cuda_data_dir=$CUDA_HOME
 
-
+env_steps=1000000
+episodes=1000
 
 # Set agents and substrate name based on the environment
 case "$environment" in
@@ -356,7 +350,6 @@ echo "Module: $module"
 echo "Hidden: $hidden"
 echo "Modules: $units"
 echo "Topk: $topk"
-echo "using: $skill"
 echo "Optimizer: $optimizer"
 echo "Run number: $run"
 
@@ -377,178 +370,47 @@ if ["$substrate" = "allelopathic_harvest__open" | "$substrate"="rationalizable_c
 
     echo "fixed len substrate"
 
-elif ["$skill"!="SLOT"] && ["$skill"!="SLOT2"] && ["$skill"!="SLOT3"]&& ["$skill"!="LSTM"]; then
-
-    echo "variable len substrate"
-
-    episode_length=1000
-
 fi
 
 
+if ls $repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models/*.pt 1> /dev/null 2>&1; then
+    echo "Pre-trained Model exists"
+    load_model=True
+    path_dir=$repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models
+else
+    echo "Pre-trained Model does not exist"
+    load_model="False"
+    path_dir=None
+fi
+
+echo "$meta"
 
 
 
-for (( index=combination-1; index<${#entropy_coeffs[@]}; index++ )); do
-
-    entropy=${entropy_coeffs[$index]}
-    lr_actor=${lr_actors[$index]}
-    lr_critic=${lr_critics[$index]}
-    echo "the current combination is $index , entropy is $entropy , lr_actor is $lr_actor, lr_critic is $lr_critic, run num is $run"
-    env_steps=1000000
-    episodes=1000
-
-
-    if [ "$skill" = "SKILLS" ]; then
-        echo "Using skill"
-        # Execute the program based on the module
-        if [ "$module" = "RIM" ]; then
-            echo "Executing program for RIM"
-            CUDA_VISIBLE_DEVICES=0,1 python $repo/onpolicy/scripts/train/train_meltingpot.py --bottom_up_form_num_of_objects ${bottom} --sup_attention_num_keypoints ${sup} --rim_num_units ${units} --rim_topk ${topk} --use_valuenorm False --use_popart True --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --seed ${seed} --n_rollout_threads ${rollout} --use_wandb False --share_policy False --use_centralized_V False --use_attention True --use_naive_recurrent_policy False --use_recurrent_policy False --hidden_size ${hidden} --use_gae True --episode_length ${episode_length} --attention_module ${module} --algorithm_name mappo --lr 0.00002 --max_grad_norm 0.2 --num_bands_positional_encoding 32 --skill_dim 128 --num_training_skill_dynamics 1 --entropy_coef 0.004 --skill_discriminator_lr 0.00001 --coefficient_skill_return 0.005 > $general_dir/logs/${agents}_${substrate}_${environment}_${seed}_${module}_${hidden}_${units}_${skill}_${optimizer}_{$run}.log
-        elif [ "$module" = "SCOFF" ]; then
-            echo "Executing program for SCOFF"
-            CUDA_VISIBLE_DEVICES=0,1 python $repo/onpolicy/scripts/train/train_meltingpot.py --bottom_up_form_num_of_objects ${bottom} --sup_attention_num_keypoints ${sup} --scoff_num_units ${units} --scoff_topk ${topk} --use_valuenorm False --use_popart True --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --seed ${seed} --n_rollout_threads ${rollout} --use_wandb False --share_policy False --use_centralized_V False --use_attention True --use_naive_recurrent_policy False --use_recurrent_policy False --hidden_size ${hidden} --use_gae True --episode_length ${episode_length} --attention_module ${module} --algorithm_name mappo --lr 0.00002 --max_grad_norm 0.2 --num_bands_positional_encoding 32 --skill_dim 128 --num_training_skill_dynamics 1 --entropy_coef 0.004 --skill_discriminator_lr 0.00001 --coefficient_skill_return 0.005 > $general_dir/logs/${agents}_${substrate}_${environment}_${seed}_${module}_${hidden}_${units}_${skill}_${optimizer}_{$run}.log
-        elif [ "$module" = "LSTM" ]; then
-            echo "Executing program for LSTM"
-            CUDA_VISIBLE_DEVICES=0,1 python $repo/onpolicy/scripts/train/train_meltingpot.py --bottom_up_form_num_of_objects ${bottom} --sup_attention_num_keypoints ${sup} --use_valuenorm False --use_popart True --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --seed ${seed} --n_rollout_threads ${rollout} --use_wandb False --share_policy False --use_centralized_V False --use_attention False --use_naive_recurrent_policy True --use_recurrent_policy True --hidden_size ${hidden} --use_gae True --episode_length ${episode_length} --attention_module ${module} --algorithm_name mappo --lr 0.00002 --max_grad_norm 0.2 --num_bands_positional_encoding 32 --skill_dim 128 --num_training_skill_dynamics 1 --entropy_coef 0.004 --skill_discriminator_lr 0.00001 --coefficient_skill_return 0.005 > $general_dir/logs/${agents}_${substrate}_${environment}_${seed}_${module}_${hidden}_${units}_${skill}_${optimizer}_{$run}.log
-        else
-            echo "Module is neither RIM nor SCOFF, nor LSTM"
-        fi
-
-
-
-    elif ["$skill" = "META"] || ["$skill"= "SAF"] || ["$skill"= "SLOT"] || ["$skill"= "SLOT2"] || ["$skill"= "SLOT3"]|| ["$skill"= "LSTM"]; then
+CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py \
+    --setting "${setting}" \
+    --load_model ${load_model} \
+    --model_dir ${path_dir} \
+    --run_num ${run} \
+    --optimizer ${optimizer} \
+    --use_valuenorm False \
+    --use_popart True \
+    --env_name "Meltingpot" \
+    --experiment_name "check" \
+    --substrate_name "${substrate}" \
+    --num_agents ${agents} \
+    --seed ${seed} \
+    --n_rollout_threads ${rollout} \
+    --use_wandb False \
+    --share_policy False \
+    --use_centralized_V False \
+    --use_attention False \
+    --use_naive_recurrent_policy True \
+    --use_recurrent_policy True \
+    --hidden_size ${hidden} \
+    --use_gae True \
+    --episode_length ${episode_length} \
+    --attention_module ${module} \
+    --algorithm_name mappo
 
 
-        if [ "$skill" = "RNN" ]; then
-            echo "Executing rnn"
-        elif [ "$skill" = "META" ]; then
-            echo "Executing meta"
-        elif [ "$skill" = "SLOT" ]; then
-            echo "Executing slot"
-        elif [ "$skill" = "SLOT2" ]; then
-            echo "Executing slot2"
-        elif [ "$skill" = "LSTM" ]; then
-            echo "Executing LSTM repo"
-        else
-            echo "Executing saf"
-        fi
-        
-
-        if ls $repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models/*.pt 1> /dev/null 2>&1; then
-            echo "Pre-trained Model exists"
-            load_model=True
-            path_dir=$repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models
-        else
-            echo "Pre-trained Model does not exist"
-            load_model="False"
-            path_dir=None
-        fi
-
-        echo "$meta"
-        # Execute the program based on the module
-        if [ "$module" = "RIM" ]; then
-            echo "Executing program for RIM"
-            CUDA_VISIBLE_DEVICES=0,1 python $repo/onpolicy/scripts/train/train_meltingpot.py --load_model ${load_model} --model_dir ${path_dir}  --run_num ${run} --optimizer ${optimizer}  --rim_num_units ${units} --rim_topk ${topk} --use_valuenorm False --use_popart True --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --seed ${seed} --n_rollout_threads ${rollout} --use_wandb False --share_policy False --use_centralized_V False --use_attention True --use_naive_recurrent_policy False --use_recurrent_policy False --hidden_size ${hidden} --use_gae True --episode_length ${episode_length} --attention_module ${module} --algorithm_name mappo --lr 0.00002 --max_grad_norm 0.2 --entropy_coef 0.004 
-        elif [ "$module" = "SCOFF" ]; then
-            echo "Executing program for SCOFF"
-            CUDA_VISIBLE_DEVICES=0,1 python $repo/onpolicy/scripts/train/train_meltingpot.py --load_model ${load_model} --model_dir ${path_dir}  --run_num ${run} --optimizer ${optimizer}  --scoff_num_units ${units} --scoff_topk ${topk} --use_valuenorm False --use_popart True --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --seed ${seed} --n_rollout_threads ${rollout} --use_wandb False --share_policy False --use_centralized_V False --use_attention True --use_naive_recurrent_policy False --use_recurrent_policy False --hidden_size ${hidden} --use_gae True --episode_length ${episode_length} --attention_module ${module} --algorithm_name mappo --lr 0.00002 --max_grad_norm 0.2 --entropy_coef 0.004 
-        elif [ "$module" = "LSTM" ]; then
-            echo "Executing program for LSTM"
-            CUDA_VISIBLE_DEVICES=0,1 python $repo/onpolicy/scripts/train/train_meltingpot.py --meta "${meta}" --load_model ${load_model} --model_dir ${path_dir}  --run_num ${run} --optimizer ${optimizer}  --use_valuenorm False --use_popart True --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --seed ${seed} --n_rollout_threads ${rollout} --use_wandb False --share_policy False --use_centralized_V False --use_attention False --use_naive_recurrent_policy True --use_recurrent_policy True --hidden_size ${hidden} --use_gae True --episode_length ${episode_length} --attention_module ${module} --algorithm_name mappo --lr 0.00002 --max_grad_norm 0.2 --entropy_coef 0.004
-        else
-            echo "Module is neither RIM nor SCOFF, nor LSTM"
-        fi
-
-
-    elif [ "$skill" = "LORA" ]; then
-
-        echo "Using LORA"
-
-        if ls $repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models/*.pt 1> /dev/null 2>&1; then
-            echo "Pre-trained Model exists"
-            load_model=True
-            path_dir=$repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models
-        else
-            echo "Pre-trained Model does not exist"
-            load_model="False"
-            path_dir=None
-        fi
-
-
-        CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py --load_model ${load_model} --model_dir ${path_dir}  --run_num ${run} --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --n_rollout_threads ${rollout} --use_wandb False --hidden_size ${hidden} --episode_length ${episode_length}  --use_valuenorm False --use_popart True --seed 123 --lr $lr_actor --critic_lr $lr_critic --max_grad_norm 0.01  --share_policy False --use_centralized_V False --use_attention False --entropy_coef $entropy --entropy_final_coef 0.004 --attention_module "LSTM" --rim_num_units 1 --rim_topk 1 --downsample True --img_scale_factor 8 --world_img_scale_factor 8 --pretrain_slot_att False --slot_train_ep 200 --slot_pretrain_batch_size 200 --rnn_attention_module "LSTM" --slot_att_work_path $repo/onpolicy/scripts/results/slot_att/ --slot_att_load_model False --use_slot_att False --use_pos_encoding True --use_input_att True --use_com_att True --use_x_reshape True --slot_att_crop_repeat 2 --slot_log_fre 50 --collect_data False --no_train False --gain 0.01 --use_eval True --eval_episodes 1000 --eval_interval 100 --num_env_steps $env_steps > meltingpot_training_run_lora.log
-
-
-    elif [ "$skill" = "LORASHARED" ]; then
-
-        echo "Using LORA with shared policy"
-
-        if ls $repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models/*.pt 1> /dev/null 2>&1; then                    
-
-            echo "Pre-trained Model exists"
-            load_model=True
-            path_dir=$repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models
-        else
-            echo "Pre-trained Model does not exist"
-            load_model="False"
-            path_dir=None
-        fi
-
-
-        CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py --load_model ${load_model} --model_dir ${path_dir}  --run_num ${run} --optimizer ${optimizer} --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --use_wandb False --hidden_size ${hidden} --episode_length ${episode_length}  --use_valuenorm False --use_popart True --seed 123 --lr 0.00007 --critic_lr 0.00007 --max_grad_norm 0.01  --share_policy True --use_centralized_V False --use_attention True --entropy_coef 0.01 --entropy_final_coef 0.004 --attention_module RIM --rim_num_units 6 --rim_topk 4 --downsample True --img_scale_factor 8 --world_img_scale_factor 8 --pretrain_slot_att False --slot_train_ep 200 --slot_pretrain_batch_size 200 --rnn_attention_module LSTM --slot_att_work_path $repo/onpolicy/scripts/results/slot_att/ --slot_att_load_model False --use_slot_att False --use_pos_encoding False --use_input_att True --use_com_att True --use_x_reshape True --slot_att_crop_repeat 2 --slot_log_fre 50 --collect_data False --no_train False --gain 0.01 --use_eval True --eval_episodes 1000 --eval_interval 100 
-
-
-
-
-    elif [ "$skill" = "RNN" ]; then
-
-        echo "Using RNN"
-
-        if ls $repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models/*.pt 1> /dev/null 2>&1; then
-            echo "Pre-trained Model exists"
-            load_model=True
-            path_dir=$repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models
-        else
-            echo "Pre-trained Model does not exist"
-            load_model="False"
-            path_dir=None
-        fi
-
-        CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py --load_model ${load_model} --model_dir ${path_dir}  --run_num ${run} --optimizer ${optimizer} --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --n_rollout_threads ${rollout} --use_wandb False --hidden_size ${hidden} --episode_length ${episode_length}  --use_valuenorm False --use_popart True --seed ${seed} --lr $lr_actor --critic_lr $lr_critic --max_grad_norm 0.01  --share_policy False --use_centralized_V False --use_attention False --entropy_coef $entropy --entropy_final_coef 0.004 --attention_module RIM --rim_num_units 1 --rim_topk 1 --downsample True --rnn_attention_module LSTM --gain 0.01 --num_env_steps $env_steps --num_episodes $episodes
-
-
-    else
-
-        echo "Not using skill"
-
-        if ls $repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models/*.pt 1> /dev/null 2>&1; then
-            echo "Pre-trained Model exists"
-            load_model=True
-            path_dir=$repo/onpolicy/scripts/results/Meltingpot/collaborative_cooking__circuit_0/$substrate/mappo/check/run$run/models
-        else
-            echo "Pre-trained Model does not exist"
-            load_model="False"
-            path_dir=None
-        fi
-
-        echo "$meta"
-
-        # Execute the program based on the module
-        if [ "$module" = "RIM" ]; then
-            echo "Executing program for RIM"
-            CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py --load_model ${load_model} --model_dir ${path_dir}  --run_num ${run} --optimizer ${optimizer} --rim_num_units ${units} --rim_topk ${topk} --use_valuenorm False --use_popart True --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --seed ${seed} --n_rollout_threads ${rollout} --use_wandb False --share_policy False --use_centralized_V False --use_attention True --use_naive_recurrent_policy False --use_recurrent_policy False --hidden_size ${hidden} --use_gae True --episode_length ${episode_length} --attention_module ${module} --algorithm_name mappo 
-
-        elif [ "$module" = "SCOFF" ]; then
-            echo "Executing program for SCOFF"
-            CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py --load_model ${load_model} --model_dir ${path_dir} --run_num ${run} --optimizer ${optimizer} --scoff_num_units ${units} --scoff_topk ${topk} --use_valuenorm False --use_popart True --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --seed ${seed} --n_rollout_threads ${rollout} --use_wandb False --share_policy False --use_centralized_V False --use_attention True --use_naive_recurrent_policy False --use_recurrent_policy False --hidden_size ${hidden} --use_gae True --episode_length ${episode_length} --attention_module ${module} --algorithm_name mappo 
-        elif [ "$module" = "LSTM" ]; then
-            echo "Executing program for LSTM"
-            CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py --meta "${meta}" --load_model ${load_model} --model_dir ${path_dir} --run_num ${run} --optimizer ${optimizer} --use_valuenorm False --use_popart True --env_name "Meltingpot" --experiment_name "check" --substrate_name "${substrate}" --num_agents ${agents} --seed ${seed} --n_rollout_threads ${rollout} --use_wandb False --share_policy False --use_centralized_V False --use_attention False --use_naive_recurrent_policy True --use_recurrent_policy True --hidden_size ${hidden} --use_gae True --episode_length ${episode_length} --attention_module ${module} --algorithm_name mappo
-        else
-            echo "Module is neither RIM nor SCOFF, nor LSTM"
-        fi
-    fi
-
-    run=$((run + 1))
-
-done

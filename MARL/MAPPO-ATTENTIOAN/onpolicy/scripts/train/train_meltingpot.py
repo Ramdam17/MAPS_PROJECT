@@ -110,6 +110,37 @@ def main(args):
     parser = get_config()
     all_args = parse_args(args, parser)
 
+    if all_args.setting == 1:
+        all_args.meta == False
+        all_args.cascade_iterations1 = 1
+        all_args.cascade_iterations2 = 1
+        
+    elif all_args.setting == 2:
+        all_args.meta == False
+        all_args.cascade_iterations1 = 50
+        all_args.cascade_iterations2 = 1
+        
+    elif all_args.setting == 3:
+        all_args.meta == True
+        all_args.cascade_iterations1 = 1
+        all_args.cascade_iterations2 = 1
+        
+    elif all_args.setting == 4:
+        all_args.meta == True
+        all_args.cascade_iterations1 = 50
+        all_args.cascade_iterations2 = 1
+        
+    elif all_args.setting == 5:
+        all_args.meta == True
+        all_args.cascade_iterations1 = 1
+        all_args.cascade_iterations2 = 50
+        
+    elif all_args.setting == 6:
+        all_args.meta == True
+        all_args.cascade_iterations1 = 50
+        all_args.cascade_iterations2 = 50
+        
+        
     if all_args.algorithm_name == "rmappo":
         print("u are choosing to use rmappo, we set use_recurrent_policy to be True")
         all_args.use_recurrent_policy = True
