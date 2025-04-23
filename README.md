@@ -142,13 +142,23 @@ You can change TERRITORY_I for the corresponding environment. Please see the scr
 
 Our results demonstrate significant improvements using the MAPS architecture:
 
-1. **Blindsight and AGL**: Achieved 97% accuracy for Blindsight (significant improvement with Z-score: 8.6), and a 62% accuracy for AGL (significant improvement with Z-score: 15.0)
+1. **Blindsight and AGL**: 
+   - Blindsight: 0.97 +/- 0.02 (Z-score: 9.01)
+   - AGL- High Awareness: 0.66 +/- 0.05 (Z-score: 8.20)
+   - AGL- Low Awareness: 0.62 +/- 0.07 (Z-score: 15.70)
+
+
    ![](images/Perceptual_results.png)
    
 2. **MinAtar SARL**: 
-   - Seaquest: 6.15 rewards (Z-score: 2.97)
-   - Asterix: 5.77 rewards (Z-score: 2.15)
-  
+   - Seaquest: 3.06 +/- 0.34 (Z-score: 7.03)
+   - Asterix: 4.54 +/- 1.01 (Z-score: 1.32)
+   - Breakout: 8.07 +/- 0.72 (Z-score: 3.70)
+   - Space Invaders: 26.80 +/- 1.59 (Z-score: 4.13)
+   - Freeway: 34.20 +/- 2.83 (Z-score: 0.95)
+      
+   ![](images/SARL_table.png)
+
    ![](images/SARL_results.jpg)
 
 4. **MinAtar SARL + continuous/transfer learning**: 
