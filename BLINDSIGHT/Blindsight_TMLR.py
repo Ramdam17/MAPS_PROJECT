@@ -1833,7 +1833,7 @@ def main():
     hyperparameters = list(product(hidden_sizes, factors, gelus, step_sizes, gammas, metalayers, optimizer))
     
     # Execution mode flags
-    Training = False  # Run training experiments
+    Training = True  # Run training experiments
     
     # Cascade type explanations:
     # cascade type 1: both 1st and 2nd order networks use cascade mode
