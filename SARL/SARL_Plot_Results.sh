@@ -1,6 +1,6 @@
 # Define hyperparameters
 #CHANGE THIS TO YOUR DIRECTORY,  /$local_repo_directory/SARL/MinAtar
-general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/WorkshopPaper/REPO/MinAtar"
+general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thyself/MAPS_PROJECT/SARL/MinAtar"
 
 # For conda to work in scripts, you need to initialize it first
 eval "$(conda shell.bash hook)"

@@ -5,11 +5,14 @@ setting=${2:-default_setting}
 base=100000
 
 #CHANGE THIS TO YOUR DIRECTORY,  /$local_repo_directory/SARL/MinAtar
-general_dir="/home/$USER/projects/def-gdumas85/$USER/MinAtar"
+#CHANGE THIS TO YOUR DIRECTORY,  /$local_repo_directory/SARL/MinAtar
+general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thyself/MAPS_PROJECT/SARL_CL/MinAtar"
 
-module load gcc python/3.11 opencv mpi4py arrow cuda cudnn rust
+#module for computing cluster
+#module load gcc python/3.11 opencv mpi4py arrow cuda cudnn rust
+#source /home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thyself/MAPS_PROJECT/MAPS/bin/activate
+conda activate MAPS
 
-source $general_dir/MAPS/bin/activate
 
 export PYTHONPATH="$PYTHONPATH:$general_dir"
 

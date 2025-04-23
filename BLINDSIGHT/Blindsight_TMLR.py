@@ -1932,7 +1932,7 @@ def main():
     default_hidden_second=100
     scaling_factors = [1, 2, 3, 5, 10,  15, 25, 50, 100]
     factors_second = [0.1, 0.2 , 0.5, 1.0, 2.0, 5.0]
-    seeds_scaling = 100  # Number of seeds for scaling experiments
+    seeds_scaling = 50  # Number of seeds for scaling experiments
     
     scaling=True
     
