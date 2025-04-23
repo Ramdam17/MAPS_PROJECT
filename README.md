@@ -108,13 +108,13 @@ You can change BREAK for the corresponding environment. Please see the script in
 
 Transfer learning ( setting, number_steps)
 ```bash
-cd SARL/ 
+cd SARL_CL/ 
 ./SARL_Training_TransferLearning_TernaryPlot.sh 1 100000
 ```
 
 Continuous learning ( seed, setting)
 ```bash
-cd SARL/ 
+cd SARL_CL/ 
 ./SARL_Training_ContinuousLearning.sh 1 1
 ```
 
