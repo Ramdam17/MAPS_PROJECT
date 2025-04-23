@@ -347,16 +347,16 @@ def get_config():
     parser.add_argument("--num_agents", type=int, default=16,
                         help="number of controlled players.")
 
-
-    parser.add_argument("--meta", type=str2bool, default=False,
-                        help='Whether or not to use a wagering mechanism to update the policy')
-   
     parser.add_argument("--setting", type=int, default=1,
                         help="setting 1 to 6")
+    
+    parser.add_argument("--meta", type=str2bool, default=False,
+                        help='Whether or not to use a wagering mechanism to update the policy')
     
     parser.add_argument("--cascade_iterations1", type=int, default=1,
                         help="cascade iterations for 1st order network")  
 
     parser.add_argument("--cascade_iterations2", type=int, default=1,
                         help="cascade iterations for 2nd order network")  
+    
     return parser

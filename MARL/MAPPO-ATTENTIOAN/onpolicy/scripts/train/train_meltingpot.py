@@ -82,7 +82,7 @@ def parse_args(args, parser):
     parser.add_argument("--roles", type=str, default='default')
 
     parser.add_argument('--scale_factor', type=int, default=1, help="the scale factor for the observation")
-
+    
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
@@ -110,33 +110,35 @@ def main(args):
     parser = get_config()
     all_args = parse_args(args, parser)
 
+    print("setting is ", all_args.setting)
+
     if all_args.setting == 1:
-        all_args.meta == False
+        all_args.meta = False
         all_args.cascade_iterations1 = 1
         all_args.cascade_iterations2 = 1
         
     elif all_args.setting == 2:
-        all_args.meta == False
+        all_args.meta = False
         all_args.cascade_iterations1 = 50
         all_args.cascade_iterations2 = 1
         
     elif all_args.setting == 3:
-        all_args.meta == True
+        all_args.meta = True
         all_args.cascade_iterations1 = 1
         all_args.cascade_iterations2 = 1
         
     elif all_args.setting == 4:
-        all_args.meta == True
+        all_args.meta = True
         all_args.cascade_iterations1 = 50
         all_args.cascade_iterations2 = 1
         
     elif all_args.setting == 5:
-        all_args.meta == True
+        all_args.meta = True
         all_args.cascade_iterations1 = 1
         all_args.cascade_iterations2 = 50
         
     elif all_args.setting == 6:
-        all_args.meta == True
+        all_args.meta = True
         all_args.cascade_iterations1 = 50
         all_args.cascade_iterations2 = 50
         

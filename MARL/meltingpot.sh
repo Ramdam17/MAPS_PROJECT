@@ -411,6 +411,8 @@ CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py \
     --use_gae True \
     --episode_length ${episode_length} \
     --attention_module ${module} \
-    --algorithm_name mappo
+    --algorithm_name mappo \
+    --num_episodes ${episodes} \
+    --num_env_steps ${env_steps} 
 
 
