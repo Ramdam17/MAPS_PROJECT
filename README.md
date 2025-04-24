@@ -1,6 +1,8 @@
 # MAPS: A Metacognitive Architecture for Improved Social Learning
 
-This repository contains the implementation of MAPS (Metacognitive Architecture for Improved Social Learning) as described in our paper published in the Proceedings of the International Workshop on Advancing AI Through Theory of Mind, 2025. [see the current version of the paper](pdf/PrePrint_MAPS_RLC.pdf)
+This repository contains the implementation of MAPS (Metacognitive Architecture for Improved Social Learning) as described in our paper published in the Proceedings of the International Workshop on Advancing AI Through Theory of Mind, 2025. 
+[Workshop paper](pdf/TOM4AI_arXiv.pdf)
+[Full length paper - preprint](pdf/PrePrint_MAPS_RLC.pdf)
 
 ## Authors
 - Juan David Vargas (Université de Montréal, MILA - Quebec AI Institute, CHU Sainte-Justine)
