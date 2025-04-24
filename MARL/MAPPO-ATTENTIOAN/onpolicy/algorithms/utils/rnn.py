@@ -26,7 +26,7 @@ class RNNLayer(nn.Module):
                     
         self.norm = nn.LayerNorm(outputs_dim)
 
-    def forward(self, x, hxs, masks):
+    def forward(self, x, hxs, masks, prev_h1, cascade_rate1):
         # JUAN ADDED
         # emb = self.drop(self.encoder(input))
         # emb = emb.to(input.device)
@@ -89,6 +89,10 @@ class RNNLayer(nn.Module):
             x = x.reshape(episode_len * batch_num, -1)
             hxs = hxs.transpose(0, 1)
 
-        x = self.norm(x)
+        output_cascade1 = x
+        if prev_h1 is not None:
+            output_cascade1= cascade_rate1*x +  (1-cascade_rate1)*prev_h1
+            
+        x = self.norm(output_cascade1)
         
-        return x, hxs
+        return x, hxs, output_cascade1

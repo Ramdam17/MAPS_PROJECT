@@ -30,7 +30,7 @@ class RNNLayer_Meta(nn.Module):
         self.sigmoid = torch.sigmoid
 
 
-    def forward(self, x, hxs, masks, wager=False):
+    def forward(self, x, hxs, masks, prev_h1, prev_h2, cascade_rate1, cascade_rate2, wager=False):
         # JUAN ADDED
         # emb = self.drop(self.encoder(input))
         # emb = emb.to(input.device)
@@ -94,11 +94,25 @@ class RNNLayer_Meta(nn.Module):
             hxs = hxs.transpose(0, 1)
 
         
-        x = self.norm(x)
 
         if wager:
-            x = self.wager(x)
-            x = self.sigmoid(x)
-        
+            x = self.norm(x)
+            
+            output_cascade2=x
+            if prev_h2 is not None:
+                output_cascade2= cascade_rate2*x +  (1-cascade_rate2)*prev_h2
                 
-        return x, hxs
+            x = self.wager(output_cascade2)
+            x = self.sigmoid(x)
+            
+            return x, hxs, output_cascade2
+
+        else:
+            
+            output_cascade1=x
+            if prev_h1 is not None:
+                output_cascade1= cascade_rate1*x +  (1-cascade_rate1)*prev_h1
+
+            x = self.norm(output_cascade1)
+                
+            return x, hxs, output_cascade1

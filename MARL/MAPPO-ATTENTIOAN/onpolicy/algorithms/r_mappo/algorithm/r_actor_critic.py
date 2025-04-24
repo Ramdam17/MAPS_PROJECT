@@ -39,6 +39,12 @@ class R_Actor(nn.Module):
         self.tpdv = dict(dtype=torch.float32, device=device)
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
         self._use_recurrent_policy = args.use_recurrent_policy
+        
+        self.cascade_one=args.cascade_iterations1
+        self.cascade_two=args.cascade_iterations2
+        
+        self.cascade_rate_one=float(1/self.cascade_one)
+        self.cascade_rate_two=float(1/self.cascade_two)
 
         obs_shape = get_shape_from_obs_space(obs_space)
 
@@ -88,6 +94,7 @@ class R_Actor(nn.Module):
         :return action_log_probs: (torch.Tensor) log probabilities of taken actions.
         :return rnn_states: (torch.Tensor) updated RNN hidden states.
         """
+        output_cascade1=None
         obs = check(obs).to(**self.tpdv)
 
 
@@ -100,14 +107,12 @@ class R_Actor(nn.Module):
         
         if self._attention_module == "SCOFF":
             output = self.rnn(actor_features, rnn_states)
+            actor_features, rnn_states = output[:2]
 
         else:
-            output = self.rnn(actor_features, rnn_states, masks=masks)
-            
-        actor_features, rnn_states = output[:2]
-        if self.rnn_attention_module == "LSTM":
-            c = output[-1]
-
+            for j in range(self.cascade_one):
+                actor_features, rnn_states, output_cascade1 = self.rnn(actor_features, rnn_states, masks, output_cascade1 , self.cascade_rate_one)
+                            
         if not self.use_attention and (self._use_naive_recurrent_policy or self._use_recurrent_policy):
             rnn_states = rnn_states.permute(1, 0, 2)
 
@@ -129,6 +134,7 @@ class R_Actor(nn.Module):
         :return action_log_probs: (torch.Tensor) log probabilities of the input actions.
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
+        output_cascade1=None
 
         obs = check(obs).to(**self.tpdv)
         rnn_states = check(rnn_states).to(**self.tpdv)
@@ -144,14 +150,11 @@ class R_Actor(nn.Module):
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy or self.use_attention:
             if self._attention_module == "SCOFF":
-                output = self.rnn(actor_features, rnn_states)
-
+                output = self.rnn(actor_features, rnn_states)            
+                actor_features, rnn_states = output[:2]
             else:
-                output = self.rnn(actor_features, rnn_states, masks=masks)
-                
-            actor_features, rnn_states = output[:2]
-            if self.rnn_attention_module == "LSTM":
-                c = output[-1]
+                for j in range(self.cascade_one):
+                    actor_features, rnn_states, output_cascade1 = self.rnn(actor_features, rnn_states, masks, output_cascade1 , self.cascade_rate_one)
 
         if self.algo == "hatrpo":
             action_log_probs, dist_entropy, action_mu, action_std, all_probs = self.act.evaluate_actions_trpo(
@@ -212,6 +215,12 @@ class R_Critic(nn.Module):
 
         self._obs_shape = cent_obs_shape
 
+        self.cascade_one=args.cascade_iterations1
+        self.cascade_two=args.cascade_iterations2
+        
+        self.cascade_rate_one=float(1/self.cascade_one)
+        self.cascade_rate_two=float(1/self.cascade_two)
+
         base = CNNBase if len(self._obs_shape) == 3 else MLPBase
         self.base = base(args, self._obs_shape)
 
@@ -255,6 +264,8 @@ class R_Critic(nn.Module):
         :return values: (torch.Tensor) value function predictions.
         :return rnn_states: (torch.Tensor) updated RNN hidden states.
         """
+        output_cascade1=None
+
         cent_obs = check(cent_obs).to(**self.tpdv)
         rnn_states = check(rnn_states).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
@@ -262,15 +273,12 @@ class R_Critic(nn.Module):
         critic_features = self.base(cent_obs)
         if self._attention_module == "SCOFF":
             output = self.rnn(critic_features, rnn_states)
-
+            critic_features, rnn_states = output[:2]
+            
         else:
-            output = self.rnn(critic_features, rnn_states, masks=masks)
+            for j in range(self.cascade_one):
+                critic_features, rnn_states, output_cascade1 = self.rnn(critic_features, rnn_states, masks, output_cascade1 , self.cascade_rate_one)            
             
-            
-        critic_features, rnn_states = output[:2]
-        if self.rnn_attention_module == "LSTM":
-            c = output[-1]
-
         if not self.use_attention and (self._use_naive_recurrent_policy or self._use_recurrent_policy):
             rnn_states = rnn_states.permute(1, 0, 2)
 

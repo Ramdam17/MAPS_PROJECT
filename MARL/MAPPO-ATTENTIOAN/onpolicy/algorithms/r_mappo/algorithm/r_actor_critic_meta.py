@@ -47,6 +47,12 @@ class R_Actor_Meta(nn.Module):
         self.tpdv = dict(dtype=torch.float32, device=device)
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
         self._use_recurrent_policy = args.use_recurrent_policy
+        
+        self.cascade_one=args.cascade_iterations1
+        self.cascade_two=args.cascade_iterations2
+        
+        self.cascade_rate_one=float(1/self.cascade_one)
+        self.cascade_rate_two=float(1/self.cascade_two)
 
         obs_shape = get_shape_from_obs_space(obs_space)
 
@@ -84,6 +90,10 @@ class R_Actor_Meta(nn.Module):
         #rnn_states=self.layer_input(rnn_states)
         #print("obs shape", obs.size(), rnn_states.size(), masks.size() if masks is not None else None, available_actions.size() if available_actions is not None else None)
 
+        output_cascade1=None
+        output_cascade2=None
+
+
         obs = check(obs).to(**self.tpdv)
 
         rnn_states = check(rnn_states).to(**self.tpdv)
@@ -95,16 +105,9 @@ class R_Actor_Meta(nn.Module):
         #actor_features=self.layer_input(actor_features)
         
 
-        output = self.rnn(actor_features, rnn_states, masks=masks, wager=False)
-        #print("output critic shape", output[0].size(), output[1].size() ) 
-
-            
-        actor_features, rnn_states = output[:2]
-        #actor_features=self.layer_output(actor_features)
-        #rnn_states=self.layer_output(rnn_states)
-        
-        if self.rnn_attention_module == "LSTM":
-            c = output[-1]
+        for j in range(self.cascade_one):
+            actor_features, rnn_states, output_cascade1 = self.rnn(actor_features, rnn_states, masks, output_cascade1 ,output_cascade2, self.cascade_rate_one, self.cascade_rate_two, wager=False)
+                            
 
         if not self.use_attention and (self._use_naive_recurrent_policy or self._use_recurrent_policy):
             rnn_states = rnn_states.permute(1, 0, 2)
@@ -130,7 +133,9 @@ class R_Actor_Meta(nn.Module):
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
         
-        
+        output_cascade2=None
+        output_cascade1=None
+
         obs = check(obs).to(**self.tpdv)
         rnn_states = check(rnn_states).to(**self.tpdv)
         action = check(action).to(**self.tpdv)
@@ -146,14 +151,9 @@ class R_Actor_Meta(nn.Module):
         rnn_states=self.layer_input(rnn_states)
 
 
-        output = self.rnn(actor_features, rnn_states, masks=masks, wager=True)
-                
-        actor_features, rnn_states = output[:2]
-        wager= output[0]
-        
-        #print("wager", wager.size())
-        #print(output[0].size(), output[1].size() , "shape output")
-        
+        for j in range(self.cascade_two):
+            wager, rnn_states, output_cascade2 = self.rnn(actor_features, rnn_states, masks,output_cascade1, output_cascade2 , self.cascade_rate_one , self.cascade_rate_two, wager=True)
+                            
         return wager
 
 
@@ -186,7 +186,14 @@ class R_Critic_Meta(nn.Module):
         self.tpdv = dict(dtype=torch.float32, device=device)
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
         cent_obs_shape = get_shape_from_obs_space(cent_obs_space)
-
+        
+        self.cascade_one=args.cascade_iterations1
+        self.cascade_two=args.cascade_iterations2
+        
+        self.cascade_rate_one=float(1/self.cascade_one)
+        self.cascade_rate_two=float(1/self.cascade_two)
+        
+        
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
         self._use_recurrent_policy = args.use_recurrent_policy
 
@@ -230,23 +237,19 @@ class R_Critic_Meta(nn.Module):
         rnn_states = check(rnn_states).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
 
+        output_cascade1=None
+        output_cascade2=None
+
+
         #rnn_states=self.layer_input(rnn_states)
 
         critic_features = self.base(cent_obs)
         #critic_features=self.layer_input(critic_features)
         
 
-        output = self.rnn(critic_features, rnn_states, masks=masks, wager=False)
-        #print("output critic shape", output[0].size(), output[1].size() ) 
-        
-        
-        critic_features, rnn_states = output[:2]
-        #critic_features=self.layer_output(critic_features)
-        #rnn_states=self.layer_output(rnn_states)
-        
-        
-        if self.rnn_attention_module == "LSTM":
-            c = output[-1]
+        for j in range(self.cascade_one):
+            critic_features, rnn_states, output_cascade1 = self.rnn(critic_features, rnn_states, masks, output_cascade1 ,output_cascade2, self.cascade_rate_one, self.cascade_rate_two,  wager=False)            
+
 
         if not self.use_attention and (self._use_naive_recurrent_policy or self._use_recurrent_policy):
             rnn_states = rnn_states.permute(1, 0, 2)
