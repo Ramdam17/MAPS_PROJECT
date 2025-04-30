@@ -28,7 +28,7 @@ class R_MAPPO():
     def __init__(self,
                  args,
                  policy,
-                 device=torch.device("cpu")):
+                 device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
 
         self.device = device
         self.tpdv = dict(dtype=torch.float32, device=device)
@@ -123,9 +123,10 @@ class R_MAPPO():
         :return actor_grad_norm: (torch.Tensor) gradient norm from actor update.
         :return imp_weights: (torch.Tensor) importance sampling weights.
         """
-        share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, \
+        share_obs_batch, obs_batch, rnn_states_batch, rnn_cells_batch, rnn_states_critic_batch, rnn_cells_critic_batch, actions_batch, \
         value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, \
         adv_targ, available_actions_batch = sample
+
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         adv_targ = check(adv_targ).to(**self.tpdv)
@@ -137,7 +138,9 @@ class R_MAPPO():
         values, action_log_probs, dist_entropy = self.policy.evaluate_actions(share_obs_batch,
                                                                               obs_batch,
                                                                               rnn_states_batch,
+                                                                              rnn_cells_batch,
                                                                               rnn_states_critic_batch,
+                                                                              rnn_cells_critic_batch,
                                                                               actions_batch,
                                                                               masks_batch,
                                                                               available_actions_batch,
@@ -153,13 +156,6 @@ class R_MAPPO():
                                                                               active_masks_batch)
 
         ##################################2ND ORDER NETWORK############################################
-
-        #criterion_2 = nn.CrossEntropyLoss().to(**self.tpdv)
-        #criterion_2 = nn.BCEWithLogitsLoss().to(**self.tpdv)
-        #criterion_2 = FocalLoss().to(**self.tpdv)
-        #criterion_2 = nn.HingeEmbeddingLoss().to(**self.tpdv)
-        
-
         
         wager_objective=torch.tensor(wager_objective, dtype=torch.float32).unsqueeze(-1).unsqueeze(0)
         #print(wager_objective.shape, "shape wager" , values_meta.shape, "values meta shape")

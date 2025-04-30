@@ -23,19 +23,12 @@ class RNNLayer(nn.Module):
                     nn.init.orthogonal_(param)
                 else:
                     nn.init.xavier_uniform_(param)
-                    
         self.norm = nn.LayerNorm(outputs_dim)
 
     def forward(self, x, hxs, masks, prev_h1, cascade_rate1):
-        # JUAN ADDED
-        # emb = self.drop(self.encoder(input))
-        # emb = emb.to(input.device)
-        # if emb.dim()==2:
-        #   x = emb.unsqueeze(0)
-        # else:
-        #    x = emb 
 
         if x.size(0) == hxs.size(0):
+            # x (batch, input_size), h (batch, 1, hidden_size)
             x, hxs = self.rnn(x.unsqueeze(0),
                               (hxs * masks.repeat(1, self._recurrent_N).unsqueeze(-1)).transpose(0, 1).contiguous())
             x = x.squeeze(0)
@@ -93,6 +86,6 @@ class RNNLayer(nn.Module):
         if prev_h1 is not None:
             output_cascade1= cascade_rate1*x +  (1-cascade_rate1)*prev_h1
             
-        x = self.norm(output_cascade1)
-        
+        x = self.norm(x)
         return x, hxs, output_cascade1
+    

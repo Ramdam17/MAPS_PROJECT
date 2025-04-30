@@ -113,8 +113,12 @@ class ShareVecEnv(ABC):
         This is available for backwards compatibility.
         """
         print("Step called in ShareVecEnv...")
-        self.step_async(actions,rewards)
-        return self.step_wait()
+        if rewards is None:
+            self.step_async(actions,None)
+        else:
+            self.step_async(actions, rewards)
+            
+        return self.step_wait(rewards)
 
     def render(self, mode='human'):
         imgs = self.get_images()
@@ -803,23 +807,26 @@ class DummyVecEnv(ShareVecEnv):
 
     def step_async(self, actions,rewards=None):
         self.actions = actions
-        self.rewards = rewards
+        if rewards is not None:
+            self.rewards = rewards
 
-    def step_wait(self):
-        results = [env.step(a, r) for (a, r, env) in zip(self.actions, self.rewards ,self.envs)]
-        print(f"we are inside the DummyVecEnv class and step_wait func. results of step are {results}")
-        obs, rews, dones, infos = map(np.array, zip(*results))
+    def step_wait(self, rewards):
+        
+        if rewards is not None:
+            
+            results = [env.step(a, r) for (a, r, env) in zip(self.actions, self.rewards ,self.envs)]
+            print(f"we are inside the DummyVecEnv class and step_wait func. results of step are {results}")
+            obs, rews, dones, infos = map(np.array, zip(*results))
 
-        # for (i, done) in enumerate(dones):
-        #     if 'bool' in done.__class__.__name__:
-        #         if done:
-        #             obs[i] = self.envs[i].reset()
-        #     else:
-        #         if np.all(done):
-        #             obs[i] = self.envs[i].reset()
+            self.actions = None
+            return obs, rews, dones, infos
+        else:
+            results = [env.step(a) for (a, env) in zip(self.actions, self.envs)]
+            print(f"we are inside the DummyVecEnv class and step_wait func. results of step are {results}")
+            obs, rews, dones, infos = map(np.array, zip(*results))
 
-        self.actions = None
-        return obs, rews, dones, infos
+            self.actions = None
+            return obs, rews, dones, infos
 
     def reset(self):
         obs = [env.reset() for env in self.envs]

@@ -134,7 +134,7 @@ class MeltingpotRunner(Runner):
                     rewards_old_values = rewards_old
                 
                 # Sample actions
-                values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env , rnn_states_meta_pre ,rnn_states_critic_meta_pre  = self.collect(step)
+                values, actions, action_log_probs, rnn_states, rnn_cells, rnn_states_critic, rnn_cells_critic, actions_env = self.collect(step)
                 #print("values", values)
                 actions = actions.transpose(2, 1, 0)
                 #print("actions", actions)
@@ -144,7 +144,7 @@ class MeltingpotRunner(Runner):
                 if not isinstance(obs[0], dict):
                     obs = obs[:, 0]
                 
-                data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic
+                data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_cells, rnn_states_critic, rnn_cells_critic
                 self.insert(data)
 
                 if self.all_args.meta: 
@@ -193,6 +193,7 @@ class MeltingpotRunner(Runner):
             #print(f'Episode {episode} end at {time.time()}')
             # compute return and update network
             self.compute()
+            
             
             train_infos = self.train(episode_length,grad_list, comparisson_list, self.all_args.meta)
             #print(f'Episode {episode} end at {time.time()}')
@@ -369,7 +370,6 @@ class MeltingpotRunner(Runner):
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
     
-    
     @torch.no_grad()
     def collect(self, step):
         values = []
@@ -377,31 +377,24 @@ class MeltingpotRunner(Runner):
         temp_actions_env = []
         action_log_probs = []
         rnn_states = []
+        rnn_cells = []
         rnn_states_critic = []
+        rnn_cells_critic = []
 
-        rnn_states_meta=[]
-        rnn_states_critic_meta=[]
-        
         for agent_id in range(self.num_agents):
             self.trainer[agent_id].prep_rollout()
-            #print(self.buffer[agent_id].rnn_states[step].shape, "rnn_states shape")
-            rnn_state_pre=self.buffer[agent_id].rnn_states[step]
-            rnn_state_critic_pre=self.buffer[agent_id].rnn_states_critic[step]
-            value, action, action_log_prob, rnn_state, rnn_state_critic \
+            value, action, action_log_prob, rnn_state, rnn_cell, rnn_state_critic, rnn_cell_critic \
                 = self.trainer[agent_id].policy.get_actions(self.buffer[agent_id].share_obs[step],
                                                             self.buffer[agent_id].obs[step],
                                                             self.buffer[agent_id].rnn_states[step],
+                                                            self.buffer[agent_id].rnn_cells[step],
                                                             self.buffer[agent_id].rnn_states_critic[step],
+                                                            self.buffer[agent_id].rnn_cells_critic[step],
                                                             self.buffer[agent_id].masks[step])
-            rnn_state_meta= _t2n(rnn_state[0]) - rnn_state_pre
-            rnn_state_critic_meta=_t2n(rnn_state_critic[0]) - rnn_state_critic_pre
-            #print(rnn_state.shape)
-            
             values.append(_t2n(value))
             action = _t2n(action)
             # rearrange action
             player = f"player_{agent_id}"
-
             if self.envs.action_space[player].__class__.__name__ == 'MultiDiscrete':
                 for i in range(self.envs.action_space[player].shape):
                     uc_action_env = np.eye(self.envs.action_space[player].high[i] + 1)[action[:, i]]
@@ -420,15 +413,12 @@ class MeltingpotRunner(Runner):
             actions.append(action)
             temp_actions_env.append(action_env)
             action_log_probs.append(_t2n(action_log_prob))
-            rnn_states.append(_t2n(rnn_state[0]))
-            rnn_states_critic.append(_t2n(rnn_state_critic[0]))
-            
-            rnn_states_meta.append(rnn_state_meta)
-            rnn_states_critic_meta.append(rnn_state_critic_meta)
-            
-            
-
+            rnn_states.append(_t2n(rnn_state))
+            rnn_cells.append(_t2n(rnn_cell))
+            rnn_states_critic.append(_t2n(rnn_state_critic))
+            rnn_cells_critic.append(_t2n(rnn_cell_critic))
         # [envs, agents, dim]
+
         actions_env = []
         for i in range(self.n_rollout_threads):
             one_hot_action_env = []
@@ -440,22 +430,10 @@ class MeltingpotRunner(Runner):
         actions = np.array(actions) if isinstance(actions, list) else actions
         action_log_probs = np.array(action_log_probs) if isinstance(action_log_probs, list) else action_log_probs
         rnn_states = np.array(rnn_states) if isinstance(rnn_states, list) else rnn_states
+        rnn_cells = np.array(rnn_cells) if isinstance(rnn_cells, list) else rnn_cells
         rnn_states_critic = np.array(rnn_states_critic) if isinstance(rnn_states_critic, list) else rnn_states_critic
+        rnn_cells_critic = np.array(rnn_cells_critic) if isinstance(rnn_cells_critic, list) else rnn_cells_critic
 
-        rnn_states_meta = np.array(rnn_states_meta) if isinstance(rnn_states_meta, list) else rnn_states_meta
-        rnn_states_critic_meta = np.array(rnn_states_critic_meta) if isinstance(rnn_states_critic_meta, list) else rnn_states_critic_meta
-
-
-        #print("all sizes", values.shape, actions.shape , action_log_probs.shape , rnn_states.shape , rnn_states_critic.shape )
-        if self.attention_module=="SCOFF":
-            values = values.squeeze(2)
-            actions = actions.squeeze(2)
-            action_log_probs = action_log_probs.squeeze(2)
-            rnn_states = rnn_states.squeeze(2)
-            rnn_states_critic = rnn_states_critic.squeeze(2)
-            rnn_states_critic_meta=rnn_states_critic_meta.squeeze(2)
-            rnn_states_meta=rnn_states_meta.squeeze(2)
-            
         values = values.squeeze(-1).transpose(1, 0, 2)
         if actions.ndim == 3:
             actions = actions.transpose(2, 0, 1)
@@ -466,21 +444,18 @@ class MeltingpotRunner(Runner):
         action_log_probs = action_log_probs.transpose(1, 0, 2)
         if rnn_states.ndim == 3:
             rnn_states = rnn_states[:, np.newaxis, :, :]
+            rnn_cells = rnn_cells[:, np.newaxis, :, :]
         rnn_states = rnn_states.transpose(1, 0, 2, 3)
+        rnn_cells = rnn_cells.transpose(1, 0, 2, 3)
         if rnn_states_critic.ndim == 3:
             rnn_states_critic = rnn_states_critic[:, np.newaxis, :, :]
+            rnn_cells_critic = rnn_cells_critic[:, np.newaxis, :, :]
         rnn_states_critic = rnn_states_critic.transpose(1, 0, 2, 3)
+        rnn_cells_critic = rnn_cells_critic.transpose(1, 0, 2, 3)
+
+        return values, actions, action_log_probs, rnn_states, rnn_cells, rnn_states_critic, rnn_cells_critic, actions_env
 
 
-        #meta
-        if rnn_states_meta.ndim == 3:
-            rnn_states_meta = rnn_states_meta[:, np.newaxis, :, :]
-        rnn_states_meta = rnn_states_meta.transpose(1, 0, 2, 3)
-        if rnn_states_critic_meta.ndim == 3:
-            rnn_states_critic_meta = rnn_states_critic_meta[:, np.newaxis, :, :]
-        rnn_states_critic_meta = rnn_states_critic_meta.transpose(1, 0, 2, 3)
-        
-        return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env , rnn_states_meta ,rnn_states_critic_meta 
 
     def process_obs(self, obs):
         """
@@ -538,15 +513,24 @@ class MeltingpotRunner(Runner):
 
         return share_obs, agent_obs
 
-    def insert(self, data):
-        obs, rewards, done, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic = data
 
-        done_new = self.extract_data(done, np.bool_)
+    def insert(self, data):
+
+        obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_cells, rnn_states_critic, rnn_cells_critic = data
+        done_new = self.extract_data(dones, np.bool_)
         rewards = self.extract_data(rewards, np.float32)
 
         # Create a boolean mask with the same shape as rnn_states
-        rnn_states[done_new == True] = np.zeros(((done_new == True).sum(), self.hidden_size), dtype=np.float32)
+        try:
+           rnn_states[done_new == True] = np.zeros(((done_new == True).sum(), self.hidden_size), dtype=np.float32)
+        except IndexError as e:
+           print(f"IndexError: {e}")
+           print(f"Shape of rnn_states: {rnn_states.shape}")
+           print(f"Shape of done_new: {done_new.shape}")
+           raise
+        rnn_cells[done_new == True] = np.zeros(((done_new == True).sum(), self.hidden_size), dtype=np.float32)
         rnn_states_critic[done_new == True] = np.zeros(((done_new == True).sum(), self.hidden_size), dtype=np.float32)
+        rnn_cells_critic[done_new == True] = np.zeros(((done_new == True).sum(), self.hidden_size), dtype=np.float32)
 
         masks = np.ones((1, self.num_agents, self.n_rollout_threads, 1), dtype=np.float32)
         masks[done_new == True] = np.zeros(((done_new == True).sum(), 1), dtype=np.float32)
@@ -557,7 +541,9 @@ class MeltingpotRunner(Runner):
             self.buffer[agent_id].insert(share_obs[:, agent_id],
                                          agent_obs[:, agent_id],
                                          rnn_states[:, agent_id].swapaxes(1, 0),
+                                         rnn_cells[:, agent_id].swapaxes(1, 0),
                                          rnn_states_critic[:, agent_id].swapaxes(1, 0),
+                                         rnn_cells_critic[:, agent_id].swapaxes(1, 0),
                                          actions[:, agent_id],
                                          action_log_probs[:, agent_id].swapaxes(1, 0),
                                          values[:, agent_id].swapaxes(1, 0),
@@ -570,6 +556,8 @@ class MeltingpotRunner(Runner):
         """
         new_data = []
         for per_thread_list in original_data:
+            if isinstance(per_thread_list, np.ndarray):
+                per_thread_list = per_thread_list[0]
             per_thread = []
             for i in range(self.num_agents):
                 player_name = f'player_{i}'
@@ -580,9 +568,13 @@ class MeltingpotRunner(Runner):
     @torch.no_grad()
     def eval(self, total_num_steps):
         eval_episode_rewards = []
-        eval_obs = self.eval_envs.reset()
+        eval_obs = self.eval_envs.reset()[0][0]
+        eval_obs = np.array([eval_obs[f'player_{i}']['RGB'] for i in range(self.num_agents)])
+        eval_obs = np.tile(np.expand_dims(eval_obs, 0), (self.n_eval_rollout_threads, 1, 1, 1, 1))
 
         eval_rnn_states = np.zeros((self.n_eval_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size),
+                                   dtype=np.float32)
+        eval_rnn_cells = np.zeros((self.n_eval_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size),
                                    dtype=np.float32)
         eval_masks = np.ones((self.n_eval_rollout_threads, self.num_agents, 1), dtype=np.float32)
 
@@ -590,29 +582,35 @@ class MeltingpotRunner(Runner):
             eval_temp_actions_env = []
             for agent_id in range(self.num_agents):
                 self.trainer[agent_id].prep_rollout()
-                eval_action, eval_rnn_state = self.trainer[agent_id].policy.act(np.array(list(eval_obs[:, agent_id])),
-                                                                                eval_rnn_states[:, agent_id],
-                                                                                eval_masks[:, agent_id],
-                                                                                deterministic=True)
+                if eval_masks.ndim == 4:
+                    input_mask = np.squeeze(eval_masks[:, agent_id], axis=-1)
+                else:
+                    input_mask = eval_masks[:, agent_id]
+                eval_action, eval_rnn_state, eval_rnn_cell = self.trainer[agent_id].policy.act(np.array(list(eval_obs[:, agent_id])),
+                                                                                               eval_rnn_states[:, agent_id],
+                                                                                               eval_rnn_cells[:, agent_id],
+                                                                                               input_mask,
+                                                                                               deterministic=True)
 
                 eval_action = eval_action.detach().cpu().numpy()
                 # rearrange action
-
-                if self.eval_envs.action_space[agent_id].__class__.__name__ == 'MultiDiscrete':
-                    for i in range(self.eval_envs.action_space[agent_id].shape):
-                        eval_uc_action_env = np.eye(self.eval_envs.action_space[agent_id].high[i] + 1)[
+                player = f"player_{agent_id}"
+                if self.eval_envs.action_space[player].__class__.__name__ == 'MultiDiscrete':
+                    for i in range(self.eval_envs.action_space[player].shape):
+                        eval_uc_action_env = np.eye(self.eval_envs.action_space[player].high[i] + 1)[
                             eval_action[:, i]]
                         if i == 0:
                             eval_action_env = eval_uc_action_env
                         else:
                             eval_action_env = np.concatenate((eval_action_env, eval_uc_action_env), axis=1)
-                elif self.eval_envs.action_space[agent_id].__class__.__name__ == 'Discrete':
-                    eval_action_env = np.squeeze(np.eye(self.eval_envs.action_space[agent_id].n)[eval_action], 1)
+                elif self.eval_envs.action_space[player].__class__.__name__ == 'Discrete':
+                    eval_action_env = np.squeeze(np.eye(self.eval_envs.action_space[player].n)[eval_action], 1)
                 else:
                     raise NotImplementedError
 
-                eval_temp_actions_env.append(eval_action_env)
-                eval_rnn_states[:, agent_id] = _t2n(eval_rnn_state)
+                eval_temp_actions_env.append(eval_action)
+                eval_rnn_states[:, agent_id] = _t2n(eval_rnn_state.transpose(0, 1))
+                eval_rnn_cells[:, agent_id] = _t2n(eval_rnn_cell.transpose(0, 1))
 
             # [envs, agents, dim]
             eval_actions_env = []
@@ -622,22 +620,35 @@ class MeltingpotRunner(Runner):
                     eval_one_hot_action_env.append(eval_temp_action_env[i])
                 eval_actions_env.append(eval_one_hot_action_env)
 
-            # Obser reward and next obs
-            eval_obs, eval_rewards, eval_dones, eval_infos = self.eval_envs.step(eval_actions_env)
+            # Observ reward and next obs
+            eval_obs, eval_rewards, eval_dones, eval_infos = self.eval_envs.step(np.array(eval_actions_env),None)
+            if not isinstance(eval_obs[0], dict):
+                eval_obs = eval_obs[:, 0]
+            _, eval_obs = self.process_obs(eval_obs)
+
             eval_episode_rewards.append(eval_rewards)
+            eval_dones = self.extract_data(eval_dones, np.bool_).transpose(2, 1, 0)
 
             eval_rnn_states[eval_dones == True] = np.zeros(
-                ((eval_dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
-            eval_masks = np.ones((self.n_eval_rollout_threads, self.num_agents, 1), dtype=np.float32)
+                ((eval_dones == True).sum(), self.hidden_size), dtype=np.float32)
+
+            eval_rnn_cells[eval_dones == True] = np.zeros(
+                ((eval_dones == True).sum(), self.hidden_size), dtype=np.float32)
+            eval_masks = np.ones((self.n_eval_rollout_threads, self.num_agents, 1, 1), dtype=np.float32)
             eval_masks[eval_dones == True] = np.zeros(((eval_dones == True).sum(), 1), dtype=np.float32)
 
-        eval_episode_rewards = np.array(eval_episode_rewards)
+        eval_episode_rewards = self.extract_data(np.array(eval_episode_rewards), np.float64)
 
         eval_train_infos = []
+        total_average_episode_rewards = 0
         for agent_id in range(self.num_agents):
-            eval_average_episode_rewards = np.mean(np.sum(eval_episode_rewards[:, :, agent_id], axis=0))
+            eval_average_episode_rewards = np.mean(np.sum(eval_episode_rewards[:, agent_id, :], axis=-1))
             eval_train_infos.append({'eval_average_episode_rewards': eval_average_episode_rewards})
+            print(f"Evaluation average reward for agent {agent_id} is {eval_average_episode_rewards}")
 
+            total_average_episode_rewards += eval_average_episode_rewards
+        overall_average_episode_reward = total_average_episode_rewards / self.num_agents
+        print("Overall evaluation average episode reward for all agents:", overall_average_episode_reward)
         self.log_train(eval_train_infos, total_num_steps)
 
     @torch.no_grad()

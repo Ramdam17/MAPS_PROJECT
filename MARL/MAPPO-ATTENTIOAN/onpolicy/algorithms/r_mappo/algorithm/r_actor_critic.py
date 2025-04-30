@@ -80,7 +80,7 @@ class R_Actor(nn.Module):
         self.to(device)
         self.algo = args.algorithm_name
 
-    def forward(self, obs, rnn_states, masks, available_actions=None, deterministic=False):
+    def forward(self, obs, rnn_states, rnn_cells, masks, available_actions=None, deterministic=False):
         """
         Compute actions from the given inputs.
         :param obs: (np.ndarray / torch.Tensor) observation inputs into network.
@@ -95,32 +95,34 @@ class R_Actor(nn.Module):
         :return rnn_states: (torch.Tensor) updated RNN hidden states.
         """
         output_cascade1=None
+
         obs = check(obs).to(**self.tpdv)
 
-
         rnn_states = check(rnn_states).to(**self.tpdv)
+        rnn_cells = check(rnn_cells).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
 
         actor_features = self.base(obs)
-        
-        if self._attention_module == "SCOFF":
-            output = self.rnn(actor_features, rnn_states)
-            actor_features, rnn_states = output[:2]
 
-        else:
-            for j in range(self.cascade_one):
-                actor_features, rnn_states, output_cascade1 = self.rnn(actor_features, rnn_states, masks, output_cascade1 , self.cascade_rate_one)
-                            
+
+        for j in range(self.cascade_one):
+            actor_features, rnn_states, output_cascade1 = self.rnn(actor_features, rnn_states, masks, output_cascade1 , self.cascade_rate_one)
+    
+
+  
+        rnn_cells = rnn_cells.permute(1, 0, 2)
+
         if not self.use_attention and (self._use_naive_recurrent_policy or self._use_recurrent_policy):
             rnn_states = rnn_states.permute(1, 0, 2)
 
         actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
 
-        return actions, action_log_probs, rnn_states
+        return actions, action_log_probs, rnn_states, rnn_cells
+    
 
-    def evaluate_actions(self, obs, rnn_states, action, masks, available_actions=None, active_masks=None):
+    def evaluate_actions(self, obs, rnn_states, rnn_cells, action, masks, available_actions=None, active_masks=None):
         """
         Compute log probability and entropy of given actions.
         :param obs: (torch.Tensor) observation inputs into network.
@@ -138,6 +140,8 @@ class R_Actor(nn.Module):
 
         obs = check(obs).to(**self.tpdv)
         rnn_states = check(rnn_states).to(**self.tpdv)
+        if rnn_cells is not None:
+            rnn_cells = check(rnn_cells).to(**self.tpdv)
         action = check(action).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
         if available_actions is not None:
@@ -146,15 +150,14 @@ class R_Actor(nn.Module):
         if active_masks is not None:
             active_masks = check(active_masks).to(**self.tpdv)
 
+
         actor_features = self.base(obs)
 
-        if self._use_naive_recurrent_policy or self._use_recurrent_policy or self.use_attention:
-            if self._attention_module == "SCOFF":
-                output = self.rnn(actor_features, rnn_states)            
-                actor_features, rnn_states = output[:2]
-            else:
-                for j in range(self.cascade_one):
-                    actor_features, rnn_states, output_cascade1 = self.rnn(actor_features, rnn_states, masks, output_cascade1 , self.cascade_rate_one)
+        for j in range(self.cascade_one):
+            actor_features, rnn_states, output_cascade1 = self.rnn(actor_features, rnn_states, masks, output_cascade1 , self.cascade_rate_one)
+
+
+       
 
         if self.algo == "hatrpo":
             action_log_probs, dist_entropy, action_mu, action_std, all_probs = self.act.evaluate_actions_trpo(
@@ -166,17 +169,15 @@ class R_Actor(nn.Module):
 
             return action_log_probs, dist_entropy, action_mu, action_std, all_probs
         else:
-            #print("evaluation", actor_features.size(), action.size(), available_actions.size() if available_actions is not None else None, active_masks.size() if active_masks is not None else None)
-            if self._attention_module == "SCOFF":
-                actor_features = actor_features.squeeze(0)
-                
             action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features,
                                                                        action, available_actions,
                                                                        active_masks=
                                                                        active_masks if self._use_policy_active_masks
                                                                        else None)
-
+        torch.cuda.empty_cache()
         return action_log_probs, dist_entropy
+    
+    
 
 
 class R_Critic(nn.Module):
@@ -254,7 +255,7 @@ class R_Critic(nn.Module):
 
         self.to(device)
 
-    def forward(self, cent_obs, rnn_states, masks):
+    def forward(self, cent_obs, rnn_states, rnn_cells, masks):
         """
         Compute actions from the given inputs.
         :param cent_obs: (np.ndarray / torch.Tensor) observation inputs into network.
@@ -268,21 +269,26 @@ class R_Critic(nn.Module):
 
         cent_obs = check(cent_obs).to(**self.tpdv)
         rnn_states = check(rnn_states).to(**self.tpdv)
+        if rnn_cells is not None:
+            rnn_cells = check(rnn_cells).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
 
         critic_features = self.base(cent_obs)
-        if self._attention_module == "SCOFF":
-            output = self.rnn(critic_features, rnn_states)
-            critic_features, rnn_states = output[:2]
-            
-        else:
-            for j in range(self.cascade_one):
-                critic_features, rnn_states, output_cascade1 = self.rnn(critic_features, rnn_states, masks, output_cascade1 , self.cascade_rate_one)            
-            
+
+        for j in range(self.cascade_one):
+            critic_features, rnn_states, output_cascade1 = self.rnn(critic_features, rnn_states, masks, output_cascade1 , self.cascade_rate_one)            
+        
+
+
+        if rnn_cells is not None:
+            rnn_cells = rnn_cells.permute(1, 0, 2)
+
         if not self.use_attention and (self._use_naive_recurrent_policy or self._use_recurrent_policy):
             rnn_states = rnn_states.permute(1, 0, 2)
 
         critic_features = critic_features.unsqueeze(0)
         values = self.v_out(critic_features)
 
-        return values, rnn_states
+        return values, rnn_states, rnn_cells
+    
+    
