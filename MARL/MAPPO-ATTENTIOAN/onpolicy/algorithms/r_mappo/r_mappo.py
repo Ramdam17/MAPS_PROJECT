@@ -16,7 +16,6 @@ class FocalLoss(nn.Module):
         pt = torch.exp(-BCE_loss)
         F_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss
         return torch.mean(F_loss)
-    
 
 class R_MAPPO():
     """
@@ -155,18 +154,19 @@ class R_MAPPO():
 
         ##################################2ND ORDER NETWORK############################################
 
-        criterion_2 = nn.BCELoss().to(**self.tpdv)
         #criterion_2 = nn.CrossEntropyLoss().to(**self.tpdv)
         #criterion_2 = nn.BCEWithLogitsLoss().to(**self.tpdv)
         #criterion_2 = FocalLoss().to(**self.tpdv)
         #criterion_2 = nn.HingeEmbeddingLoss().to(**self.tpdv)
+        
+
         
         wager_objective=torch.tensor(wager_objective, dtype=torch.float32).unsqueeze(-1).unsqueeze(0)
         #print(wager_objective.shape, "shape wager" , values_meta.shape, "values meta shape")
         values_meta=check(values_meta).to(**self.tpdv).squeeze(-1).squeeze(0).cuda()
         wager_objective=check(wager_objective).to(**self.tpdv).squeeze(-1).squeeze(0).cuda()
         #print(len(values_meta[0]), len(wager_objective[0]), "values_meta, wager_objective")
-        loss_2 = criterion_2( values_meta , wager_objective )
+        loss_2 = torch.nn.functional.binary_cross_entropy_with_logits( values_meta , wager_objective )
         loss_2_values= (loss_2 * self.value_loss_coef)
                 
         self.policy.actor_meta_optimizer.zero_grad()
@@ -222,7 +222,7 @@ class R_MAPPO():
                                                                         active_masks_batch)
         
         values_meta_critic=check(values_meta_critic).to(**self.tpdv).squeeze(-1).squeeze(0).cuda()
-        loss_2_critic = criterion_2( values_meta_critic , wager_objective )
+        loss_2_critic = torch.nn.functional.binary_cross_entropy_with_logits( values_meta_critic , wager_objective )
         loss_2_values_critic= (loss_2_critic * self.value_loss_coef)
                 
         self.policy.critic_meta_optimizer.zero_grad()

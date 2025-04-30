@@ -25,7 +25,7 @@ class RNNLayer_Meta(nn.Module):
                     
         self.norm = nn.LayerNorm(outputs_dim)
                 
-        self.wager = nn.Linear(outputs_dim, 1)
+        self.wager = nn.Linear(outputs_dim, 2)
                 
         self.sigmoid = torch.sigmoid
 
@@ -92,8 +92,6 @@ class RNNLayer_Meta(nn.Module):
             # flatten
             x = x.reshape(episode_len * batch_num, -1)
             hxs = hxs.transpose(0, 1)
-
-        
 
         if wager:
             x = self.norm(x)

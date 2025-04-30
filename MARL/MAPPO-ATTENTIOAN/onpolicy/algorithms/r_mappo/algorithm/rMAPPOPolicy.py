@@ -367,16 +367,16 @@ class R_MAPPOPolicy:
         
         rnn_states_actor_input= torch.tensor(rnn_states_actor).to(self.device)
         
-        values, actions, action_log_probs, rnn_states_actor_output, rnn_states_critics = self.get_actions(cent_obs, obs, rnn_states_actor, rnn_states_critic, masks )
+        #values, actions, action_log_probs, rnn_states_actor_output, rnn_states_critics = self.get_actions(cent_obs, obs, rnn_states_actor, rnn_states_critic, masks )
         
-        rnn_states_actor_output = rnn_states_actor_output.permute(1, 0, 2)
+        #rnn_states_actor_output = rnn_states_actor_output.permute(1, 0, 2)
         
         
-        rnn_states_actor_meta = rnn_states_actor_input - rnn_states_actor_output
+        #rnn_states_actor_meta = rnn_states_actor_input - rnn_states_actor_output
         #print("shape of rnn_states_actor_input", rnn_states_actor_input.shape , "shape of rnn_states_actor_output", rnn_states_actor_output.shape, "shape of rnn_states_actor_meta", rnn_states_actor_meta.shape)
         
         wager = self.actor_meta.evaluate_actions(obs,
-                                                rnn_states_actor_meta,
+                                                rnn_states_actor_input,
                                                 action,
                                                 masks,
                                                 available_actions,

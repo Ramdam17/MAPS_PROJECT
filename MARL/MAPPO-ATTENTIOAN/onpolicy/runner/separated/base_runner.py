@@ -193,16 +193,16 @@ class Runner(object):
             # Check if the agent reward is greater than the previous three rewards
             if agent_reward > comparisson_rewards:
             #i >= comparison_step and all(agent_reward > grad_rewards[j][agent_id] for j in range(i-comparison_step, i)):
-                agent_reward = 1
+                agent_reward = [agent_reward.item() // 100, 1]
             else:
-                agent_reward = agent_reward.item() // 100
+                agent_reward = [1, agent_reward.item() // 100]
             
             # Append the processed reward to the wager_objective list
             wager_objective.append(agent_reward)
         
         # Fill the rest of the list with zeros until it reaches self.episode_length
         while len(wager_objective) < self.episode_length:
-            wager_objective.append(0)
+            wager_objective.append([0, 0])
         
         return wager_objective
     
@@ -215,6 +215,7 @@ class Runner(object):
 
         for agent_id in torch.randperm(self.num_agents):
             wager_objective = self.get_wager_objective(grad_rewards, comparisson_list ,agent_id)
+
             #print(len(wager_objective), "in base runner")
 
             self.trainer[agent_id].prep_training()

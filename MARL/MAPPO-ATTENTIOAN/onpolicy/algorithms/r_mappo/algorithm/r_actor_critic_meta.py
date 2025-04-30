@@ -14,6 +14,34 @@ from onpolicy.algorithms.utils.rim_cell import RIM
 from absl import logging
 
 
+class SecondOrderNetwork(nn.Module):
+    def __init__(self, num_linear_units):
+        super(SecondOrderNetwork, self).__init__()
+        
+        # Define a linear layer for comparing the difference between input and output of the first-order network
+        self.comparison_layer = nn.Linear(in_features=num_linear_units, out_features=num_linear_units)
+        # Linear layer for determining wagers
+        self.wager = nn.Linear(num_linear_units, 2)
+        self.dropout = nn.Dropout(p=0.1)  # 10% dropout
+        # Initialize the weights of the network
+        self._init_weights()
+
+    def _init_weights(self):
+        # Kaiming initialization for stability
+        torch.nn.init.uniform_(self.comparison_layer.weight, -1.0, 1.0)
+        torch.nn.init.uniform_(self.wager.weight, 0.0, 0.1)
+
+    def forward(self, comparison_matrix, prev_comparison, cascade_rate):
+        
+        # Pass the input through the comparison layer and apply dropout and activation
+        comparison_out = self.dropout(torch.nn.functional.relu(self.comparison_layer(comparison_matrix))) 
+        if prev_comparison is not None:
+          comparison_out = cascade_rate * comparison_out + (1 - cascade_rate) * prev_comparison
+        # Pass through wager layer 
+        wager = self.wager(comparison_out)
+        return wager ,  comparison_out
+
+
 class R_Actor_Meta(nn.Module):
     """
     Actor network class for MAPPO. Outputs actions given observations.
@@ -58,6 +86,8 @@ class R_Actor_Meta(nn.Module):
 
         self.use_attention = args.use_attention
         self._attention_module = args.attention_module
+        
+        self.second_order = SecondOrderNetwork(self.hidden_size)
 
         self._obs_shape = obs_shape
 
@@ -150,10 +180,19 @@ class R_Actor_Meta(nn.Module):
         actor_features=self.layer_input(actor_features)
         rnn_states=self.layer_input(rnn_states)
 
+        inital_states=actor_features
+        rnn_states_out=rnn_states
+        actor_features_out=actor_features
+        for j in range(self.cascade_one):
+            actor_features_out, rnn_states_out, output_cascade1 = self.rnn(actor_features_out, rnn_states_out, masks, output_cascade1 ,output_cascade2, self.cascade_rate_one, self.cascade_rate_two, wager=False)
+        
+
+        comparison_matrix = inital_states - actor_features_out         
+        prev_comparisson=None       
 
         for j in range(self.cascade_two):
-            wager, rnn_states, output_cascade2 = self.rnn(actor_features, rnn_states, masks,output_cascade1, output_cascade2 , self.cascade_rate_one , self.cascade_rate_two, wager=True)
-                            
+            wager, prev_comparisson = self.second_order(comparison_matrix, prev_comparisson,self.cascade_rate_two)
+                                            
         return wager
 
 

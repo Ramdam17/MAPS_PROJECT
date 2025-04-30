@@ -229,7 +229,9 @@ def generate_patterns(patterns_number, num_units, factor, condition, noise_level
     """
 
     patterns_number= patterns_number*factor
-
+    
+    patterns_number = int(patterns_number)
+    
     patterns = []  # Store generated patterns
     stim_present = []  # Indicators for when a stimulus is present in the pattern
     stim_absent = []  # Indicators for when no stimulus is present
@@ -812,7 +814,7 @@ def testing(testing_patterns, n_samples, loaded_model, loaded_model_2,factor , p
             for j in range(cascade_iterations_two):
                 output_second_order, comparison_out = loaded_model_2(input_data, output_first_order, comparison_out, cascade_rate_two)
 
-            delta=100*factor
+            delta=int(100*factor)
 
             #print("driscriminator")
             #print((output_first_order[delta:].argmax(dim=1) == input_data[delta:].argmax(dim=1)).to(float).mean())
@@ -820,8 +822,6 @@ def testing(testing_patterns, n_samples, loaded_model, loaded_model_2,factor , p
             discrimination_performances.append(discrimination_performance)
 
 
-            chance_level = torch.Tensor( generate_chance_level((200*factor,100)))
-            discrimination_random= round((chance_level[delta:].argmax(dim=1) == input_data[delta:].argmax(dim=1)).to(float).mean().item(), 2)
             #print("chance level" , discrimination_random)
 
 
@@ -881,7 +881,6 @@ def testing(testing_patterns, n_samples, loaded_model, loaded_model_2,factor , p
             # Add quadratic fit to scatter plot
             x_indices = max_indices_patterns_tensor[i]
             y_indices = max_indices_output_first_order[i]
-            y_pred_indices = perform_quadratic_regression(x_indices, y_indices)
 
             # Calculate MSE loss for indices
             mse_loss_indices = np.mean((np.array(x_indices) - np.array(y_indices)) ** 2)
@@ -890,7 +889,6 @@ def testing(testing_patterns, n_samples, loaded_model, loaded_model_2,factor , p
             # Add quadratic fit to scatter plot
             x_values = max_values_patterns_tensor[i]
             y_values = max_values_output_first_order[i]
-            y_pred_values = perform_quadratic_regression(x_values, y_values)
 
             # Calculate MSE loss for values
             mse_loss_values = np.mean((np.array(x_values) - np.array(y_values)) ** 2)
@@ -1039,7 +1037,7 @@ def train(hidden, hidden_2nd, factor, gelu, stepsize, gam, meta, optimizer, seed
     Returns:
     - Various performance metrics and data for analysis and visualization
     """
-    
+
     # Initialize lists to store performance metrics for violin plots
     # Lists for first-order network performance across 3 test conditions
     list_violin_1st = [[], [], []]
@@ -1218,9 +1216,12 @@ set_2, _ = create_patterns(1,1, 0.0012)
 set_3, _ = create_patterns(2,1, 0.0012)
 
 # Plot
-plot_signal_max_and_indicator(set_1.detach().cpu(), "Suprathreshold dataset")
-plot_signal_max_and_indicator(set_2.detach().cpu(), "Subthreshold dataset")
-plot_signal_max_and_indicator(set_3.detach().cpu(), "Low Vision dataset")
+set_1.detach().cpu()
+set_2.detach().cpu()
+set_3.detach().cpu()
+#plot_signal_max_and_indicator(set_1, "Suprathreshold dataset")
+#plot_signal_max_and_indicator(set_2, "Subthreshold dataset")
+#plot_signal_max_and_indicator(set_3, "Low Vision dataset")
 
 
 # Plotting function for scaling
@@ -1499,36 +1500,44 @@ def plot_scaling_discrimination(scaling_factors, discrimination_data, factor_sec
         if std_data is not None:
             setting_std_data = std_data.get(setting, [[] for _ in range(len(factor_second_values))])
         
+        
         # Plot each secondary factor line
         for i, factor_second in enumerate(factor_second_values):
-            # Plot the main line
-            ax.plot(
-                scaling_factors, 
-                setting_data[i],
-                marker='o',
-                linestyle='-',
-                color=colors[i],
-                label=f'Factor = {factor_second}'
-            )
             
-            # Add standard deviation bands if available
-            if setting_std_data is not None and len(setting_std_data[i]) > 0:
-                # Calculate upper and lower bounds
-                upper_bound = [d + s for d, s in zip(setting_data[i], setting_std_data[i])]
-                lower_bound = [d - s for d, s in zip(setting_data[i], setting_std_data[i])]
-                
-                # Plot the filled area between upper and lower bounds
-                ax.fill_between(
-                    scaling_factors,
-                    lower_bound,
-                    upper_bound,
+            if factor_second in [0.1,  0.5, 1.0, 2.0]:
+                # Plot the main line
+                ax.plot(
+                    scaling_factors, 
+                    setting_data[i],
+                    marker='o',
+                    linestyle='-',
                     color=colors[i],
-                    alpha=0.2  # Transparency
+                    label=f'2nd-net = {factor_second}'
                 )
+                
+                # Add standard deviation bands if available
+                if setting_std_data is not None and len(setting_std_data[i]) > 0:
+                    # Calculate upper and lower bounds
+                    upper_bound = [d + s for d, s in zip(setting_data[i], setting_std_data[i])]
+                    lower_bound = [d - s for d, s in zip(setting_data[i], setting_std_data[i])]
+                    
+                    # Plot the filled area between upper and lower bounds
+                    ax.fill_between(
+                        scaling_factors,
+                        lower_bound,
+                        upper_bound,
+                        color=colors[i],
+                        alpha=0.2  # Transparency
+                    )
         
-        ax.set_xscale('log', base=2)  # Log scale for x-axis
         ax.set_title(f'Setting {setting}')
         ax.grid(True, alpha=0.3)
+        plt.xlim(0, 10)  # Set x-axis limits
+        plt.ylim(0.40, 1)
+        plt.xscale('log')  # for x-axis
+        plt.yscale('log')  # for x-axis
+
+
         
         # Add setting-specific descriptions
         setting_descriptions = {
@@ -1725,7 +1734,7 @@ def run_setting_experiment(setting, scaling_factors, factors_second, default_hid
     }
     
     # Save setting results to CSV
-    log_filename = f'Blindsight_scaling_plot_data_setting_{setting}.csv'
+    log_filename = f'Blindsight_additional_scaling_plot_data_setting_{setting}.csv'
     with open(log_filename, mode='w', newline='') as file:
         writer = csv.writer(file)
         
@@ -1762,37 +1771,190 @@ def load_and_plot_from_csv(filename):
     return data
 
     
-def load_setting_data_from_csv(setting):
+def load_setting_data_from_csv(setting, is_primary):
     """
     Load experiment data for a specific setting from CSV file
     Returns a dictionary with the loaded data
     """
-    filename = f'Blindsight_scaling_plot_data_setting_{setting}.csv'
+    import csv
+    import os
+    import ast
+    import re
+    
+    # Increase the CSV field size limit
+    csv.field_size_limit(2147483647)  # Set to maximum possible value
+    
+    if is_primary:
+        filename = f'Blindsight_scaling_plot_data_setting_{setting}.csv'
+    else:
+        filename = f'Blindsight_additional_scaling_plot_data_setting_{setting}.csv'
     
     if not os.path.exists(filename):
         print(f"Warning: File {filename} not found")
         return None
     
-    with open(filename, mode='r', newline='') as file:
-        reader = csv.reader(file)
-        keys = next(reader)  # Read header row
-        values = next(reader)  # Read data row
+    try:
+        with open(filename, mode='r', newline='') as file:
+            reader = csv.reader(file)
+            keys = next(reader)  # Read header row
+            values = next(reader)  # Read data row
+            
+            # Convert string representations back to Python objects
+            data = {}
+            
+            for i, key in enumerate(keys):
+                value_str = values[i]
+                
+                try:
+                    # For simple lists
+                  data[key] = ast.literal_eval(value_str)
+                
+                except (SyntaxError, ValueError) as e:
+                    # For numpy arrays with float64 values
+                    try:
+                        # Convert the numpy-specific format to actual numerical values
+                        # Extract numbers from np.float64(...) patterns
+                        float_pattern = r'np\.float64\(([^)]+)\)'
+                        matches = re.findall(float_pattern, value_str)
+                        
+                        if matches:
+                            # Determine the structure based on bracket levels
+                            # Count opening brackets to determine nesting level
+                            nesting_level = value_str.count('[[[')
+                            
+                            if nesting_level >= 1:
+                                # Handle 3D array [[[...]]]
+                                # Split by closing/opening brackets to get the different sub-arrays
+                                sublists = re.findall(r'\[\[(.*?)\]\]', value_str)
+                                result = []
+                                for sublist in sublists:
+                                    # Extract all float values
+                                    floats = re.findall(float_pattern, sublist)
+                                    if floats:
+                                        result.append([float(x) for x in floats])
+                                data[key] = [result]  # Wrap in list to maintain 3D structure
+                            else:
+                                # Handle 2D array [[...]]
+                                floats = [float(x) for x in matches]
+                                data[key] = [floats]
+                        else:
+                            print(f"No float values found for key '{key}'")
+                            data[key] = []
+                            
+                    except Exception as e:
+                        print(f"Error parsing data for key '{key}': {e}")
+                        # As a fallback, store the raw string
+                        data[key] = value_str
         
-        # Convert string representations back to Python objects
-        data = {}
-        for i, key in enumerate(keys):
-            try:
-                # Parse string representations of lists back to actual lists
-                if key in ['scaling_factors', 'factors_second', 'setting']:
-                    data[key] = ast.literal_eval(values[i])
-                else:
-                    # For the nested data structures
-                    data[key] = ast.literal_eval(values[i])
-            except (SyntaxError, ValueError) as e:
-                print(f"Error parsing {key}: {e}")
-                data[key] = values[i]  # Keep as string if parsing fails
+        return data
+        
+    except Exception as e:
+        print(f"Error loading data from {filename}: {e}")
+        return None
     
-    return data
+    
+def load_and_combine_data(labels, settings_range, factors_second, primary_scaling_factors, secondary_scaling_factors):
+    """
+    Load and combine two dictionaries with the same structure but different scaling factors.
+    
+    Args:
+        labels (list): List of primary keys in the dictionaries
+        settings_range (range): Range of settings to process
+        factors_second (list): List of secondary factors
+        primary_scaling_factors (list): Scaling factors for the first dictionary
+        secondary_scaling_factors (list): Scaling factors for the second dictionary
+        
+    Returns:
+        dict: Combined dictionary with merged scaling data
+    """
+    # Initialize the combined data dictionary
+    combined_data = {label: {} for label in labels}
+    
+    # First, load the primary data
+    secondary_data = load_data_with_scaling(labels, settings_range, factors_second, primary_scaling_factors, False)
+    
+    # Then, load the secondary data
+    primary_data = load_data_with_scaling(labels, settings_range, factors_second, secondary_scaling_factors, True)
+    
+    # Now combine both dictionaries
+    for label in labels:
+        for setting in range(settings_range.start, settings_range.stop):
+            # Initialize setting in combined data
+            combined_data[label][setting] = []
+            
+            # Check if this setting exists in both dictionaries
+            if setting in primary_data[label] and setting in secondary_data[label]:
+                # For each factor_second
+                for i, _ in enumerate(factors_second):
+                    combined_data[label][setting].append([])
+                    
+                    # Combine the scaling factor data in order
+                    all_scaling_values = []
+                    
+                    # Add secondary data for this factor_second
+                    if i < len(secondary_data[label][setting]):
+                        for sf_data in secondary_data[label][setting][i]:
+                            all_scaling_values.append(sf_data)
+                            
+                    # Add primary data for this factor_second
+                    if i < len(primary_data[label][setting]):
+                        for sf_data in primary_data[label][setting][i]:
+                            all_scaling_values.append(sf_data)
+                    # Store the combined data
+                    combined_data[label][setting][i] = all_scaling_values
+    
+    # Create a combined list of scaling factors for reference
+    combined_scaling_factors = sorted(primary_scaling_factors + secondary_scaling_factors)
+    print(f"Combined scaling factors: {combined_scaling_factors}")
+    
+    return combined_data, combined_scaling_factors
+
+
+def load_data_with_scaling(labels, settings_range, factors_second, scaling_factors, is_primary=True):
+    """
+    Load data for either primary or secondary scaling factors.
+    
+    Args:
+        labels (list): List of primary keys in the dictionaries
+        settings_range (range): Range of settings to process
+        factors_second (list): List of secondary factors
+        scaling_factors (list): Scaling factors to use
+        is_primary (bool): Whether this is loading primary or secondary data
+        
+    Returns:
+        dict: Loaded data dictionary
+    """
+    all_data = {label: {} for label in labels}
+    
+    # Run experiments for all settings
+    for setting in settings_range:
+        print(f"Loading data for setting {setting} ({'primary' if is_primary else 'secondary'})")
+        
+        # Load data from CSV with appropriate flag
+        setting_data = load_setting_data_from_csv(setting, is_primary)
+        
+        for label in labels:
+            # Initialize the setting key with an empty list
+            all_data[label][setting] = []
+            
+            if setting_data and label in setting_data:
+                if len(setting_data[label]) == 1:
+                    flat_data = setting_data[label][0]
+                    
+                    # Reorganize the data
+                    for i, factor_second in enumerate(factors_second):
+                        all_data[label][setting].append([])  # Create a list for this factor_second
+                        
+                        factor_data = flat_data[i]  # Get the data for this factor_second
+                        
+                        # Split the values into sublists for each scaling factor
+                        for j, scaling_factor in enumerate(scaling_factors):
+                            all_data[label][setting][i].append(flat_data[i*len(scaling_factors)+j])
+                else:
+                    all_data[label][setting] = setting_data[label]
+    
+    return all_data
+
 def main():
     # Hyperparameter configuration for model tuning
     hidden_sizes = [30, 40, 50, 60, 100]  # Hidden layer sizes for first-order network
@@ -1833,7 +1995,7 @@ def main():
     hyperparameters = list(product(hidden_sizes, factors, gelus, step_sizes, gammas, metalayers, optimizer))
     
     # Execution mode flags
-    Training = True  # Run training experiments
+    Training = False  # Run training experiments
     
     # Cascade type explanations:
     # cascade type 1: both 1st and 2nd order networks use cascade mode
@@ -1930,53 +2092,52 @@ def main():
 
     default_hidden_first=40
     default_hidden_second=100
-    scaling_factors = [1, 2, 3, 5, 10,  15, 25, 50, 100]
-    factors_second = [0.1, 0.2 , 0.5, 1.0, 2.0, 5.0]
-    seeds_scaling = 50  # Number of seeds for scaling experiments
+    scaling_factors = [0.0625, 0.125, 0.25, 0.5]
     
+    primary_scaling_factors = [0.0625, 0.125, 0.25, 0.5]
+    secondary_scaling_factors = [1, 2, 3, 5, 10, 15, 25, 50, 100]
+    
+    factors_second = [0.1, 0.2 , 0.5, 1.0, 2.0, 5.0]
+    seeds_scaling = 100  # Number of seeds for scaling experiments
+    settings_range = range(1, 7)
     scaling=True
     
-    load_data=False
+    load_data=True
     
+    labels = ['discrimination_data', 'f1_scores_data', 'std_discrimination_data', 'std_wager_data']
+    all_data = {label: {} for label in labels}
+
     if scaling:
-        # Dictionary to store results for all settings
-        all_discrimination_data = {}
-        all_f1_scores_data = {}
-        all_std_discrimination_data = {}
-        all_std_wager_data = {}
         
-        # Run experiments for all 6 settings
-        for setting in range(1, 7):
-            if load_data:
-                print(f"Loading data for setting {setting}")
-                # Load data from CSV
-                setting_data = load_setting_data_from_csv(setting)
-                
-                # Store data in respective dictionaries
-                all_discrimination_data[setting] = setting_data['discrimination_data']
-                all_f1_scores_data[setting] = setting_data['f1_scores_data']
-                all_std_discrimination_data[setting] = setting_data['std_discrimination_data']
-                all_std_wager_data[setting] = setting_data['std_wager_data']
-            else:
+        if load_data:
+            # Load and combine the data
+            all_data, scaling_factors = load_and_combine_data(
+                labels, settings_range, factors_second, primary_scaling_factors, secondary_scaling_factors
+            )
+        else:
+            # Run experiments for all 6 settings
+            for setting in range(1, 7):
+            
                 print(f"Starting experiments for setting {setting}")
+                # Run the experiment for the current setting
                 discr_data, f1_data, std_discr_data, std_wager_data = run_setting_experiment(
-                    setting, scaling_factors, factors_second, default_hidden_first, 
+                    setting, scaling_factors, factors_second, default_hidden_first,
                     default_hidden_second, seeds_scaling, cascade_off, cascade_mode
                 )
-                
-                # Store results
-                all_discrimination_data[setting] = discr_data
-                all_f1_scores_data[setting] = f1_data
-                all_std_discrimination_data[setting] = std_discr_data
-                all_std_wager_data[setting] = std_wager_data
-        
+
+                # Store results in the all_data dictionary
+                all_data['discrimination_data'][setting] = discr_data
+                all_data['f1_scores_data'][setting] = f1_data
+                all_data['std_discrimination_data'][setting] = std_discr_data
+                all_data['std_wager_data'][setting] = std_wager_data
+
         # Create combined plots with data from all settings
         plot_scaling_discrimination(
             scaling_factors,
-            all_discrimination_data,
+            all_data['discrimination_data'],
             factors_second,
             list(range(1, 7)),  # Settings 1-6
-            std_data=all_std_discrimination_data  # Add the standard deviation data
+            std_data=all_data['std_discrimination_data']  # Add the standard deviation data
         )
         
         # Save combined results if not loading from CSV
@@ -1984,10 +2145,10 @@ def main():
             combined_results = {
                 'scaling_factors': scaling_factors,
                 'factors_second': factors_second,
-                'all_discrimination_data': convert_arrays_to_lists(all_discrimination_data),
-                'all_f1_scores_data': convert_arrays_to_lists(all_f1_scores_data),
-                'all_std_discrimination_data': convert_arrays_to_lists(all_std_discrimination_data),
-                'all_std_wager_data': convert_arrays_to_lists(all_std_wager_data)
+                'all_discrimination_data': convert_arrays_to_lists(all_data['discrimination_data']),
+                'all_f1_scores_data': convert_arrays_to_lists(all_data['f1_scores_data']),
+                'all_std_discrimination_data': convert_arrays_to_lists(all_data['std_discrimination_data']),
+                'all_std_wager_data': convert_arrays_to_lists(all_data['std_wager_data'])
             }
             
             # Save to CSV

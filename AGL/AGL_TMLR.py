@@ -592,14 +592,16 @@ def pre_train(first_order_network, second_order_network, criterion_1, criterion_
     cascade_rate_two= 1.0
     cascade_iterations_two= 1
       
+  number_patterns=int(patterns_number_pre*factor)
+  
   for epoch in range(n_epochs_pre):
       #print('Epoch {}/{}'.format(epoch, n_epochs_pre) )
 
       #generation online of patterns every epoch, and pass over the networks
       if epoch==0:
-        patterns_tensor = Array_Words(1, patterns_number_pre*factor, True)
+        patterns_tensor = Array_Words(1, number_patterns, True)
 
-      patterns_tensor = Array_Words(1, patterns_number_pre*factor)
+      patterns_tensor = Array_Words(1, number_patterns)
 
       # Forward pass through the first-order network
       #hidden_representation , output_first_order = first_order_network(patterns_tensor)
@@ -885,12 +887,13 @@ def training(networks, n_epochs_train, start_network, end_network, factor, meta,
         cascade_rate_two = 1.0
         cascade_iterations_two = 1
     
+    patterns_number=45*factor
     # Loop through the specified range of networks
     for index in range(start_network, end_network):
         # For each epoch in the training process
         for epoch in range(n_epochs_tra_1):
             # Generate input data patterns for training
-            patterns_tensor = Array_Words(2, 45 * factor)
+            patterns_tensor = Array_Words(2, patterns_number)
             
             # Initialize hidden representation and outputs to None
             hidden_representation = None
@@ -1096,7 +1099,9 @@ def testing(networks, factor, cascade_rate,seeds, type_cascade):
     networks[network][0].eval()
     networks[network][1].eval()
 
-  Random_baseline_patterns= Array_Words(1, 60 *factor)
+  patterns_number=int(60*factor)
+  Random_baseline_patterns= Array_Words(1, patterns_number)
+  
   Random_baseline_patterns = torch.Tensor(Random_baseline_patterns).to(device)
 
   numbers_networks = list(range(1, num_networks*seeds +1))
@@ -1135,8 +1140,8 @@ def testing(networks, factor, cascade_rate,seeds, type_cascade):
 
 
     with torch.no_grad():
-      Testing_grammar_A= Array_Words(2, len(networks) *factor)
-      Testing_grammar_B= Array_Words(3, len(networks)*factor )
+      Testing_grammar_A= Array_Words(2, int(len(networks) *factor))
+      Testing_grammar_B= Array_Words(3, int(len(networks)*factor) )
 
       Testing_patterns = torch.cat((Testing_grammar_A, Testing_grammar_B), dim=0)
       Testing_patterns= torch.Tensor(Testing_patterns).to(device)
@@ -2241,6 +2246,7 @@ def plot_scaling_consciousness(scaling_factors, all_data, factors_second, settin
         data_type: String indicating "task" or "wagering" performance
         std_data: Dictionary with same structure as all_data, containing standard deviation values
     """
+
     # Create figure with 6 subplots (2 columns, 3 rows)
     fig, axs = plt.subplots(3, 2, figsize=(16, 18), sharex=True, sharey=True)
     axs = axs.flatten()  # Flatten the 2D array of axes for easier indexing
@@ -2284,38 +2290,41 @@ def plot_scaling_consciousness(scaling_factors, all_data, factors_second, settin
                 # Data already in correct format
                 plot_data = setting_data[i]
             
-            # Plot the main line
-            ax.plot(
-                scaling_factors, 
-                plot_data,
-                marker='o',
-                linestyle='-',
-                color=colors[i],
-                label=f'Factor = {factor_second}'
-            )
-            
-            # Add standard deviation bands if available
-            if setting_std_data is not None and len(setting_std_data[i]) > 0:
-                # Check if std data is a list or a single value
-                if isinstance(setting_std_data[i], (int, float)):
-                    # Use the same std for all points
-                    std_values = [setting_std_data[i]] * len(plot_data)
-                else:
-                    # Use the provided std values
-                    std_values = setting_std_data[i]
-                
-                # Calculate upper and lower bounds
-                upper_bound = [d + s for d, s in zip(plot_data, std_values)]
-                lower_bound = [d - s for d, s in zip(plot_data, std_values)]
-                
-                # Plot the filled area between upper and lower bounds
-                ax.fill_between(
-                    scaling_factors,
-                    lower_bound,
-                    upper_bound,
-                    color=colors[i],
-                    alpha=0.2  # Transparency
-                )
+            #full  list  [0.1, 0.2 , 0.5, 1.0, 2.0, 5.0]
+            if factor_second in  [0.5, 1.0, 5.0]:
+              # Plot the main line
+              ax.plot(
+                  scaling_factors, 
+                  plot_data,
+                  marker='o',
+                  linestyle='-',
+                  color=colors[i],
+                  label=f'Factor = {factor_second}'
+              )
+              
+              # Add standard deviation bands if available
+              if setting_std_data is not None and len(setting_std_data[i]) > 0:
+                  # Check if std data is a list or a single value
+                  if isinstance(setting_std_data[i], (int, float)):
+                      # Use the same std for all points
+                      std_values = [setting_std_data[i]] * len(plot_data)
+                  else:
+                      # Use the provided std values
+                      std_values = setting_std_data[i]
+
+
+                  # Calculate upper and lower bounds
+                  upper_bound = [d + s for d, s in zip(plot_data, std_values)]
+                  lower_bound = [d - s for d, s in zip(plot_data, std_values)]
+                  
+                  # Plot the filled area between upper and lower bounds
+                  ax.fill_between(
+                      scaling_factors,
+                      lower_bound,
+                      upper_bound,
+                      color=colors[i],
+                      alpha=0.2  # Transparency
+                  )
         
         # Use log scale for x-axis if there are multiple scaling factors with wide range
         if len(scaling_factors) > 2 and max(scaling_factors) / min(scaling_factors) > 10:
@@ -2362,39 +2371,83 @@ def plot_scaling_consciousness(scaling_factors, all_data, factors_second, settin
     plt.close(fig)
     print(f"{consciousness_text} {performance_text} plot saved as '{filename}'.")
     
-    
 def load_setting_data_from_csv(setting):
     """
     Load experiment data for a specific setting from CSV file
     Returns a dictionary with the loaded data
     """
+    import csv
+    import os
+    import ast
+    import re
+    
+    # Increase the CSV field size limit
+    csv.field_size_limit(2147483647)  # Set to maximum possible value
+    
     filename = f'AGL_scaling_plot_data_setting_{setting}.csv'
     
     if not os.path.exists(filename):
         print(f"Warning: File {filename} not found")
         return None
     
-    with open(filename, mode='r', newline='') as file:
-        reader = csv.reader(file)
-        keys = next(reader)  # Read header row
-        values = next(reader)  # Read data row
+    try:
+        with open(filename, mode='r', newline='') as file:
+            reader = csv.reader(file)
+            keys = next(reader)  # Read header row
+            values = next(reader)  # Read data row
+            
+            # Convert string representations back to Python objects
+            data = {}
+            
+            for i, key in enumerate(keys):
+                value_str = values[i]
+                
+                try:
+                    # For simple lists
+                  data[key] = ast.literal_eval(value_str)
+                
+                except (SyntaxError, ValueError) as e:
+                    # For numpy arrays with float64 values
+                    try:
+                        # Convert the numpy-specific format to actual numerical values
+                        # Extract numbers from np.float64(...) patterns
+                        float_pattern = r'np\.float64\(([^)]+)\)'
+                        matches = re.findall(float_pattern, value_str)
+                        
+                        if matches:
+                            # Determine the structure based on bracket levels
+                            # Count opening brackets to determine nesting level
+                            nesting_level = value_str.count('[[[')
+                            
+                            if nesting_level >= 1:
+                                # Handle 3D array [[[...]]]
+                                # Split by closing/opening brackets to get the different sub-arrays
+                                sublists = re.findall(r'\[\[(.*?)\]\]', value_str)
+                                result = []
+                                for sublist in sublists:
+                                    # Extract all float values
+                                    floats = re.findall(float_pattern, sublist)
+                                    if floats:
+                                        result.append([float(x) for x in floats])
+                                data[key] = [result]  # Wrap in list to maintain 3D structure
+                            else:
+                                # Handle 2D array [[...]]
+                                floats = [float(x) for x in matches]
+                                data[key] = [floats]
+                        else:
+                            print(f"No float values found for key '{key}'")
+                            data[key] = []
+                            
+                    except Exception as e:
+                        print(f"Error parsing data for key '{key}': {e}")
+                        # As a fallback, store the raw string
+                        data[key] = value_str
         
-        # Convert string representations back to Python objects
-        data = {}
-        for i, key in enumerate(keys):
-            try:
-                # Parse string representations of lists back to actual lists
-                if key in ['scaling_factors', 'factors_second', 'setting']:
-                    data[key] = ast.literal_eval(values[i])
-                else:
-                    # For the nested data structures
-                    data[key] = ast.literal_eval(values[i])
-            except (SyntaxError, ValueError) as e:
-                print(f"Error parsing {key}: {e}")
-                data[key] = values[i]  # Keep as string if parsing fails
-    
-    return data
-
+        return data
+        
+    except Exception as e:
+        print(f"Error loading data from {filename}: {e}")
+        return None
 
 def main():
     """
@@ -2438,7 +2491,7 @@ def main():
     hyperparameters = list(product(hidden_sizes, factors, gelus, step_sizes, gammas, metalayers))
     
     # Experiment control flags
-    Training = True
+    Training = False
   
     # Cascade types explanation:
     # cascade type 1: Both 1st and 2nd order networks use cascade mode
@@ -2527,40 +2580,64 @@ def main():
     default_hidden_second = 48
     scaling_factors = [1, 2, 3, 5, 10,  15, 25, 50, 100]
     factors_second = [0.1, 0.2 , 0.5, 1.0, 2.0, 5.0]
-    seeds_scaling = 5  # Number of seeds for scaling experiments
-    
-    
-    # Dictionary to store results for all settings
-    all_high_consciousness_data = {}
-    all_low_consciousness_data = {}
-    all_high_wagering_data = {}
-    all_low_wagering_data = {}
-    all_high_consciousness_std = {}
-    all_low_consciousness_std = {}
-    all_high_wagering_std = {}
-    all_low_wagering_std = {}
+    seeds_scaling = 10  # Number of seeds for scaling experiments
     
     scaling=True
     
-    load_data=False
+    load_data=True
+    
+    labels=['high_consciousness_data', 'low_consciousness_data', 'high_wagering_data','low_wagering_data','high_consciousness_std','low_consciousness_std','high_wagering_std','low_wagering_std']
+    
+    
+    all_data = {label: {} for label in labels}
+
     
     if scaling:
       # Run experiments for all 6 settings
       for setting in range(1, 7):
         
           if load_data==True:
+            
             print(f"Loading data for setting {setting}")
             # Load data from CSV
             setting_data = load_setting_data_from_csv(setting)
                        # Store data in respective dictionaries
-            all_high_consciousness_data[setting] = setting_data['high_consciousness_data']
-            all_low_consciousness_data[setting] = setting_data['low_consciousness_data']
-            all_high_wagering_data[setting] = setting_data['high_wagering_data']
-            all_low_wagering_data[setting] = setting_data['low_wagering_data']
-            all_high_consciousness_std[setting] = setting_data['high_consciousness_std']
-            all_low_consciousness_std[setting] = setting_data['low_consciousness_std']
-            all_high_wagering_std[setting] = setting_data['high_wagering_std']
-            all_low_wagering_std[setting] = setting_data['low_wagering_std']
+
+            for label in labels:
+                # Initialize the setting key with an empty list
+                all_data[label][setting] = []
+                
+                if len(setting_data[label]) == 1:
+
+                    flat_data = setting_data[label][0]
+                      
+                    # Reorganize the data
+                    for i, factor_second in enumerate(factors_second):
+                        all_data[label][setting].append([])  # Create a list for this factor_second
+                        
+                        factor_data = flat_data[i]  # Get the data for this factor_second
+                        
+                        # Split the 900 values into 9 sublists of 100 values each
+                        for j, scaling_factor in enumerate(scaling_factors):
+                            #if 'std' not in label:
+                            #  all_data[label][setting][i].append([])  # Create a list for this factor_second
+
+                            if 'std' not in label:
+                              start_idx = j * seeds_scaling
+                              end_idx = start_idx + seeds_scaling
+                              all_data[label][setting][i].append(factor_data[start_idx:end_idx])
+
+                            #if 'std' not in label:
+                            #  for k in range(int(len(factor_data)/len(scaling_factors))):
+                            #    all_data[label][setting][i][j].append(factor_data[k*len(scaling_factors) + j ])
+                            #else:
+                            else:
+                              all_data[label][setting][i].append(flat_data[i*len(scaling_factors)+j]) 
+                      
+                else:
+                    all_data[label][setting] = setting_data[label]
+
+            
                         
           else:
             
@@ -2573,35 +2650,36 @@ def main():
             )
           
             # Store results
-            all_high_consciousness_data[setting] = high_consciousness
-            all_low_consciousness_data[setting] = low_consciousness
-            all_high_wagering_data[setting] = high_wagering
-            all_low_wagering_data[setting] = low_wagering
-            all_high_consciousness_std[setting] = high_consciousness_std
-            all_low_consciousness_std[setting] = low_consciousness_std
-            all_high_wagering_std[setting] = high_wagering_std
-            all_low_wagering_std[setting] = low_wagering_std
+            all_data[labels[0]][setting]= high_consciousness
+            all_data[labels[1]][setting]= low_consciousness
+            all_data[labels[2]][setting]= high_wagering
+            all_data[labels[3]][setting]= low_wagering
+            all_data[labels[4]][setting]= high_consciousness_std
+            all_data[labels[5]][setting]= low_consciousness_std
+            all_data[labels[6]][setting]= high_wagering_std
+            all_data[labels[7]][setting]= low_wagering_std
+            
       
       # Create plots for high consciousness task performance
       plot_scaling_consciousness(
           scaling_factors,
-          all_high_consciousness_data,
+          all_data['high_consciousness_data'],
           factors_second,
           list(range(1, 7)),  # Settings 1-6
           consciousness_level="high",
           data_type="task",
-          std_data=all_high_consciousness_std
+          std_data=all_data['high_consciousness_std']
       )
       
       # Create plots for low consciousness task performance
       plot_scaling_consciousness(
           scaling_factors,
-          all_low_consciousness_data,
+          all_data['low_consciousness_data'],
           factors_second,
           list(range(1, 7)),  # Settings 1-6
           consciousness_level="low",
           data_type="task",
-          std_data=all_low_consciousness_std
+          std_data=all_data['low_consciousness_std']
       )
     
 # Execute the main function
