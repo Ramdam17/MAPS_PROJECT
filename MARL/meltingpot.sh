@@ -4,7 +4,8 @@
 #EXAMPLE using baseline 
 #./meltingpot.sh TERRITORY_R 1 LSTM 64 1 1 ADAM 100 1 1
 
-#pip install omegaconf ignite pytorch-ignite torchvision scikit-learn pytorch_lightning timm
+#pip install -r requirements.txt
+#pip install --editable .[dev]
 
 # Check for the number of inputs and set defaults if necessary
 environment=${1:-default_environment}
@@ -39,8 +40,8 @@ export CUDA_HOME=/cvmfs/soft.computecanada.ca/easybuild/software/2023/x86-64-v3/
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 export XLA_FLAGS=--xla_gpu_cuda_data_dir=$CUDA_HOME
 
-env_steps=1000000
-episodes=1000
+env_steps=2000000
+episodes=2000
 
 # Set agents and substrate name based on the environment
 case "$environment" in
@@ -396,7 +397,7 @@ CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py \
     --use_valuenorm False \
     --use_popart True \
     --env_name "Meltingpot" \
-    --experiment_name "check" \
+    --experiment_name "setting_${setting}" \
     --substrate_name "${substrate}" \
     --num_agents ${agents} \
     --seed ${seed} \
@@ -413,6 +414,4 @@ CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py \
     --attention_module ${module} \
     --algorithm_name mappo \
     --num_episodes ${episodes} \
-    --num_env_steps ${env_steps} 
-
-
+    --num_env_steps ${env_steps} > $general_dir/logs/AAA_new_meltingpot_${substrate}_setting${setting}_${seed}.log

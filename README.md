@@ -39,8 +39,8 @@ Our experiments demonstrate significant performance improvements across multiple
 Clone the repository and install the requirements:
 
 ```bash
-git clone https://github.com/yourusername/maps.git
-cd maps
+git clone https://github.com/juandavidvargas19/MAPS_PROJECT.git
+cd MAPS_PROJECT
 pip install -r requirements.txt
 ```
 
@@ -55,25 +55,10 @@ Additionall requirements for MARL:
 
 ```bash
 cd MARL/MAPPO-ATTENTIOAN
-pip install --no-index --upgrade pip
-pip install --no-index --no-cache-dir numpy 
-pip install --no-index --no-cache-dir opencv-python
-pip install --no-index --no-cache-dir ml-collections
-pip install --no-index torch torchvision torchtext torchaudio
-pip install --no-index wandb
-pip install dm-env
-pip install pygame
-install DeepMind Lab2D https://github.com/deepmind/lab2d
-wget https://files.pythonhosted.org/packages/4b/31/884879224de4627b5d45b307cec8f4cd1e60db9aa61871e4aa2518c6584b/dmlab2d-1.0.0_dev.10-cp310-cp310-manylinux_2_31_x86_64.whl -O dmlab2d-1.0.0_dev.10-cp310-cp310-linux_x86_64.whl
-setrpaths.sh --path dmlab2d-1.0.0_dev.10-cp310-cp310-linux_x86_64.whl 
-pip install dmlab2d-1.0.0_dev.10-cp310-cp310-linux_x86_64.whl 
-pip install --no-index libcst
+pip install "ray[cpp]" --no-index
 git clone -b main https://github.com/deepmind/meltingpot
 cd meltingpot
 pip install --editable .[dev]
-pip install  --no-index --no-cache-dir dm-acme
-pip install -U pip
-pip install "ray[cpp]" --no-index
 ```
 
 
