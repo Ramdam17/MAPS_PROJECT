@@ -11,12 +11,12 @@ substrate="space_invaders"
 general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thyself/MAPS_PROJECT/SARL_CL/MinAtar"
 
 # For conda to work in scripts, you need to initialize it first
-eval "$(conda shell.bash hook)"
-conda activate marl
+#eval "$(conda shell.bash hook)"
+#conda activate marl
 
 export PYTHONPATH="$PYTHONPATH:$general_dir"
 
-load_dir='/home/juan-david-vargas-mazuera/ICML-RUNS/WorkshopPaper/REPO/MinAtar/results_curriculum/breakout_setting1_steps50000_1000_data_and_weights'
+load_dir='/home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thyself/MAPS_PROJECT/SARL_CL/breakout_setting1_steps100000_1_data_and_weights'
 
 # Create a log directory for all runs
 log_dir="$general_dir/results_curriculum/transfer_learning_logs3"

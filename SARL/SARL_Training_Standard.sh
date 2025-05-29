@@ -24,7 +24,8 @@ general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thy
 #module for computing cluster
 #module load gcc python/3.11 opencv mpi4py arrow cuda cudnn rust
 #source /home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thyself/MAPS_PROJECT/MAPS/bin/activate
-conda activate MAPS
+
+#conda activate MAPS
 
 
 export PYTHONPATH="$PYTHONPATH:$general_dir"
@@ -66,11 +67,11 @@ echo "current setting: $setting_current"
 seed_current=$seed
 echo "  current seed: $seed_current"
 
-CUDA_VISIBLE_DEVICES=0,1 python $general_dir/examples/maps.py \
+CUDA_VISIBLE_DEVICES=0,1 python $general_dir/examples/maps_v1.py \
     -ema 25 \
     -cascade 50 \
     -g $substrate \
     -seed $seed_current \
     -setting $setting_current \
     -steps "$base" \
-    > $general_dir/logs/AAA_${substrate}_Regular_seed_${seed}_setting${setting_current}_${base}steps.log
+    #> $general_dir/logs/AAA_${substrate}_Regular_seed_${seed}_setting${setting_current}_${base}steps.log

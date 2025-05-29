@@ -31,7 +31,7 @@ episode_length=0
 bottom=0
 sup=0
 
-conda activate marl
+#conda activate marl
 
 #Copy to user dir to avoid disk quota error
 
@@ -414,4 +414,4 @@ CUDA_VISIBLE_DEVICES=0 python $repo/onpolicy/scripts/train/train_meltingpot.py \
     --attention_module ${module} \
     --algorithm_name mappo \
     --num_episodes ${episodes} \
-    --num_env_steps ${env_steps} > $general_dir/logs/AAA_new_meltingpot_${substrate}_setting${setting}_${seed}.log
+    --num_env_steps ${env_steps} # > $general_dir/logs/AAA_new_meltingpot_${substrate}_setting${setting}_${seed}.log

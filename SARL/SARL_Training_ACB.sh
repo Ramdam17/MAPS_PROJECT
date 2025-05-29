@@ -18,7 +18,8 @@ general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thy
 #module for computing cluster
 #module load gcc python/3.11 opencv mpi4py arrow cuda cudnn rust
 #source /home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thyself/MAPS_PROJECT/MAPS/bin/activate
-conda activate MAPS
+
+#conda activate MAPS
 
 export PYTHONPATH="$PYTHONPATH:$general_dir"
 
@@ -63,5 +64,5 @@ for (( index=1; index<=${#seeds[@]}; index++ )); do
         -g $substrate \
         -seed $setting_current \
         -steps "$base" \
-        >> $general_dir/logs/AAA_Regular_${substrate}_setting7_seed${setting_current}_${base}steps.log
+        #>> $general_dir/logs/AAA_Regular_${substrate}_setting7_seed${setting_current}_${base}steps.log
 done

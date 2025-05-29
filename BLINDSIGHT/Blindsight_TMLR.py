@@ -35,6 +35,45 @@ from scipy.stats import norm
 import torch_optimizer as optim2
 
 
+
+# Import the EnergyTracker class
+from energy_tracker import NvidiaEnergyTracker , MLModelEnergyEfficiency # Assuming you saved the previous code as energy_tracker.py
+import time
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def initialize_tracker():
+  global tracker, model_efficiency
+  # Initialize tracker
+  tracker = NvidiaEnergyTracker(
+      project_name="pytorch_example",
+      output_dir="./energy_data",
+      tracking_interval=1  # Sample every second
+  )
+
+  # Initialize model efficiency wrapper
+  model_efficiency = MLModelEnergyEfficiency(tracker, model_name="example_model")
+
+  # Start tracking
+  model_efficiency.start_tracking()
+
+
+def stop_get_results_tracker():
+  energy_results = model_efficiency.stop_tracking()
+
+  # Show peak results and consumption metrics
+  if energy_results:
+      # Print summary
+      print("\nEnergy Efficiency Summary:")
+      print(f"Total Energy: {energy_results['energy_kwh']:.10f} kWh")
+      print(f"Carbon Emissions: {energy_results['emissions_kg']:.10f} kg CO2eq")
+
+
+
+
+
 # %% [markdown]
 # # DEVICE CONFIGURATION
 
@@ -175,10 +214,9 @@ class SecondOrderNetwork(nn.Module):
     def __init__(self, use_gelu, hidden_2nd):
         super(SecondOrderNetwork, self).__init__()
         # Define a linear layer for comparing the difference between input and output of the first-order network
-        self.comparison_layer = nn.Linear(100, hidden_2nd)
 
         # Linear layer for determining wagers, mapping from 100 features to a single output
-        self.wager = nn.Linear(hidden_2nd, 1)
+        self.wager = nn.Linear(100, 1)
 
         # Dropout layer to prevent overfitting by randomly setting input units to 0 with a probability of 0.5 during training
         self.dropout = nn.Dropout(0.5)
@@ -196,7 +234,6 @@ class SecondOrderNetwork(nn.Module):
 
     def _init_weights(self):
         # Uniformly initialize weights for the comparison and wager layers
-        init.uniform_(self.comparison_layer.weight, -1.0, 1.0)
         init.uniform_(self.wager.weight, 0.0, 0.1)
 
     def forward(self, first_order_input, first_order_output, prev_comparison, cascade_rate):
@@ -204,7 +241,8 @@ class SecondOrderNetwork(nn.Module):
         comparison_matrix = first_order_input - first_order_output
 
         # Pass the difference through the comparison layer and apply the chosen activation function
-        comparison_out=self.dropout(self.activation(self.comparison_layer(comparison_matrix)))
+        comparison_out=self.dropout(comparison_matrix)
+
         if prev_comparison is not None:
           comparison_out = cascade_rate * comparison_out + (1 - cascade_rate) * prev_comparison
 
@@ -375,10 +413,18 @@ def perform_linear_regression(epoch_list, precision):
 
 # %%
 # define the architecture, optimizers, loss functions, and schedulers for pre training
-def prepare_pre_training(hidden, hidden_2nd,factor,gelu,stepsize, gam, optimizer):
+def prepare_pre_training(hidden, hidden_2nd,factor,gelu,stepsize, gam, optimizer, meta):
 
   first_order_network = FirstOrderNetwork(hidden, factor, gelu).to(device)
   second_order_network = SecondOrderNetwork(gelu, hidden_2nd).to(device)
+
+
+  total_params = count_parameters(first_order_network)
+
+  if meta:
+    total_params += count_parameters(second_order_network)
+
+  print(f"Total Parameters: {total_params}")
 
   criterion_1 = CAE_loss
   criterion_2 = nn.BCELoss(size_average = False)
@@ -571,6 +617,9 @@ def pre_train(first_order_network, second_order_network, criterion_1,  criterion
         scheduler_1.step()
 
         epoch_1_order[epoch] = loss_1.item()
+
+        tracker.log_point()
+
         #epoch_1_order[epoch] = loss_location.item()
 
 
@@ -1060,7 +1109,7 @@ def train(hidden, hidden_2nd, factor, gelu, stepsize, gam, meta, optimizer, seed
         # First-order network: autoencoder for pattern recognition
         # Second-order network: metacognitive component with wagering units
         first_order_network, second_order_network, criterion_1, criterion_2, optimizer_1, optimizer_2, scheduler_1, scheduler_2 = prepare_pre_training(
-            hidden, hidden_2nd, factor, gelu, stepsize, gam, optimizer
+            hidden, hidden_2nd, factor, gelu, stepsize, gam, optimizer, meta
         )
         
         # Pre-train both networks using contrastive loss (1st) and cross-entropy (2nd)
@@ -1472,6 +1521,162 @@ def load_scaling_data_from_csv(filename):
 def plot_scaling_discrimination(scaling_factors, discrimination_data, factor_second_values, settings_data, std_data=None):
     """
     Plots discrimination performance with standard deviation bands for different secondary factors across multiple settings
+    Uses 3rd degree polynomial fitting instead of direct line plotting
+    
+    Args:
+        scaling_factors: List of primary scaling factors (x-axis)
+        discrimination_data: Dictionary where keys are settings (1-6) and values are nested lists
+                          where each sublist contains discrimination values for a specific
+                          secondary factor across all primary factors
+        factor_second_values: List of secondary factor values (for legend)
+        settings_data: List of settings to plot (1-6)
+        std_data: Dictionary with same structure as discrimination_data, containing standard deviation values
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.optimize import curve_fit
+    
+    # Create figure with 6 subplots (2 columns, 3 rows)
+    fig, axs = plt.subplots(3, 2, figsize=(16, 18), sharex=True, sharey=True)
+    axs = axs.flatten()  # Flatten the 2D array of axes for easier indexing
+    
+    colors = plt.cm.viridis(np.linspace(0, 1, len(factor_second_values)))
+    
+    # Define the polynomial function (3rd degree)
+    def poly_func(x, a, b, c, d):
+        return a * x**2 + b * x+ d
+    
+    # For each setting (1-6)
+    for setting_idx, setting in enumerate(settings_data):
+        ax = axs[setting_idx]
+        
+        # Get data for this setting
+        setting_data = discrimination_data.get(setting, [[] for _ in range(len(factor_second_values))])
+        
+        # Get standard deviation data for this setting if available
+        setting_std_data = None
+        if std_data is not None:
+            setting_std_data = std_data.get(setting, [[] for _ in range(len(factor_second_values))])
+        
+        # Plot each secondary factor line
+        for i, factor_second in enumerate(factor_second_values):
+            
+            if factor_second in [0.1, 0.5, 1.0, 2.0]:
+                y_data = setting_data[i]
+                
+                # Create a dense x array for smooth curve plotting
+                x_dense = np.linspace(min(scaling_factors), max(scaling_factors), 100)
+                
+                # Only fit polynomial if we have enough data points
+                if len(scaling_factors) >= 4:  # Need at least 4 points for a 3rd degree polynomial
+                    try:
+                        # Fit 3rd degree polynomial
+                        params, _ = curve_fit(poly_func, scaling_factors, y_data)
+                        
+                        # Generate fitted y values
+                        y_fit = poly_func(x_dense, *params)
+                        
+                        # Plot the polynomial fit
+                        ax.plot(
+                            x_dense, 
+                            y_fit,
+                            linestyle='-',
+                            color=colors[i],
+                            label=f'2nd-net = {factor_second}'
+                        )
+                        
+                        # Plot original data points
+                        ax.scatter(
+                            scaling_factors,
+                            y_data,
+                            marker='o',
+                            color=colors[i],
+                            alpha=0.7
+                        )
+                        
+                    except Exception as e:
+                        # Fallback to original line plot if curve fitting fails
+                        print(f"Curve fitting failed for setting {setting}, factor {factor_second}: {e}")
+                        ax.plot(
+                            scaling_factors, 
+                            y_data,
+                            marker='o',
+                            linestyle='-',
+                            color=colors[i],
+                            label=f'2nd-net = {factor_second}'
+                        )
+                else:
+                    # Not enough points for polynomial fit, use original line plot
+                    ax.plot(
+                        scaling_factors, 
+                        y_data,
+                        marker='o',
+                        linestyle='-',
+                        color=colors[i],
+                        label=f'2nd-net = {factor_second}'
+                    )
+                
+                # Add standard deviation bands if available
+                if setting_std_data is not None and len(setting_std_data[i]) > 0:
+                    # Calculate upper and lower bounds on original data points
+                    upper_bound = [d + s for d, s in zip(y_data, setting_std_data[i])]
+                    lower_bound = [d - s for d, s in zip(y_data, setting_std_data[i])]
+                    
+                    # Plot the filled area between upper and lower bounds
+                    '''
+                    ax.fill_between(
+                        scaling_factors,
+                        lower_bound,
+                        upper_bound,
+                        color=colors[i],
+                        alpha=0.2  # Transparency
+                    )
+                    '''
+        
+        ax.set_title(f'Setting {setting}')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(0, 10)  # Set x-axis limits
+        ax.set_ylim(0.40, 1)
+        ax.set_xscale('log')  # for x-axis
+        ax.set_yscale('log')  # for y-axis
+        
+        # Add setting-specific descriptions
+        setting_descriptions = {
+            1: "No 2nd-net, baseline",
+            2: "No 2nd-net, cascade",
+            3: "2nd-net, no cascade",
+            4: "2nd-net, cascade 1st",
+            5: "2nd-net, cascade 2nd",
+            6: "2nd-net, cascade both"
+        }
+        
+        #ax.text(0.05, 0.95, setting_descriptions.get(setting, ""), transform=ax.transAxes,
+        #        fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    # Add common labels for all subplots
+    fig.text(0.5, 0.08, 'Primary Scaling Factor', ha='center', fontsize=14)
+    fig.text(0.08, 0.5, 'Discrimination Performance', va='center', rotation='vertical', fontsize=14)
+    
+    # Add a single legend for the entire figure
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc='upper center', bbox_to_anchor=(0.5, 0.98),
+               ncol=len(factor_second_values), fontsize=12, frameon=True)
+    
+    plt.tight_layout(rect=[0.1, 0.1, 0.9, 0.92])  # Adjust layout to make room for common labels
+    
+    # Add overall title
+    plt.suptitle('Discrimination Performance by Scaling Factor Across Settings (Polynomial Fit)', fontsize=16, y=0.995)
+    
+    # Save the plot
+    plt.savefig('blindsight_discrimination_scaling_plot_polynomial_fit.png', dpi=300)
+    plt.show()
+    plt.close(fig)
+    print("Plot saved as 'blindsight_discrimination_scaling_plot_polynomial_fit.png'.")
+    
+'''
+def plot_scaling_discrimination(scaling_factors, discrimination_data, factor_second_values, settings_data, std_data=None):
+    """
+    Plots discrimination performance with standard deviation bands for different secondary factors across multiple settings
     
     Args:
         scaling_factors: List of primary scaling factors (x-axis)
@@ -1572,6 +1777,7 @@ def plot_scaling_discrimination(scaling_factors, discrimination_data, factor_sec
     plt.close(fig)
     print(f"plot saved as discrimination_scaling_plot_all_settings.png'.")
 
+ '''
  
 # Function to run a single setting experiment and collect data
 def run_setting_experiment(setting, scaling_factors, factors_second, default_hidden_first, default_hidden_second, seeds_violin, cascade_off, cascade_mode  ):
@@ -1968,7 +2174,7 @@ def main():
     loss_function = []  # Not used but prepared for potential loss function variations
     optimizer = ['ADAMAX']  # Optimizer choice
     seeds = 5  # Number of random seeds for basic experiments
-    seeds_violin = 450  # Number of seeds for violin plot experiments (statistical significance)
+    seeds_violin = 10  # Number of seeds for violin plot experiments (statistical significance)
     
     # Cascade model parameters
     cascade_mode = 0.02  # Cascade model rate parameter
@@ -1995,7 +2201,7 @@ def main():
     hyperparameters = list(product(hidden_sizes, factors, gelus, step_sizes, gammas, metalayers, optimizer))
     
     # Execution mode flags
-    Training = False  # Run training experiments
+    Training = True  # Run training experiments
     
     # Cascade type explanations:
     # cascade type 1: both 1st and 2nd order networks use cascade mode
@@ -2006,6 +2212,11 @@ def main():
     if Training:
         # Configuration 1: Baseline model - No cascade, No 2nd-order network
         initialize_global()  # Reset global variables
+
+
+        start_time = time.time()
+        initialize_tracker()
+        
         f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, \
         std_discrimination, plot_data, list_violin_1st, list_violin_2nd = train(
             hidden=40, hidden_2nd=100, factor=1, gelu=False, stepsize=25, gam=0.98, 
@@ -2013,6 +2224,13 @@ def main():
             plotting=False, cascade_rate=cascade_off, type_cascade=4
         )
         
+        end_time = time.time()
+        run1_time = end_time - start_time
+        print(f"Run 1 completed in {run1_time:.2f} seconds ({run1_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+        start_time = time.time()
+        initialize_tracker()
+
         # Configuration 2: Only cascade model on 1st-order network
         initialize_global()
         f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, \
@@ -2022,8 +2240,15 @@ def main():
             plotting=False, cascade_rate=cascade_mode, type_cascade=2
         )
         
+        end_time = time.time()
+        run2_time = end_time - start_time
+        print(f"Run 2 completed in {run2_time:.2f} seconds ({run2_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+        start_time = time.time()
+        initialize_tracker()
         # Configuration 3: Only 2nd-order network, no cascade
         initialize_global()
+
         f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, \
         std_discrimination, plot_data, list_violin_1st_conf3, list_violin_2nd_conf3 = train(
             hidden=40, hidden_2nd=100, factor=1, gelu=False, stepsize=25, gam=0.98, 
@@ -2031,8 +2256,15 @@ def main():
             plotting=False, cascade_rate=cascade_off, type_cascade=4
         )
         
+        end_time = time.time()
+        run3_time = end_time - start_time
+        print(f"Run 3 completed in {run3_time:.2f} seconds ({run3_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+        start_time = time.time()
+        initialize_tracker()
         # Configuration 4: 2nd-order network + cascade on 1st-order network
         initialize_global()
+
         f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, \
         std_discrimination, plot_data, list_violin_1st_conf4, list_violin_2nd_conf4 = train(
             hidden=40, hidden_2nd=100, factor=1, gelu=False, stepsize=25, gam=0.98, 
@@ -2040,8 +2272,15 @@ def main():
             plotting=False, cascade_rate=cascade_mode, type_cascade=2
         )
         
+        end_time = time.time()
+        run4_time = end_time - start_time
+        print(f"Run 4 completed in {run4_time:.2f} seconds ({run4_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+        start_time = time.time()
+        initialize_tracker()
         # Configuration 5: 2nd-order network + cascade on 2nd-order network only
         initialize_global()
+
         f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, \
         std_discrimination, plot_data, list_violin_1st_conf5, list_violin_2nd_conf5 = train(
             hidden=40, hidden_2nd=100, factor=1, gelu=False, stepsize=25, gam=0.98, 
@@ -2049,8 +2288,15 @@ def main():
             plotting=False, cascade_rate=cascade_mode, type_cascade=3
         )
         
+        end_time = time.time()
+        run5_time = end_time - start_time
+        print(f"Run 5 completed in {run5_time:.2f} seconds ({run5_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+        start_time = time.time()
+        initialize_tracker()
         # Configuration 6: Full model - 2nd-order network + cascade on both networks
         initialize_global()
+
         f1_scores_wager, std_wager, epoch_1_loss, mse_indices, mse_values, discrimination_performances, \
         std_discrimination, plot_data, list_violin_1st_cascade, list_violin_2nd_cascade = train(
             hidden=40, hidden_2nd=100, factor=1, gelu=False, stepsize=25, gam=0.98, 
@@ -2058,6 +2304,11 @@ def main():
             plotting=False, cascade_rate=cascade_mode, type_cascade=1
         )
         
+        end_time = time.time()
+        run6_time = end_time - start_time
+        print(f"Run 6 completed in {run6_time:.2f} seconds ({run6_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+
         # Prepare data for violin plots to visualize statistical distributions
         log_data_violin = [
             # First row: Discrimination performance (main task) for all configurations

@@ -9,6 +9,25 @@ from collections import namedtuple
 from minatar import Environment
 
 
+# Import the EnergyTracker class
+from energy_tracker import NvidiaEnergyTracker , MLModelEnergyEfficiency # Assuming you saved the previous code as energy_tracker.py
+
+# Initialize tracker
+tracker = NvidiaEnergyTracker(
+    project_name="pytorch_example",
+    output_dir="./energy_data",
+    tracking_interval=1  # Sample every second
+)
+
+
+# Initialize model efficiency wrapper
+model_efficiency = MLModelEnergyEfficiency(tracker, model_name="example_model")
+
+# Start tracking
+model_efficiency.start_tracking()
+    
+
+
 #####################################################################################################################
 # Constants
 #
@@ -57,7 +76,7 @@ class ACNetwork(nn.Module):
         self.fc_hidden = nn.Linear(in_features=num_linear_units, out_features=128)
 
         # Output layer:
-        self.policy = nn.Linear(in_features=128, out_features=num_actions)
+        self.policy = nn.Linear(in_features= 128, out_features=num_actions)
         self.value = nn.Linear(in_features=128, out_features=1)
 
     # As per implementation instructions, the forward function should be overwritten by all subclasses
@@ -225,6 +244,9 @@ def validation(env, network, num_episodes):
     # Return average validation return
     return numpy.mean(validation_returns), numpy.std(validation_returns)
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 #####################################################################################################################
 # AC_lambda
 #
@@ -250,6 +272,11 @@ def AC_lambda(env, output_file_name, store_intermediate_result=False, load_path=
 
     # Instantiate networks, optimizer, loss and buffer
     network = ACNetwork(in_channels, num_actions).to(device)
+
+   # Count parameters 
+    total_params = count_parameters(network)
+
+    print(f"Total Parameters: {total_params}")
 
     # Eligibility traces are stored here
     traces = [torch.zeros(x.size(), dtype=torch.float32, device=device) for x in network.parameters()]
@@ -315,6 +342,8 @@ def AC_lambda(env, output_file_name, store_intermediate_result=False, load_path=
 
             train(sample, traces, grads, MSG, network, alpha, t)
 
+            tracker.log_point()
+
             G += reward.item()
 
             t += 1
@@ -343,6 +372,18 @@ def AC_lambda(env, output_file_name, store_intermediate_result=False, load_path=
         
         # Run validation every 100 episodes
         if e % CHECKPOINT_ITERATION == 0:
+
+            if e >= 500:
+                energy_results = model_efficiency.stop_tracking()
+                # Show peak results and consumption metrics
+
+                if energy_results:
+
+                    # Print summary
+                    print("\nEnergy Efficiency Summary:")
+                    print(f"Total Energy: {energy_results['energy_kwh']:.10f} kWh")
+                    print(f"Carbon Emissions: {energy_results['emissions_kg']:.10f} kg CO2eq")
+
             # Run validation episodes
             val_reward, val_reward_std = validation(env, network, VALIDATION_ITERATIONS)
             
@@ -426,7 +467,7 @@ def main():
         CHECKPOINT_ITERATION = 15
         VALIDATION_ITERATIONS=2
     else:
-        CHECKPOINT_ITERATION=600
+        CHECKPOINT_ITERATION=500
         VALIDATION_ITERATIONS=2
 
     NUM_FRAMES = args.steps

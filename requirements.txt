@@ -102,6 +102,9 @@ isort
 jaraco.classes
 jaraco.context
 jaraco.functools
+codecarbon
+psutil
+datetim
 jedi
 jeepney
 Jinja2
@@ -396,6 +399,7 @@ yarl
 zipp
 zmq
 ray
+ray[tune]
 pygame 
 dm-env 
 dmlab2d

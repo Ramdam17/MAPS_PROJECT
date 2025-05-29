@@ -1,8 +1,9 @@
 # MAPS: A Metacognitive Architecture for Improved Social Learning
 
 This repository contains the implementation of MAPS (Metacognitive Architecture for Improved Social Learning) as described in our paper published in the Proceedings of the International Workshop on Advancing AI Through Theory of Mind, 2025. 
-[Workshop paper - arXiv](pdf/TOM4AI_arXiv.pdf)
-[Full length paper - preprint](pdf/PrePrint_MAPS_RLC.pdf)
+[TOM4AI Workshop proceedings](https://arxiv.org/abs/2505.03770)
+[Full length paper - preprint](pdf/MAPS_TMLR_Journal_Submission.pdf)
+
 
 ## Authors
 - Juan David Vargas (Université de Montréal, MILA - Quebec AI Institute, CHU Sainte-Justine)
@@ -23,7 +24,7 @@ MAPS is a novel architecture that combines metacognitive components with advance
 
 Our experiments demonstrate significant performance improvements across multiple domains including Blindsight, Artificial Grammar Learning (AGL), Single-Agent Reinforcement Learning (SARL), and Multi-Agent Reinforcement Learning (MARL). We test our architecture over 6 settings, alternating with these 2 components on and off. 
 
-   ![](images/RLC_Figures.jpg)
+   ![](images/RLC_Figures.png)
 
 
 ## Methodology
@@ -39,6 +40,10 @@ Our experiments demonstrate significant performance improvements across multiple
 Clone the repository and install the requirements:
 
 ```bash
+#Download conda installer here: https://www.anaconda.com/download/success
+bash $anacoda_file
+conda create --name MAPS python=3.11
+conda activate MAPS
 git clone https://github.com/juandavidvargas19/MAPS_PROJECT.git
 cd MAPS_PROJECT
 pip install -r requirements.txt
@@ -55,7 +60,8 @@ Additionall requirements for MARL:
 
 ```bash
 cd MARL/MAPPO-ATTENTIOAN
-pip install "ray[cpp]" --no-index
+pip install "ray[cpp]" 
+cd MARL
 git clone -b main https://github.com/deepmind/meltingpot
 cd meltingpot
 pip install --editable .[dev]
@@ -67,6 +73,9 @@ pip install --editable .[dev]
 This repository includes code for reproducing the experiments described in the paper:
 
 ### 1. Blindsight
+
+   ![](images/Perceptual_architecture.png)
+
 
 ```bash
 cd BLINDSIGHT
@@ -82,7 +91,10 @@ python AGL_TMLR.py
 
 ### 3. Single-Agent Reinforcement Learning (SARL)
 
-The SARL experiments are conducted on MinAtar environments. The experiments recorded on the short version of our paper use "Seaquest" and "Asterix". However, you can run "Breakout", "Space Invaders", "Freeway", "Seaquest" and "Asterix". To run SARL, there are 3 experiments: standard (running a single environment), transfer learning, and continuous learning. 
+   ![](images/SARL_architecture.png)
+
+
+The SARL experiments are conducted on MinAtar environments. The experiments recorded on the short version of our paper use "Seaquest" and "Asterix". However, you can run "Breakout", "Space Invaders", "Freeway", "Seaquest" and "Asterix". To run SARL, there are 3 experiments: standard (running a single environment), transfer learning, and continual learning. 
 
 For each of this cases, you need to change the generic variable = $general_dir to $local_repo_directory/SARL/MinAtar. Then for each case you need to run:
 
@@ -93,19 +105,25 @@ cd SARL/
 ```
 You can change BREAK for the corresponding environment. Please see the script in SARL_Training_Standard.sh to change the corresponding flag name for each environment.
 
+
+   ![](images/CL_architecture.png)
+
 Transfer learning ( setting, number_steps)
 ```bash
 cd SARL_CL/ 
 ./SARL_Training_TransferLearning_TernaryPlot.sh 1 100000
 ```
 
-Continuous learning ( seed, setting)
+Continual learning ( seed, setting)
 ```bash
 cd SARL_CL/ 
 ./SARL_Training_ContinuousLearning.sh 1 1
 ```
 
 ### 4. Multi-Agent Reinforcement Learning (MARL)
+
+   ![](images/MARL_architecture.png)
+
 
 MARL experiments include Harvest Cleaner, Harvest Planter, Chemistry 3D, and Territory Inside Out environments. However there are more than 20 environments compatible that you can try.
 
@@ -135,7 +153,7 @@ Our results demonstrate significant improvements using the MAPS architecture:
    - AGL- Low Awareness: 0.62 +/- 0.07 (Z-score: 15.70)
 
 
-   ![](images/Perceptual_results.png)
+   ![](images/Perceptual_table.png)
    
 2. **MinAtar SARL**: 
    - Seaquest: 3.06 +/- 0.34 (Z-score: 7.03)
@@ -148,12 +166,19 @@ Our results demonstrate significant improvements using the MAPS architecture:
 
    ![](images/SARL_results.jpg)
 
-4. **MinAtar SARL + continuous/transfer learning**: 
-   - Achieved a mean retention of 45.1% +/- 31.1% for transfer learning. Results for continuous learning are still exploratory.
+4. **MinAtar SARL + continual/transfer learning**: 
+   - Achieved a mean retention of 45.1% +/- 31.1% for transfer learning. Results for continual learning are still exploratory.
      ![](images/Ternary_space.png)
 
-5. **MARL**: improvement in Territory Inside Out (Z-score: 2.59). Other environments don't show substantial improvement. This are preliminary results with a 2nd order network and no cascade model.
-     ![](images/MARL_results.png)
+5. **MARL**: 
+   - Commons Harvest Partnership: 34.52 +/- 0.98 (Z-score: 6.20)
+   - Commons Harvest Closed: 25.21 +/- 1.06 (Z-score: 6.31)
+   - Chemistry: 1.11 +/- 0.05 (Z-score: -0.91)
+   - Territory Inside Out: 48.47 +/- 1.45 (Z-score: -1.92)
+      
+     ![](images/MARL_table.png)
+     ![](images/MARL_plot.png)
+
 
 ## Citation
 

@@ -4,7 +4,8 @@ general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thy
 
 # For conda to work in scripts, you need to initialize it first
 eval "$(conda shell.bash hook)"
-conda activate marl
+
+#conda activate MAPS
 
 export PYTHONPATH="$PYTHONPATH:$general_dir"
 

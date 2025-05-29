@@ -32,6 +32,42 @@ from torch.autograd import Variable
 from scipy.stats import norm
 
 
+
+# Import the EnergyTracker class
+from energy_tracker import NvidiaEnergyTracker , MLModelEnergyEfficiency # Assuming you saved the previous code as energy_tracker.py
+import time
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def initialize_tracker():
+  global tracker, model_efficiency
+  # Initialize tracker
+  tracker = NvidiaEnergyTracker(
+      project_name="pytorch_example",
+      output_dir="./energy_data",
+      tracking_interval=1  # Sample every second
+  )
+
+  # Initialize model efficiency wrapper
+  model_efficiency = MLModelEnergyEfficiency(tracker, model_name="example_model")
+
+  # Start tracking
+  model_efficiency.start_tracking()
+
+
+def stop_get_results_tracker():
+  energy_results = model_efficiency.stop_tracking()
+
+  # Show peak results and consumption metrics
+  if energy_results:
+      # Print summary
+      print("\nEnergy Efficiency Summary:")
+      print(f"Total Energy: {energy_results['energy_kwh']:.10f} kWh")
+      print(f"Carbon Emissions: {energy_results['emissions_kg']:.10f} kg CO2eq")
+
+
 # %% [markdown]
 # # DEVICE CONFIGURATION
 
@@ -171,43 +207,46 @@ class FirstOrderNetwork(nn.Module):
 # # SECOND ORDER NETWORK ARCHITECTURE DEFINITION
 
 # %%
+
 class SecondOrderNetwork(nn.Module):
+    
     def __init__(self, use_gelu, hidden_second):
-        super(SecondOrderNetwork, self).__init__()
-        # Define a linear layer for comparing the difference between input and output of the first-order network
-        self.comparison_layer = nn.Linear(48, hidden_second)
+            super(SecondOrderNetwork, self).__init__()
 
-        # Linear layer for determining wagers, mapping from 100 features to a single output
-        self.wager = nn.Linear(hidden_second, 1)
+            # Linear layer for determining wagers, mapping from 100 features to a single output
+            self.wager = nn.Linear(48, 1)
 
-        # Dropout layer to prevent overfitting by randomly setting input units to 0 with a probability of 0.5 during training
-        self.dropout = nn.Dropout(0.5)
+            # Dropout layer to prevent overfitting by randomly setting input units to 0 with a probability of 0.5 during training
+            self.dropout = nn.Dropout(0.5)
 
-        # Select activation function based on the `use_gelu` flag
-        if use_gelu:
-          self.activation=torch.nn.GELU()
-        else:
-          self.activation=torch.nn.ReLU()
+            # Select activation function based on the `use_gelu` flag
+            if use_gelu:
+              self.activation=torch.nn.GELU()
+            else:
+              self.activation=torch.nn.ReLU()
 
-        # Additional activation functions for potential use in network operations
-        self.sigmoid = torch.sigmoid
+            # Additional activation functions for potential use in network operations
+            self.sigmoid = torch.sigmoid
 
-        self.softmax = nn.Softmax()
+            self.softmax = nn.Softmax()
 
-        # Initialize the weights of the network
-        self._init_weights()
+            # Initialize the weights of the network
+            self._init_weights()
 
     def _init_weights(self):
-        # Uniformly initialize weights for the comparison and wager layers
-        init.uniform_(self.comparison_layer.weight, -1.0, 1.0)
+        # Kaiming initialization for stability
+        #init.uniform_(self.comparison_layer.weight, -1.0, 1.0)
         init.uniform_(self.wager.weight, 0.0, 0.1)
+
 
     def forward(self, first_order_input, first_order_output, prev_comparison, cascade_rate):
         # Calculate the difference between the first-order input and output
         comparison_matrix = first_order_input - first_order_output
-
-        # Pass the difference through the comparison layer and apply the chosen activation function
-        comparison_out=self.dropout(self.activation(self.comparison_layer(comparison_matrix)))
+                
+        # Pass the input through the comparison layer and apply dropout and activation
+        #comparison_out = self.dropout(f.relu(self.comparison_layer(comparison_matrix))) 
+        comparison_out= self.dropout(comparison_matrix)
+        
         if prev_comparison is not None:
           comparison_out = cascade_rate * comparison_out + (1 - cascade_rate) * prev_comparison
 
@@ -505,9 +544,18 @@ def calculate_min(network_data, start_network, end_network):
 # %%
 #define the architecture, optimizers, loss functions, and schedulers for pre training
 
-def prepare_pre_training(hidden, hidden_second,factor,gelu,stepsize, gam):
+def prepare_pre_training(hidden, hidden_second,factor,gelu,stepsize, gam, meta):
+
+
   first_order_network = FirstOrderNetwork(hidden,factor,gelu).to(device)
   second_order_network = SecondOrderNetwork(gelu, hidden_second).to(device)
+
+  total_params = count_parameters(first_order_network)
+
+  if meta:
+    total_params += count_parameters(second_order_network)
+
+  print(f"Total Parameters: {total_params}")
 
   #Binary Cross-Entropy Loss: especially used in classification tasks, either correctly classified it or not, or correctly high wager or not
   criterion_1 = CAE_loss
@@ -687,6 +735,9 @@ def pre_train(first_order_network, second_order_network, criterion_1, criterion_
       epoch_1_order[epoch] = loss_1.item()
 
       precision[epoch] = calculate_metrics(patterns_tensor, output_first_order)
+
+      tracker.log_point()
+
       """
       if epoch == n_epochs_pre - 1:
 
@@ -972,6 +1023,9 @@ def training(networks, n_epochs_train, start_network, end_network, factor, meta,
             epoch_1_order[index][epoch] = loss_1.detach().item()
             epoch_2_order[index][epoch] = loss_2.detach().item()
             precision_high[index][epoch] = calculate_metrics(patterns_tensor, output_first_order)
+
+            tracker.log_point()
+
     
     # Flatten the loss and precision arrays for easier analysis
     flattened_loss_1 = [item for sublist in epoch_1_order for item in sublist]
@@ -1428,7 +1482,7 @@ def train(hidden, hidden_second, factor, gelu, stepsize, gam, meta, cascade_rate
 
         # Prepare networks for pre-training phase
         # Creates first and second order networks with specified parameters
-        first_order_network, second_order_network, criterion_1, criterion_2, optimizer_1, optimizer_2, scheduler_1, scheduler_2, initial_first_order_weights = prepare_pre_training(hidden, hidden_second, factor, gelu, stepsize, gam)
+        first_order_network, second_order_network, criterion_1, criterion_2, optimizer_1, optimizer_2, scheduler_1, scheduler_2, initial_first_order_weights = prepare_pre_training(hidden, hidden_second, factor, gelu, stepsize, gam, meta)
 
         # Pre-training phase - trains networks on random patterns
         # For AGL tasks, uses random strings to establish initial weights
@@ -2478,7 +2532,7 @@ def main():
     num_iterations = 1  # Number of training runs per configuration
 
     # Seeds for experiments
-    seeds_violin = 45  # For violin plot experiments (45*10 (number of different trained networks per iteration) = 450 total runs) 
+    seeds_violin = 2  # For violin plot experiments (45*10 (number of different trained networks per iteration) = 450 total runs) 
 
     # Cascade parameters
     cascade_mode = 0.02  # Cascade rate when enabled (smaller values mean more iterations)
@@ -2491,7 +2545,7 @@ def main():
     hyperparameters = list(product(hidden_sizes, factors, gelus, step_sizes, gammas, metalayers))
     
     # Experiment control flags
-    Training = False
+    Training = True
   
     # Cascade types explanation:
     # cascade type 1: Both 1st and 2nd order networks use cascade mode
@@ -2501,30 +2555,76 @@ def main():
     
     if Training:
         print("starting training")
+
+        start_time = time.time()
+        initialize_tracker()
         
         # Run 1: Baseline - No metacognition, no cascade model (type 4)
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data2, list_violin_1st_no_meta, list_violin_2nd_no_meta = train(
             40, 48, 1, False, 1, 0.999, False, cascade_off, seeds_violin, 4)
 
+        end_time = time.time()
+        run1_time = end_time - start_time
+        print(f"Run 1 completed in {run1_time:.2f} seconds ({run1_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+        start_time = time.time()
+        initialize_tracker()
+
         # Run 2: No metacognition, with cascade model on 1st-Net only (type 2)
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data2, list_violin_1st_no_meta_conf2, list_violin_2nd_no_meta_conf2 = train(
             40,48, 1, False, 1, 0.999, False, cascade_mode, seeds_violin, 2)
+
+        end_time = time.time()
+        run2_time = end_time - start_time
+        print(f"Run 2 completed in {run2_time:.2f} seconds ({run2_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+        start_time = time.time()
+        initialize_tracker()
 
         # Run 3: With metacognition, no cascade model (type 4)
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data3, list_violin_1st_cascade_conf3, list_violin_2nd_cascade_conf3 = train(
             40, 48,1, False, 1, 0.999, True, cascade_off, seeds_violin, 4)
 
+
+        end_time = time.time()
+        run3_time = end_time - start_time
+        print(f"Run 3 completed in {run3_time:.2f} seconds ({run3_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+        start_time = time.time()
+        initialize_tracker()
+
         # Run 4: With metacognition, cascade model on 1st-Net only (type 2)
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data3, list_violin_1st_cascade_conf4, list_violin_2nd_cascade_conf4 = train(
             40, 48,1, False, 1, 0.999, True, cascade_mode, seeds_violin, 2)
+
+
+        end_time = time.time()
+        run4_time = end_time - start_time
+        print(f"Run 4 completed in {run4_time:.2f} seconds ({run4_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+        start_time = time.time()
+        initialize_tracker()
 
         # Run 5: With metacognition, cascade model on 2nd-Net only (type 3)
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data3, list_violin_1st_cascade_conf5, list_violin_2nd_cascade_conf5 = train(
             40, 48,  1, False, 1, 0.999, True, cascade_mode, seeds_violin, 3)
 
+        end_time = time.time()
+        run5_time = end_time - start_time
+        print(f"Run 5 completed in {run5_time:.2f} seconds ({run5_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+        start_time = time.time()
+        initialize_tracker()
+
         # Run 6: With metacognition, cascade model on both networks (type 1) - full model
         list_1s_metric, list_2s_metric, list_1s_metric_std, list_2s_metric_std, max_value_high, max_value_low, mean_value, random_baseline_testing, networks, plot_data3, list_violin_1st_cascade, list_violin_2nd_cascade = train(
             40,48, 1, False, 1, 0.999, True, cascade_mode, seeds_violin, 1)
+
+        end_time = time.time()
+        run6_time = end_time - start_time
+        print(f"Run 6 completed in {run6_time:.2f} seconds ({run6_time/60:.2f} minutes)")
+        stop_get_results_tracker()
+
 
         # Prepare data for CSV logging and violin plots
         # Each row contains results for a different metric across all experimental conditions

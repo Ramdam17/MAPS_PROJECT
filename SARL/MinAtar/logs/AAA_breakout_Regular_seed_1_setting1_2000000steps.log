@@ -1,0 +1,12 @@
+using  cuda
+WEIGHTS 0.4 0.4 0.2
+number of steps to run is 2000000
+Cuda available?: True
+runining env  breakout
+Number of cascade iterations(1st order) are:  1
+Number of cascade iterations(1st order) are:  1
+Meta values is:  False
+Alpha value for EMA is:  0.25
+num actions  6  in channels  4
+using default Q Network
+current lr 1 is:  0.0003  and lr 2 is:  5e-05

@@ -6,6 +6,9 @@ from onpolicy.utils.util import update_linear_schedule
 
 import torch_optimizer as optim2
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 class R_MAPPOPolicy:
     """
     MAPPO Policy  class. Wraps actor and critic networks to compute actions and value function predictions.
@@ -31,14 +34,18 @@ class R_MAPPOPolicy:
         self.optimizer=args.optimizer
 
 
+
         self.actor = R_Actor(args, self.obs_space, self.act_space, self.device)
         self.critic = R_Critic(args, self.share_obs_space, self.device)
 
         self.actor_meta = R_Actor_Meta(args, self.obs_space, self.act_space, self.device)
         self.critic_meta = R_Critic_Meta(args, self.share_obs_space, self.device)
         
-        # actor_parameters = sum(p.numel() for p in self.actor.parameters() if p.requires_grad)
-        # critic_parameters = sum(p.numel() for p in self.critic.parameters() if p.requires_grad)
+
+        total_parameters_normal= count_parameters(self.actor) + count_parameters(self.critic)
+        total_parameters_meta= count_parameters(self.actor_meta) + count_parameters(self.critic_meta)
+        print("parameters normal ", total_parameters_normal, " |||  parameters meta ", total_parameters_meta)
+
 
 
         if self.optimizer == 'ADAM':

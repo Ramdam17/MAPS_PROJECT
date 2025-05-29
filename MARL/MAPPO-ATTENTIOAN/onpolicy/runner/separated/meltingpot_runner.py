@@ -1,5 +1,3 @@
-import time
-import wandb
 import os
 import numpy as np
 from itertools import chain
@@ -10,6 +8,44 @@ from onpolicy.runner.separated.base_runner import Runner
 import imageio
 import random
 from numpy import array
+
+
+# Import the EnergyTracker class
+from energy_tracker import NvidiaEnergyTracker , MLModelEnergyEfficiency # Assuming you saved the previous code as energy_tracker.py
+import time
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def initialize_tracker():
+  global tracker, model_efficiency
+  # Initialize tracker
+  tracker = NvidiaEnergyTracker(
+      project_name="pytorch_example",
+      output_dir="./energy_data",
+      tracking_interval=10  # Sample every second
+  )
+
+  # Initialize model efficiency wrapper
+  model_efficiency = MLModelEnergyEfficiency(tracker, model_name="example_model")
+
+  # Start tracking
+  model_efficiency.start_tracking()
+
+
+def stop_get_results_tracker():
+  energy_results = model_efficiency.stop_tracking()
+
+  # Show peak results and consumption metrics
+  if energy_results:
+      # Print summary
+      print("\nEnergy Efficiency Summary:")
+      print(f"Total Energy: {energy_results['energy_kwh']:.10f} kWh")
+      print(f"Carbon Emissions: {energy_results['emissions_kg']:.10f} kg CO2eq")
+
+  model_efficiency.start_tracking()
+
 
 def _t2n(x):
     return x.detach().cpu().numpy()
@@ -91,6 +127,8 @@ class MeltingpotRunner(Runner):
 
         total_num_steps = 0
 
+        initialize_tracker()
+
         for episode in range(episodes):
             self.envs.reset()
             
@@ -140,6 +178,9 @@ class MeltingpotRunner(Runner):
                 #print("actions", actions)
                                           
                 obs, rewards, dones, infos = self.envs.step(actions,rewards_old)
+
+                tracker.log_point()
+
 
                 if not isinstance(obs[0], dict):
                     obs = obs[:, 0]
@@ -196,6 +237,7 @@ class MeltingpotRunner(Runner):
             
             
             train_infos = self.train(episode_length,grad_list, comparisson_list, self.all_args.meta)
+
             #print(f'Episode {episode} end at {time.time()}')
 
             #print("finished train infos" ,train_infos)
@@ -243,6 +285,7 @@ class MeltingpotRunner(Runner):
 
                     # Calculate the overall average episode reward for all agents
                     overall_average_episode_reward = total_average_episode_rewards / self.num_agents
+                    stop_get_results_tracker()
                     print("Overall average episode reward for all agents:", overall_average_episode_reward)
 
                 self.log_train(train_infos, total_num_steps)

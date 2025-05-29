@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import sys
 import os
-import wandb
 import socket
 import setproctitle
 import numpy as np
