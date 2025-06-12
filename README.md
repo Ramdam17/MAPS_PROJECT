@@ -59,9 +59,9 @@ pip install .
 Additionall requirements for MARL:
 
 ```bash
-cd MARL/MAPPO-ATTENTIOAN
-pip install "ray[cpp]" 
+cd ..
 cd MARL
+pip install "ray[cpp]" 
 git clone -b main https://github.com/deepmind/meltingpot
 cd meltingpot
 pip install --editable .[dev]
