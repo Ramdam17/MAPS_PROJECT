@@ -1,0 +1,5 @@
+carbs>=0.0.1
+wandb>=0.16
+
+[test]
+pytest>=6.2.4

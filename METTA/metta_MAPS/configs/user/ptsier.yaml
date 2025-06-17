@@ -1,0 +1,11 @@
+# @package __global__
+
+defaults:
+  - _self_
+
+eval_db_uri: ${data_dir}/pasha_sim/stats.db
+run: pasha_sim
+policy_uri: wandb://run/sasmith.flattened_layers.baseline.2
+
+dashboard:
+  output_path: /tmp/dashboard_data.json
