@@ -42,7 +42,7 @@ Clone the repository and install the requirements:
 ```bash
 #Download conda installer here: https://www.anaconda.com/download/success
 bash $anacoda_file
-conda create --name MAPS python=3.11
+conda create --name MAPS python=3.11.7
 conda activate MAPS
 git clone https://github.com/juandavidvargas19/MAPS_PROJECT.git
 cd MAPS_PROJECT
@@ -59,7 +59,7 @@ pip install .
 Additionall requirements for MARL:
 
 ```bash
-cd ..
+cd ../..
 cd MARL
 pip install "ray[cpp]" 
 git clone -b main https://github.com/deepmind/meltingpot
@@ -67,6 +67,31 @@ cd meltingpot
 pip install --editable .[dev]
 ```
 
+Additionall requirements for METTA-AI:
+
+```bash
+conda create --name MAPS_METTA
+cd ..
+cd METTA/metta
+conda activate MAPS_METTA
+curl -LsSf https://astral.sh/uv/install.sh | sh
+./devops/setup_dev.sh
+uv sync
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+```
+
+Get your aws [keys](https://aws.amazon.com/free/), and export your keys 
+```bash
+export AWS_ACCESS_KEY_ID="your_key"
+export AWS_SECRET_ACCESS_KEY="your_secret_key"
+export AWS_DEFAULT_REGION="your_region"
+```
+
+export AWS_ACCESS_KEY_ID="REDACTED_AWS_KEY_ID"
+export AWS_SECRET_ACCESS_KEY="REDACTED_AWS_SECRET"
+export AWS_DEFAULT_REGION="us-east-1"
 
 ## Experiments
 
@@ -142,6 +167,16 @@ cd MARL/
 ```
 
 You can change TERRITORY_I for the corresponding environment. Please see the script in meltingpot.sh to change the corresponding flag name for each environment.
+
+### 5. METTA-AI
+
+
+```bash
+
+./tools/train.py run=my_experiment +hardware=macbook wandb=off +wandb.entity=dummy +wandb.project=dummy
+
+```
+
 
 ## Results Summary
 

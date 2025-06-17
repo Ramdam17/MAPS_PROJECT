@@ -19,7 +19,7 @@ base=2000000
 
 #CHANGE THIS TO YOUR DIRECTORY,  /$local_repo_directory/SARL/MinAtar
 #CHANGE THIS TO YOUR DIRECTORY,  /$local_repo_directory/SARL/MinAtar
-general_dir="/home/juan-david-vargas-mazuera/ICML-RUNS/conference_paper/know_thyself/MAPS_PROJECT/SARL/MinAtar"
+general_dir="/home/ubunto/MSc_CS/MAPS_PROJECT/SARL/MinAtar"
 
 #module for computing cluster
 #module load gcc python/3.11 opencv mpi4py arrow cuda cudnn rust
