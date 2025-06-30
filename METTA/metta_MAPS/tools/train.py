@@ -23,6 +23,9 @@ class TrainJob(Config):
     __init__ = Config.__init__
     evals: SimulationSuiteConfig
     map_preview_uri: Optional[str] = None
+    setting: int = 1  
+    cascade: int = 1  
+
 
 
 def train(cfg, wandb_run, logger: Logger):
@@ -42,6 +45,14 @@ def train(cfg, wandb_run, logger: Logger):
             OmegaConf.save(cfg, f)
 
     train_job = TrainJob(cfg.train_job)
+
+    setting = cfg.setting
+
+    # Validate setting range
+    if not (1 <= setting <= 6):
+        raise ValueError(f"Setting must be between 1 and 6, got {setting}")
+    
+    print(f"Using setting: {setting}")
 
     policy_store = PolicyStore(cfg, wandb_run)
 

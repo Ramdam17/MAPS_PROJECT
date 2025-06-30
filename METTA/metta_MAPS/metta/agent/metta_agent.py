@@ -15,6 +15,7 @@ from metta.agent.util.distribution_utils import evaluate_actions, sample_actions
 from metta.agent.util.safe_get import safe_get_from_obs_space
 from metta.util.omegaconf import convert_to_dict
 from mettagrid.mettagrid_env import MettaGridEnv
+import torch.nn.init as init
 
 logger = logging.getLogger("metta_agent")
 
@@ -96,6 +97,8 @@ class MettaAgent(nn.Module):
             "hidden_size": self.hidden_size,
             "core_num_layers": self.core_num_layers,
         }
+
+        print("hidden is ", self.hidden_size)
 
         logging.info(f"agent_attributes: {self.agent_attributes}")
 
@@ -337,13 +340,17 @@ class MettaAgent(nn.Module):
                 
                 # Replace encoded_obs in td with cascaded version for downstream use
                 td['encoded_obs'] = cascaded_hidden
-                print(f"Applied cascade: current {current_hidden.shape}, prev {prev_hidden.shape}, rate {cascade_rate}")
+                #print(f"Applied cascade: current {current_hidden.shape}, prev {prev_hidden.shape}, rate {cascade_rate}")
+
+                current_hidden = cascaded_hidden
                 
                 # The cascaded version will be used for actions and comparison
-                # But we return the original current_hidden for next iteration
+
+            '''
             else:
                 print("No previous hidden state, using current")
                 # No cascade needed, just use current hidden
+            '''
 
         # COMPARISON METHOD: obs_flattener → encoded_obs (USING FC1 TRANSPOSED WEIGHTS)
         # This uses the cascaded hidden state (equivalent to using Hidden after cascade in QNetwork)
@@ -381,10 +388,10 @@ class MettaAgent(nn.Module):
         # Return results with prev_hidden for next iteration
         if action is None:
             action_out, action_log_prob, entropy, value_out, log_probs = self.forward_inference(value, logits)
-            return action_out, action_log_prob, entropy, value_out, log_probs, current_hidden
+            return action_out, action_log_prob, entropy, value_out, log_probs, current_hidden, comparison
         else:
             action_out, action_log_prob, entropy, value_out, log_probs = self.forward_training(value, logits, action)
-            return action_out, action_log_prob, entropy, value_out, log_probs, current_hidden
+            return action_out, action_log_prob, entropy, value_out, log_probs, current_hidden, comparison
 
     def _convert_action_to_logit_index(self, flattened_action: torch.Tensor) -> torch.Tensor:
         """
@@ -513,3 +520,63 @@ class MettaAgent(nn.Module):
 
         metrics_list = [metrics for metrics in results.values() if metrics is not None]
         return metrics_list
+
+
+
+class SecondOrderNetwork(nn.Module):
+    def __init__(self, in_channels, alpha):
+        super(SecondOrderNetwork, self).__init__()
+        
+        # Define a linear layer for comparing the difference between input and output of the first-order network
+        self.comparison_layer = nn.Linear(in_features=in_channels, out_features=in_channels)
+        
+        # Linear layer for determining wagers
+        self.wager = nn.Linear(in_channels, 2)
+        self.dropout = nn.Dropout(p=0.1)  # 10% dropout
+        self.alpha = float(alpha/100)  # EMA hyperparameter
+
+        # Initialize the weights of the network
+        self._init_weights()
+
+    def _init_weights(self):
+        # Kaiming initialization for stability
+        init.uniform_(self.comparison_layer.weight, -1.0, 1.0)
+        init.uniform_(self.wager.weight, 0.0, 0.1)
+
+    def target_wager(self, rewards):
+        flattened_rewards = rewards
+        EMA = 0.0
+
+        batch_size = rewards.size(0)  # Get the batch size (first dimension of rewards)
+        new_tensor = torch.zeros(batch_size, 2, device=rewards.device)  # Create [batch_size, 2] tensor on the same device
+
+        for i in range(batch_size):
+            G = flattened_rewards[i]  # Current reward
+            EMA = self.alpha * G + (1 - self.alpha) * EMA  # Update EMA
+            
+            # Set values based on comparison with EMA
+            if G > EMA:
+                new_tensor[i] = torch.tensor([1, 0], device=rewards.device)
+            else:
+                new_tensor[i] = torch.tensor([0, 1], device=rewards.device)
+                
+        return new_tensor
+        
+    def forward(self, comparison_matrix, prev_comparison, cascade_rate, rewards=None):
+        
+        # Pass the input through the comparison layer and apply dropout and activation
+        comparison_out = self.dropout(torch.nn.functional.relu(self.comparison_layer(comparison_matrix))) 
+        
+        if prev_comparison is not None:
+          comparison_out = cascade_rate * comparison_out + (1 - cascade_rate) * prev_comparison
+            
+        # Pass through wager layer 
+        wager = self.wager(comparison_out)
+
+        if rewards is not None:
+            return wager , comparison_out, self.target_wager(rewards)
+
+        else:
+            return wager ,  comparison_out
+
+    

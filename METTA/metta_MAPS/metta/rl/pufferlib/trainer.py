@@ -11,7 +11,7 @@ from heavyball import ForeachMuon
 from omegaconf import DictConfig, ListConfig
 from pufferlib import unroll_nested_dict
 
-from metta.agent.metta_agent import DistributedMettaAgent, MettaAgent
+from metta.agent.metta_agent import DistributedMettaAgent, MettaAgent, SecondOrderNetwork
 from metta.agent.policy_state import PolicyState
 from metta.agent.policy_store import PolicyStore
 from metta.agent.util.debug import assert_shape
@@ -38,12 +38,8 @@ rank = int(os.environ.get("RANK", 0))
 local_rank = int(os.environ.get("LOCAL_RANK", 0))
 logger = logging.getLogger(f"trainer-{rank}-{local_rank}")
 
-cascade_iterations_1= 50
-cascade_iterations_2= 50
 
-cascade_rate_1 = float(1.0/cascade_iterations_1)
-cascade_rate_2 = float(1.0/cascade_iterations_2)
-        
+
 class PufferTrainer:
     def __init__(
         self,
@@ -55,6 +51,8 @@ class PufferTrainer:
     ):
         self.cfg = cfg
         self.trainer_cfg = cfg.trainer
+
+        self.setting = cfg.setting
 
         self.sim_suite_config = sim_suite_config
 
@@ -86,6 +84,8 @@ class PufferTrainer:
         env_overrides = DictConfig({"env_overrides": self.trainer_cfg.env_overrides})
         self._curriculum = curriculum_from_config_path(curriculum_config, env_overrides)
         self._make_vecenv()
+        self.second_order_net = SecondOrderNetwork(64, 25).to(self.device)
+
 
         metta_grid_env: MettaGridEnv = self.vecenv.driver_env  # type: ignore
         assert isinstance(metta_grid_env, MettaGridEnv), (
@@ -168,6 +168,52 @@ class PufferTrainer:
             eps=self.trainer_cfg.optimizer.eps,
             weight_decay=self.trainer_cfg.optimizer.weight_decay,
         )
+
+        self.optimizer_second = opt_cls (self.second_order_net.parameters(),
+            lr=self.trainer_cfg.optimizer.learning_rate,
+            betas=(self.trainer_cfg.optimizer.beta1, self.trainer_cfg.optimizer.beta2),
+            eps=self.trainer_cfg.optimizer.eps,
+            weight_decay=self.trainer_cfg.optimizer.weight_decay,)
+
+        #No 2nd order network and no cascade model    
+        if self.setting== 1:
+            self.cascade_iterations_1=1
+            self.cascade_iterations_2=1 
+            self.meta=False
+        
+        #Cascade model, but no 2nd order network
+        elif self.setting== 2:
+            self.cascade_iterations_1=cfg.cascade
+            self.cascade_iterations_2=1
+            self.meta=False
+            
+        #2nd order network, but no cascade model
+        if self.setting== 3:
+            self.cascade_iterations_1=1
+            self.cascade_iterations_2=1 
+            self.meta=True
+        
+        #2nd order network, and a cascade model on the 1st order network only
+        elif self.setting== 4:
+            self.cascade_iterations_1=cfg.cascade
+            self.cascade_iterations_2=1
+            self.meta=True
+
+        #2nd order network, and a cascade model on the 2nd order network only
+        elif self.setting== 5:
+            self.cascade_iterations_1=1
+            self.cascade_iterations_2=cfg.cascade
+            self.meta=True
+
+        #2nd order network, and a cascade model on both networks
+        elif self.setting== 6:
+            self.cascade_iterations_1=cfg.cascade
+            self.cascade_iterations_2=cfg.cascade
+            self.meta=True
+
+        self.cascade_rate_1 = float(1.0/self.cascade_iterations_1)
+        self.cascade_rate_2 = float(1.0/self.cascade_iterations_2)
+
 
         # validate that policy matches environment
         self.metta_agent: MettaAgent | DistributedMettaAgent = self.policy  # type: ignore
@@ -391,8 +437,14 @@ class PufferTrainer:
                 o_device = o.to(self.device, non_blocking=True)
 
                 prev_hidden = None
-                for j in range(cascade_iterations_1):
-                    actions, selected_action_log_probs, _, value, _ , prev_hidden = policy(o_device, state, prev_hidden ,cascade_rate_1)
+                for j in range(self.cascade_iterations_1):
+                    actions, selected_action_log_probs, _, value, _ , prev_hidden, comparison = policy(o_device, state, prev_hidden ,self.cascade_rate_1)
+                
+
+                if self.meta:
+                    comparison_out = None
+                    for j in range(self.cascade_iterations_2):
+                        output_second, comparison_out = self.second_order_net(comparison, comparison_out, self.cascade_rate_2)
 
                 if __debug__:
                     assert_shape(selected_action_log_probs, ("BT",), "selected_action_log_probs")
@@ -508,10 +560,18 @@ class PufferTrainer:
                     
                     prev_hidden = None
 
-                    for j in range(cascade_iterations_1):
+                    for j in range(self.cascade_iterations_1):
                         # Forward pass returns: (action, new_action_log_probs, entropy, value, full_log_probs_distribution)
-                        _, new_action_log_probs, entropy, newvalue, full_log_probs_distribution, prev_hidden = self.policy(
-                            obs, lstm_state, prev_hidden, cascade_rate_1, action=atn)
+                        _, new_action_log_probs, entropy, newvalue, full_log_probs_distribution, prev_hidden, comparison = self.policy(
+                            obs, lstm_state, prev_hidden, self.cascade_rate_1, action=atn)
+
+                    if self.meta:
+                        comparison_out = None
+                        for j in range(self.cascade_iterations_2):
+                            if j==0:
+                                output_second, comparison_out, targets_second = self.second_order_net(comparison, comparison_out, self.cascade_rate_2, ret)
+                            else:
+                                output_second, comparison_out = self.second_order_net(comparison, comparison_out, self.cascade_rate_2)
                             
                     if self.device == "cuda":
                         torch.cuda.synchronize()
@@ -578,8 +638,18 @@ class PufferTrainer:
                         + ks_value_loss
                     )
 
+                    if self.meta:   
+                        loss_second = torch.nn.functional.binary_cross_entropy_with_logits(output_second, targets_second)
+
+
                 with profile.learn:
                     self.optimizer.zero_grad()
+
+                    if self.meta:
+                        self.optimizer_second.zero_grad()
+                        loss_second.backward(retain_graph=True)
+                        self.optimizer_second.step()
+
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.trainer_cfg.max_grad_norm)
                     self.optimizer.step()

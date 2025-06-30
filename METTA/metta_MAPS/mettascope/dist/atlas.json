@@ -1,0 +1,974 @@
+{
+  "info.png": [
+    64,
+    64,
+    200,
+    200
+  ],
+  "white.png": [
+    392,
+    64,
+    64,
+    64
+  ],
+  "icon.png": [
+    584,
+    64,
+    64,
+    64
+  ],
+  "crosshair.png": [
+    776,
+    64,
+    64,
+    64
+  ],
+  "dash.png": [
+    968,
+    64,
+    40,
+    24
+  ],
+  "target.png": [
+    1136,
+    64,
+    200,
+    200
+  ],
+  "heart_image.png": [
+    1464,
+    64,
+    340,
+    272
+  ],
+  "minimapPip.png": [
+    1932,
+    64,
+    10,
+    10
+  ],
+  "selection.png": [
+    2070,
+    64,
+    200,
+    200
+  ],
+  "meta_grid_icon.png": [
+    2398,
+    64,
+    256,
+    256
+  ],
+  "effects/halo.png": [
+    2782,
+    64,
+    256,
+    256
+  ],
+  "objects/lab.png": [
+    3166,
+    64,
+    256,
+    256
+  ],
+  "objects/wall.color.png": [
+    3550,
+    64,
+    256,
+    256
+  ],
+  "objects/block.png": [
+    3934,
+    64,
+    256,
+    256
+  ],
+  "objects/wall.wse.png": [
+    4318,
+    64,
+    200,
+    200
+  ],
+  "objects/temple.color.png": [
+    4646,
+    64,
+    256,
+    256
+  ],
+  "objects/wall.we.png": [
+    5030,
+    64,
+    200,
+    200
+  ],
+  "objects/agent.item.png": [
+    5358,
+    64,
+    256,
+    256
+  ],
+  "objects/temple.png": [
+    5742,
+    64,
+    256,
+    256
+  ],
+  "objects/altar.color.png": [
+    6126,
+    64,
+    256,
+    256
+  ],
+  "objects/wall.nws.png": [
+    6510,
+    64,
+    200,
+    200
+  ],
+  "objects/lasery.color.png": [
+    6838,
+    64,
+    256,
+    256
+  ],
+  "objects/wall.ws.png": [
+    7222,
+    64,
+    200,
+    200
+  ],
+  "objects/altar.item.png": [
+    7550,
+    64,
+    256,
+    256
+  ],
+  "objects/unknown.png": [
+    392,
+    256,
+    256,
+    256
+  ],
+  "objects/unknown.item.png": [
+    2398,
+    448,
+    256,
+    256
+  ],
+  "objects/armory.png": [
+    2782,
+    448,
+    256,
+    256
+  ],
+  "objects/wall.ns.png": [
+    776,
+    256,
+    200,
+    200
+  ],
+  "objects/grid.png": [
+    64,
+    392,
+    200,
+    200
+  ],
+  "objects/wall.se.png": [
+    1136,
+    392,
+    200,
+    200
+  ],
+  "objects/wall.s.png": [
+    2070,
+    392,
+    200,
+    200
+  ],
+  "objects/generator.color.png": [
+    3166,
+    448,
+    256,
+    256
+  ],
+  "objects/lasery.item.png": [
+    3550,
+    448,
+    256,
+    256
+  ],
+  "objects/factory.item.png": [
+    3934,
+    448,
+    256,
+    256
+  ],
+  "objects/wall.ne.png": [
+    4318,
+    392,
+    200,
+    200
+  ],
+  "objects/wall.n.png": [
+    5030,
+    392,
+    200,
+    200
+  ],
+  "objects/block.item.png": [
+    4646,
+    448,
+    256,
+    256
+  ],
+  "objects/floor.png": [
+    6510,
+    392,
+    200,
+    200
+  ],
+  "objects/agent.png": [
+    5358,
+    448,
+    256,
+    256
+  ],
+  "objects/agent.color.png": [
+    5742,
+    448,
+    256,
+    256
+  ],
+  "objects/wall.fill.png": [
+    7222,
+    392,
+    200,
+    200
+  ],
+  "objects/wall.item.png": [
+    6126,
+    448,
+    256,
+    256
+  ],
+  "objects/ice_tower.png": [
+    6838,
+    448,
+    256,
+    256
+  ],
+  "objects/wall.png": [
+    7550,
+    448,
+    256,
+    256
+  ],
+  "objects/wall.w.png": [
+    1464,
+    464,
+    200,
+    200
+  ],
+  "objects/ice_tower.item.png": [
+    392,
+    640,
+    256,
+    256
+  ],
+  "objects/block.color.png": [
+    1464,
+    792,
+    256,
+    256
+  ],
+  "objects/mine.item.png": [
+    2398,
+    832,
+    256,
+    256
+  ],
+  "objects/wall.e.png": [
+    776,
+    584,
+    200,
+    200
+  ],
+  "objects/armory.item.png": [
+    2782,
+    832,
+    256,
+    256
+  ],
+  "objects/converter.color.png": [
+    3166,
+    832,
+    256,
+    256
+  ],
+  "objects/mine.png": [
+    3550,
+    832,
+    256,
+    256
+  ],
+  "objects/wall.0.png": [
+    64,
+    720,
+    200,
+    200
+  ],
+  "objects/wall.nw.png": [
+    1136,
+    720,
+    200,
+    200
+  ],
+  "objects/temple.item.png": [
+    3934,
+    832,
+    256,
+    256
+  ],
+  "objects/lab.color.png": [
+    4646,
+    832,
+    256,
+    256
+  ],
+  "objects/altar.png": [
+    5358,
+    832,
+    256,
+    256
+  ],
+  "objects/generator.item.png": [
+    5742,
+    832,
+    256,
+    256
+  ],
+  "objects/converter.png": [
+    6126,
+    832,
+    256,
+    256
+  ],
+  "objects/converter.item.png": [
+    6838,
+    832,
+    256,
+    256
+  ],
+  "objects/lab.item.png": [
+    7550,
+    832,
+    256,
+    256
+  ],
+  "objects/wall.nse.png": [
+    2070,
+    720,
+    200,
+    200
+  ],
+  "objects/factory.png": [
+    392,
+    1024,
+    256,
+    256
+  ],
+  "objects/wall.nwe.png": [
+    4318,
+    720,
+    200,
+    200
+  ],
+  "objects/factory.color.png": [
+    1464,
+    1176,
+    256,
+    256
+  ],
+  "objects/generator.png": [
+    2398,
+    1216,
+    256,
+    256
+  ],
+  "objects/armory.color.png": [
+    2782,
+    1216,
+    256,
+    256
+  ],
+  "objects/mine.color.png": [
+    3166,
+    1216,
+    256,
+    256
+  ],
+  "objects/lasery.png": [
+    3550,
+    1216,
+    256,
+    256
+  ],
+  "objects/wall.nwse.png": [
+    5030,
+    720,
+    200,
+    200
+  ],
+  "objects/ice_tower.color.png": [
+    3934,
+    1216,
+    256,
+    256
+  ],
+  "objects/unknown.color.png": [
+    4646,
+    1216,
+    256,
+    256
+  ],
+  "resources/lizard_hide.png": [
+    5358,
+    1216,
+    256,
+    256
+  ],
+  "resources/sisal.png": [
+    5742,
+    1216,
+    256,
+    256
+  ],
+  "resources/gold_ore.png": [
+    6126,
+    1216,
+    256,
+    256
+  ],
+  "resources/coal.png": [
+    6838,
+    1216,
+    256,
+    256
+  ],
+  "resources/ore.png": [
+    7550,
+    1216,
+    256,
+    256
+  ],
+  "resources/ore.red.png": [
+    392,
+    1408,
+    256,
+    256
+  ],
+  "resources/blueprint.png": [
+    1464,
+    1560,
+    256,
+    256
+  ],
+  "resources/ore.blue.png": [
+    2398,
+    1600,
+    256,
+    256
+  ],
+  "resources/yucca_fiber.png": [
+    2782,
+    1600,
+    256,
+    256
+  ],
+  "resources/battery.red.png": [
+    3166,
+    1600,
+    256,
+    256
+  ],
+  "resources/ore_blue.png": [
+    3550,
+    1600,
+    256,
+    256
+  ],
+  "resources/unknown.png": [
+    3934,
+    1600,
+    256,
+    256
+  ],
+  "resources/oil.png": [
+    4646,
+    1600,
+    256,
+    256
+  ],
+  "resources/blue_gem.png": [
+    5358,
+    1600,
+    256,
+    256
+  ],
+  "resources/water.png": [
+    5742,
+    1600,
+    256,
+    256
+  ],
+  "resources/snake_skin.png": [
+    6126,
+    1600,
+    256,
+    256
+  ],
+  "resources/battery_red.png": [
+    6838,
+    1600,
+    256,
+    256
+  ],
+  "resources/palm_fiber.png": [
+    7550,
+    1600,
+    256,
+    256
+  ],
+  "resources/red_gem.png": [
+    392,
+    1792,
+    256,
+    256
+  ],
+  "resources/salt_water.png": [
+    1464,
+    1944,
+    256,
+    256
+  ],
+  "resources/laser.png": [
+    2398,
+    1984,
+    256,
+    256
+  ],
+  "resources/reward.png": [
+    2782,
+    1984,
+    256,
+    256
+  ],
+  "resources/battery_blue.png": [
+    3166,
+    1984,
+    256,
+    256
+  ],
+  "resources/ore_red.png": [
+    3550,
+    1984,
+    256,
+    256
+  ],
+  "resources/sand.png": [
+    3934,
+    1984,
+    256,
+    256
+  ],
+  "resources/copper_ore.png": [
+    4646,
+    1984,
+    256,
+    256
+  ],
+  "resources/armor.png": [
+    5358,
+    1984,
+    256,
+    256
+  ],
+  "resources/heart.png": [
+    5742,
+    1984,
+    256,
+    256
+  ],
+  "resources/green_gem.png": [
+    6126,
+    1984,
+    256,
+    256
+  ],
+  "resources/stone.png": [
+    6838,
+    1984,
+    256,
+    256
+  ],
+  "resources/turtle_shell.png": [
+    7550,
+    1984,
+    256,
+    256
+  ],
+  "resources/star.png": [
+    392,
+    2176,
+    256,
+    256
+  ],
+  "resources/ice_granade.png": [
+    1464,
+    2328,
+    256,
+    256
+  ],
+  "resources/battery.png": [
+    2398,
+    2368,
+    256,
+    256
+  ],
+  "resources/diamond.png": [
+    2782,
+    2368,
+    256,
+    256
+  ],
+  "resources/iron_ore.png": [
+    3166,
+    2368,
+    256,
+    256
+  ],
+  "resources/ore_green.png": [
+    3550,
+    2368,
+    256,
+    256
+  ],
+  "resources/ore.green.png": [
+    3934,
+    2368,
+    256,
+    256
+  ],
+  "resources/yellow_gem.png": [
+    4646,
+    2368,
+    256,
+    256
+  ],
+  "resources/battery_green.png": [
+    5358,
+    2368,
+    256,
+    256
+  ],
+  "resources/battery.blue.png": [
+    5742,
+    2368,
+    256,
+    256
+  ],
+  "resources/battery.green.png": [
+    6126,
+    2368,
+    256,
+    256
+  ],
+  "trace/attack_nearest.png": [
+    7934,
+    64,
+    64,
+    512
+  ],
+  "trace/put_recipe_items.png": [
+    1848,
+    464,
+    64,
+    512
+  ],
+  "trace/unknown.png": [
+    7934,
+    704,
+    64,
+    512
+  ],
+  "trace/move.png": [
+    6510,
+    720,
+    64,
+    512
+  ],
+  "trace/change_color.png": [
+    7222,
+    720,
+    64,
+    512
+  ],
+  "trace/invalid.png": [
+    776,
+    912,
+    64,
+    512
+  ],
+  "trace/swap.png": [
+    64,
+    1048,
+    64,
+    512
+  ],
+  "trace/frozen.png": [
+    1136,
+    1048,
+    64,
+    512
+  ],
+  "trace/get_output.png": [
+    2070,
+    1048,
+    64,
+    512
+  ],
+  "trace/rotate.png": [
+    4318,
+    1048,
+    64,
+    512
+  ],
+  "trace/attack.png": [
+    5030,
+    1048,
+    64,
+    512
+  ],
+  "trace/noop.png": [
+    1848,
+    1104,
+    64,
+    512
+  ],
+  "agents/agent.n.png": [
+    6510,
+    1360,
+    200,
+    200
+  ],
+  "agents/footprints.png": [
+    1848,
+    1744,
+    400,
+    50
+  ],
+  "agents/agent.e.png": [
+    7222,
+    1360,
+    199,
+    200
+  ],
+  "agents/path.png": [
+    1848,
+    1922,
+    400,
+    50
+  ],
+  "agents/past_arrow.png": [
+    1848,
+    2100,
+    400,
+    50
+  ],
+  "agents/agent.w.png": [
+    776,
+    1552,
+    200,
+    200
+  ],
+  "agents/frozen.png": [
+    64,
+    1688,
+    200,
+    200
+  ],
+  "agents/future_arrow.png": [
+    776,
+    1880,
+    400,
+    50
+  ],
+  "agents/agent.s.png": [
+    4318,
+    1688,
+    200,
+    200
+  ],
+  "actions/attack_nearest.png": [
+    2398,
+    2752,
+    1400,
+    600
+  ],
+  "actions/attack7.png": [
+    3926,
+    2752,
+    1400,
+    600
+  ],
+  "actions/put_recipe_items.png": [
+    776,
+    2058,
+    400,
+    200
+  ],
+  "actions/attack1.png": [
+    5454,
+    2752,
+    1400,
+    600
+  ],
+  "actions/attack3.png": [
+    2398,
+    3480,
+    1400,
+    600
+  ],
+  "actions/thoughts.png": [
+    7222,
+    1688,
+    200,
+    200
+  ],
+  "actions/swap.png": [
+    1848,
+    2278,
+    400,
+    200
+  ],
+  "actions/attack9.png": [
+    3926,
+    3480,
+    1400,
+    600
+  ],
+  "actions/attack6.png": [
+    5454,
+    3480,
+    1400,
+    600
+  ],
+  "actions/converting.png": [
+    7934,
+    1344,
+    100,
+    100
+  ],
+  "actions/get_output.png": [
+    6982,
+    2368,
+    400,
+    200
+  ],
+  "actions/attack5.png": [
+    2398,
+    4208,
+    1400,
+    600
+  ],
+  "actions/attack2.png": [
+    3926,
+    4208,
+    1400,
+    600
+  ],
+  "actions/attack8.png": [
+    5454,
+    4208,
+    1400,
+    600
+  ],
+  "actions/thoughts_lightning.png": [
+    64,
+    2016,
+    200,
+    200
+  ],
+  "actions/attack4.png": [
+    2398,
+    4936,
+    1400,
+    600
+  ],
+  "actions/arrow.png": [
+    7934,
+    1572,
+    100,
+    100
+  ],
+  "actions/icons/attack_nearest.png": [
+    7550,
+    2368,
+    256,
+    256
+  ],
+  "actions/icons/put_recipe_items.png": [
+    776,
+    2386,
+    256,
+    256
+  ],
+  "actions/icons/unknown.png": [
+    392,
+    2560,
+    256,
+    256
+  ],
+  "actions/icons/move.png": [
+    1848,
+    2606,
+    256,
+    256
+  ],
+  "actions/icons/change_color.png": [
+    6982,
+    2696,
+    256,
+    256
+  ],
+  "actions/icons/swap.png": [
+    1464,
+    2712,
+    256,
+    256
+  ],
+  "actions/icons/get_output.png": [
+    7550,
+    2752,
+    256,
+    256
+  ],
+  "actions/icons/rotate.png": [
+    776,
+    2770,
+    256,
+    256
+  ],
+  "actions/icons/attack.png": [
+    392,
+    2944,
+    256,
+    256
+  ],
+  "actions/icons/noop.png": [
+    1848,
+    2990,
+    256,
+    256
+  ]
+}
