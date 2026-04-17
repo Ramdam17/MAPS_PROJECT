@@ -153,9 +153,13 @@ select = [
     "RUF",           # ruff-specific
 ]
 ignore = [
-    "E501",  # line too long (handled by formatter)
-    "N803",  # allow UPPERCASE args (scientific convention)
-    "N806",  # allow UPPERCASE locals (scientific convention)
+    "E501",    # line too long (handled by formatter)
+    "N803",    # allow UPPERCASE args (scientific convention)
+    "N806",    # allow UPPERCASE locals (scientific convention)
+    "RUF001",  # allow Greek letters in strings/identifiers (α, β, etc.)
+    "RUF002",  # allow Greek letters in docstrings
+    "RUF003",  # allow Greek letters in comments
+    "N812",    # allow `import torch.nn.functional as F` (PyTorch convention)
 ]
 
 [tool.ruff.lint.per-file-ignores]
