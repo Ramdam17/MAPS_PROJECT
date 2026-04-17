@@ -67,7 +67,7 @@ echo "current setting: $setting_current"
 seed_current=$seed
 echo "  current seed: $seed_current"
 
-CUDA_VISIBLE_DEVICES=0,1 python $general_dir/examples/maps_v1.py \
+CUDA_VISIBLE_DEVICES=0,1 python $general_dir/examples/maps.py \
     -ema 25 \
     -cascade 50 \
     -g $substrate \
