@@ -8,23 +8,34 @@ import torch.nn.functional as F
 from maps.components import cae_loss, distillation_loss, wagering_bce_loss
 
 
-def test_cae_loss_reduces_to_mse_when_lambda_zero():
+def test_cae_loss_bce_sum_matches_reference():
+    """Default `recon='bce_sum'` matches the reference nn.BCELoss(size_average=False)."""
+    W = torch.randn(40, 100)
+    x = torch.randint(0, 2, (8, 100)).float()  # binary targets
+    recons = torch.sigmoid(torch.randn(8, 100))  # sigmoid outputs
+    h = torch.sigmoid(torch.randn(8, 40))
+    loss = cae_loss(W, x, recons, h, lam=0.0)
+    expected = F.binary_cross_entropy(recons, x, reduction="sum")
+    assert torch.allclose(loss, expected)
+
+
+def test_cae_loss_mse_variant():
+    """`recon='mse_mean'` falls back to F.mse_loss for non-binary targets."""
     W = torch.randn(40, 100)
     x = torch.randn(8, 100)
     recons = torch.randn(8, 100)
     h = torch.sigmoid(torch.randn(8, 40))
-    loss = cae_loss(W, x, recons, h, lam=0.0)
+    loss = cae_loss(W, x, recons, h, lam=0.0, recon="mse_mean")
     assert torch.allclose(loss, F.mse_loss(recons, x))
 
 
-def test_cae_loss_is_nonnegative_and_grows_with_lambda():
+def test_cae_loss_grows_with_lambda():
     W = torch.randn(40, 100)
-    x = torch.randn(8, 100)
-    recons = x.clone()  # perfect reconstruction → MSE = 0
+    x = torch.randint(0, 2, (8, 100)).float()
+    recons = x.clone().clamp(1e-6, 1 - 1e-6)  # near-perfect reconstruction
     h = torch.sigmoid(torch.randn(8, 40))
     loss_small = cae_loss(W, x, recons, h, lam=0.01)
     loss_big = cae_loss(W, x, recons, h, lam=1.0)
-    assert loss_small >= 0
     assert loss_big > loss_small
 
 

@@ -31,11 +31,12 @@ def cae_loss(
     recons_x: torch.Tensor,
     h: torch.Tensor,
     lam: float,
-    reduction: str = "mean",
+    *,
+    recon: str = "bce_sum",
 ) -> torch.Tensor:
     """Contractive AutoEncoder loss (Rifai et al., 2011).
 
-    CAE = MSE(reconstruction) + λ · ||J_h(x)||²_F, where the Frobenius norm
+    CAE = recon(x, recons_x) + λ · ||J_h(x)||²_F, where the Frobenius norm
     of the encoder Jacobian is computed analytically under the assumption that
     the encoder is a single Linear → Sigmoid layer with weight matrix W.
 
@@ -53,22 +54,37 @@ def cae_loss(
         Used to compute the sigmoid derivative `h(1-h)`.
     lam : float
         Weight on the contractive penalty term.
-    reduction : {"mean", "sum", "none"}, default "mean"
-        Reduction applied to the MSE term. The contractive penalty is always
-        summed over the batch (matching the reference implementation).
+    recon : {"bce_sum", "mse_mean", "mse_sum"}, default "bce_sum"
+        Reconstruction term. The reference Blindsight and AGL scripts use
+        ``bce_sum`` — ``nn.BCELoss(size_average=False)`` over sigmoid outputs
+        — even though they misleadingly name the variable ``mse_loss``. The
+        MSE variants are exposed for non-binary reconstruction targets.
 
     Returns
     -------
     torch.Tensor
-        Scalar loss (or per-sample vector when `reduction='none'`).
+        Scalar loss.
     """
-    mse = F.mse_loss(recons_x, x, reduction=reduction)
+    if recon == "bce_sum":
+        recon_term = F.binary_cross_entropy(recons_x, x, reduction="sum")
+    elif recon == "mse_mean":
+        recon_term = F.mse_loss(recons_x, x, reduction="mean")
+    elif recon == "mse_sum":
+        recon_term = F.mse_loss(recons_x, x, reduction="sum")
+    else:
+        raise ValueError(f"Unknown `recon`: {recon!r}")
+
     # Sigmoid-derivative trick: ∂h/∂z = h(1-h), so the Jacobian squared Frobenius
     # norm factorises as `sum_j (h_j(1-h_j))² · sum_i W_ji²`.
+    # Why detach W: the reference implementation reads W via `state_dict()['fc1.weight']`,
+    # which returns a detached clone, so the contractive term only provides gradient to
+    # `h` (and through the sigmoid derivative to the encoder weights), not directly to W.
+    # We replicate that behavior here so training trajectories match bit-for-bit.
+    W_const = W.detach()
     dh = h * (1 - h)  # shape (batch, n_hidden)
-    w_sq_rowsum = torch.sum(W**2, dim=1, keepdim=True)  # shape (n_hidden, 1)
+    w_sq_rowsum = torch.sum(W_const**2, dim=1, keepdim=True)  # shape (n_hidden, 1)
     contractive = torch.sum(torch.mm(dh**2, w_sq_rowsum))  # scalar
-    return mse + lam * contractive
+    return recon_term + lam * contractive
 
 
 def wagering_bce_loss(
