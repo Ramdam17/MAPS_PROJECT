@@ -16,6 +16,7 @@ htmlcov/
 .venv/
 venv/
 env/
+!config/env/
 .env
 .env.local
 

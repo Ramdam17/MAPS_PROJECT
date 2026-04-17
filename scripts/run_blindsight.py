@@ -1,49 +1,106 @@
-"""Blindsight experiment driver — CLI skeleton.
+"""Blindsight experiment driver.
 
 Loads the composed config (config/training/blindsight.yaml ← config/maps.yaml),
-seeds every RNG, and prepares the output directory layout.
-
-Training logic is wired in Sprint 04. For now this script validates the
-config pipeline end-to-end so downstream sprints can assume a clean
-"load → seed → paths" contract.
+seeds every RNG, builds the networks described by ``cfg``, runs pre-training
+for one of the four 2×2 factorial settings, and saves loss curves + final
+model state under ``outputs/blindsight/<setting>/seed-<seed>/``.
 
 Usage
 -----
-    uv run python scripts/run_blindsight.py                      # defaults
-    uv run python scripts/run_blindsight.py --seed 43
-    uv run python scripts/run_blindsight.py --override train.n_epochs=10
+    uv run python scripts/run_blindsight.py --setting both
+    uv run python scripts/run_blindsight.py --setting neither --seed 43
+    uv run python scripts/run_blindsight.py --setting both -o train.n_epochs=20
+
+The ``--all-settings`` flag loops over the factorial_2x2 experiment config
+and runs every (setting × seed) cell sequentially. Use SLURM array jobs in
+production (see docs/install_linux.md) rather than the single-process loop.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
+import time
 from pathlib import Path
 
+import numpy as np
+import torch
 import typer
 from omegaconf import OmegaConf
 
-# Enable `python scripts/run_blindsight.py` without installing the package.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from maps.experiments.blindsight import BlindsightSetting, BlindsightTrainer
 from maps.utils import get_paths, load_config, set_all_seeds
 
 app = typer.Typer(add_completion=False, help=__doc__)
 log = logging.getLogger("maps.run_blindsight")
 
 
+def _run_one(cfg, setting: BlindsightSetting, seed: int, out_dir: Path) -> dict:
+    """Run one (setting, seed) cell and save artifacts. Returns a summary dict."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    set_all_seeds(seed)
+    trainer = BlindsightTrainer(cfg, setting)
+    trainer.build()
+
+    t0 = time.perf_counter()
+    losses_1, losses_2 = trainer.pre_train()
+    elapsed = time.perf_counter() - t0
+
+    np.save(out_dir / "losses_1.npy", losses_1)
+    np.save(out_dir / "losses_2.npy", losses_2)
+    torch.save(trainer.first_order.state_dict(), out_dir / "first_order.pt")
+    torch.save(trainer.second_order.state_dict(), out_dir / "second_order.pt")
+
+    summary = {
+        "setting": setting.id,
+        "seed": seed,
+        "n_epochs": int(cfg.train.n_epochs),
+        "loss_1_final": float(losses_1[-1]),
+        "loss_2_final": float(losses_2[-1]),
+        "loss_1_min": float(losses_1.min()),
+        "loss_2_min": float(losses_2.min()) if setting.second_order else 0.0,
+        "elapsed_seconds": elapsed,
+    }
+    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    log.info(
+        "[%s | seed=%d] %d epochs in %.1fs, loss_1[-1]=%.3f, loss_2[-1]=%.3f",
+        setting.id,
+        seed,
+        cfg.train.n_epochs,
+        elapsed,
+        losses_1[-1],
+        losses_2[-1],
+    )
+    return summary
+
+
+def _setting_from_cfg(factorial_cfg, setting_id: str) -> BlindsightSetting:
+    for s in factorial_cfg.settings:
+        if s.id == setting_id:
+            return BlindsightSetting.from_dict(s)
+    valid = [s.id for s in factorial_cfg.settings]
+    raise typer.BadParameter(f"Unknown setting {setting_id!r}. Valid: {valid}")
+
+
 @app.command()
 def main(
-    seed: int | None = typer.Option(None, help="Override RANDOM_SEED from config"),
-    override: list[str] = typer.Option(  # noqa: B008  # Typer idiom
+    setting: str = typer.Option(
+        "both",
+        help="Factorial setting id: neither | cascade_only | second_order_only | both",
+    ),
+    all_settings: bool = typer.Option(
+        False, "--all-settings", help="Loop over every factorial setting × seed."
+    ),
+    seed: int | None = typer.Option(None, help="Override seed (single-setting mode only)."),
+    override: list[str] = typer.Option(  # noqa: B008
         [],
         "--override",
         "-o",
         help="Hydra-style override, e.g. `-o train.n_epochs=10`. Repeatable.",
-    ),
-    dry_run: bool = typer.Option(
-        True,  # NOTE: True until Sprint 04 wires actual training
-        help="Load config + print the resolved tree without training.",
     ),
     log_level: str = typer.Option("INFO", help="Python logging level"),
 ) -> None:
@@ -53,23 +110,33 @@ def main(
     )
 
     cfg = load_config("training/blindsight", overrides=list(override))
-    if seed is not None:
-        cfg.seed = seed
-
+    factorial = load_config("experiments/factorial_2x2")
     paths = get_paths()
     paths.ensure_dirs()
 
-    set_all_seeds(cfg.seed)
+    base_out = paths.outputs / "blindsight"
 
-    log.info("Blindsight run — seed=%d", cfg.seed)
-    log.info("Paths: root=%s  outputs=%s  models=%s", paths.root, paths.outputs, paths.models)
-    log.info("Resolved config:\n%s", OmegaConf.to_yaml(cfg))
-
-    if dry_run:
-        log.info("Dry run — exiting before training (Sprint 04 will wire this).")
+    if all_settings:
+        runs = [
+            (BlindsightSetting.from_dict(s), s_idx)
+            for s_idx in list(factorial.seeds)
+            for s in factorial.settings
+        ]
+        log.info(
+            "Running %d cells (%d settings × %d seeds)",
+            len(runs),
+            len(factorial.settings),
+            len(factorial.seeds),
+        )
+        for s, sd in runs:
+            _run_one(cfg, s, sd, base_out / s.id / f"seed-{sd}")
         return
 
-    raise NotImplementedError("Training loop is wired in Sprint 04.")
+    # Single setting.
+    s = _setting_from_cfg(factorial, setting)
+    sd = seed if seed is not None else int(cfg.seed)
+    log.info("Config:\n%s", OmegaConf.to_yaml(cfg))
+    _run_one(cfg, s, sd, base_out / s.id / f"seed-{sd}")
 
 
 if __name__ == "__main__":

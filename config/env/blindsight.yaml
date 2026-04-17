@@ -1,0 +1,33 @@
+# Blindsight stimulus-regime parameters.
+# These describe the three perceptual conditions from Weiskrantz (1986) /
+# Pasquali & Cleeremans (2010). Any deviation must be logged in
+# docs/reproduction/deviations.md.
+#
+# Each regime is parameterized by three values:
+#   random_limit  — upper bound of uniform noise drawn per unit
+#   baseline      — additive DC offset applied across all units
+#   multiplier    — overall scale applied to both noise and signal
+#
+# The ${train.noise_level} interpolations let you sweep the noise scan
+# from a single CLI override while keeping the per-regime structure intact.
+
+conditions:
+
+  superthreshold:     # condition 0 — clean stimulus, no additive noise
+    random_limit: 0.0
+    baseline: 0.0
+    multiplier: 1.0
+
+  subthreshold:       # condition 1 — stimulus buried in noise
+    random_limit: 0.02
+    baseline: ${train.noise_level}
+    multiplier: 1.0
+
+  low_vision:         # condition 2 — stimulus scaled down ×0.3, noise present
+    random_limit: 0.02
+    baseline: ${train.noise_level}
+    multiplier: 0.3
+
+# Pre-training always draws from the superthreshold regime (reference code,
+# pre_train line 530). Testing sweeps all three.
+pre_training_condition: superthreshold
