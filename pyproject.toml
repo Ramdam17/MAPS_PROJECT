@@ -127,9 +127,9 @@ skip-excluded-dirs = true
 # Reproducible resolution
 resolution = "highest"
 
-# Point MinAtar to the vendored copy (updated to external/MinAtar in Phase 3)
+# Point MinAtar to the vendored copy
 [tool.uv.sources]
-minatar = { path = "SARL/MinAtar", editable = true }
+minatar = { path = "external/MinAtar", editable = true }
 
 [tool.ruff]
 target-version = "py312"
@@ -139,8 +139,6 @@ extend-exclude = [
     "external/",
     "METTA/",
     "MARL/MAPPO-ATTENTIOAN/",
-    "SARL/MinAtar/build",
-    "SARL_CL/MinAtar/build",
 ]
 
 [tool.ruff.lint]
