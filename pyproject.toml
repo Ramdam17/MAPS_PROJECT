@@ -95,6 +95,10 @@ dev = [
     "ipykernel>=6.29",
     "jupyter>=1.0",
     "nbstripout>=0.7",
+    # Profiling (Sprint perf/marl-mappo-speedup — Phase 1)
+    "snakeviz>=2.2",
+    "gprof2dot>=2024.6.6",
+    "py-spy>=0.3",
 ]
 
 # Convenience — everything that works on Mac

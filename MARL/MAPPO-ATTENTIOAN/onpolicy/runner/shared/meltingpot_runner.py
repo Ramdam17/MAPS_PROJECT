@@ -45,12 +45,21 @@ class MeltingpotRunner(Runner):
         super(MeltingpotRunner, self).__init__(config)
        
     def run(self):
-        self.warmup()   
+        self.warmup()
 
         start = time.time()
         episodes = int(self.num_episodes)
 
-        print('num episodes to run (shared):', episodes) 
+        print('num episodes to run (shared):', episodes)
+
+        # --- perf instrumentation (Phase 1 — PPSP/MARL speedup) ---
+        # Accumulates wall-clock time per section across one log window.
+        # Reset at each log_interval so the reported values are *per-window*
+        # averages, not cumulative since training start.
+        timings = {"collect": 0.0, "env_step": 0.0, "insert": 0.0,
+                   "compute": 0.0, "train": 0.0, "save": 0.0,
+                   "window_total": 0.0}
+        window_start = time.perf_counter()
 
         for episode in range(episodes):
             if self.use_linear_lr_decay:
@@ -60,33 +69,47 @@ class MeltingpotRunner(Runner):
             episode_length = 1000
             while random.ramdom() >0.1 and episode_length <= 5000:
                 episode_length += 100
-            
+
             for step in range(episode_length):
                 # Sample actions
+                _t0 = time.perf_counter()
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
-                    
-                # Obser reward and next obs
-                obs, rewards, dones, infos = self.envs.step(actions)
+                timings["collect"] += time.perf_counter() - _t0
 
-                data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic 
-                
+                # Obser reward and next obs
+                _t0 = time.perf_counter()
+                obs, rewards, dones, infos = self.envs.step(actions)
+                timings["env_step"] += time.perf_counter() - _t0
+
+                data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic
+
                 # insert data into buffer
+                _t0 = time.perf_counter()
                 self.insert(data)
+                timings["insert"] += time.perf_counter() - _t0
 
             # compute return and update network
+            _t0 = time.perf_counter()
             self.compute()
+            timings["compute"] += time.perf_counter() - _t0
+
+            _t0 = time.perf_counter()
             train_infos = self.train(episode_length)
-            
+            timings["train"] += time.perf_counter() - _t0
+
             # post process
             total_num_steps = (episode + 1) * episode_length * self.n_rollout_threads
-            
+
             # save model
             if (episode % self.save_interval == 0 or episode == episodes - 1):
+                _t0 = time.perf_counter()
                 self.save()
+                timings["save"] += time.perf_counter() - _t0
 
             # log information
             if episode % self.log_interval == 0:
                 end = time.time()
+                timings["window_total"] = time.perf_counter() - window_start
                 print("\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{} total num of episodes, FPS {}.\n"
                         .format(self.all_args.scenario_name,
                                 self.algorithm_name,
@@ -97,13 +120,44 @@ class MeltingpotRunner(Runner):
                                 self.num_episodes,
                                 int(total_num_steps / (end - start))))
 
+                # Per-section breakdown (wall-clock, cumulative over log window).
+                # Helps localise bottlenecks without attaching cProfile.
+                denom = max(timings["window_total"], 1e-9)
+                print(
+                    "  [timing, s over window {:.2f}s]"
+                    " collect={:.2f} ({:.1%})"
+                    " env_step={:.2f} ({:.1%})"
+                    " insert={:.2f} ({:.1%})"
+                    " compute={:.3f} ({:.1%})"
+                    " train={:.2f} ({:.1%})"
+                    " save={:.3f} ({:.1%})".format(
+                        timings["window_total"],
+                        timings["collect"], timings["collect"] / denom,
+                        timings["env_step"], timings["env_step"] / denom,
+                        timings["insert"], timings["insert"] / denom,
+                        timings["compute"], timings["compute"] / denom,
+                        timings["train"], timings["train"] / denom,
+                        timings["save"], timings["save"] / denom,
+                    )
+                )
+
                 if self.env_name == "Meltingpot":
                     train_infos["average_episode_rewards"] = np.sum(self.buffer.rewards) / self.buffer.rewards.shape[2]
-                    train_infos["performance_score"] = min_max_normalize(train_infos["average_episode_rewards"], 
+                    train_infos["performance_score"] = min_max_normalize(train_infos["average_episode_rewards"],
                                                                          self.all_args.substrate_name)
                     # train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
                     print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
+
+                # Surface the timings into TensorBoard / WandB so they can be
+                # trended over a full training run.
+                for _k, _v in timings.items():
+                    train_infos[f"timing/{_k}_s"] = float(_v)
+
                 self.log_train(train_infos, total_num_steps)
+
+                # Reset the window counters for the next log interval.
+                timings = {k: 0.0 for k in timings}
+                window_start = time.perf_counter()
 
             # eval
             if episode % self.eval_interval == 0 and self.use_eval:
@@ -182,7 +236,6 @@ class MeltingpotRunner(Runner):
     def insert(self, data):
         obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic = data
 
-        print("before change ", rnn_states.shape, rnn_states_critic.shape)
         data_dict = obs[0]
         stacked_data = np.stack([np.squeeze(data_dict[f'player_{i}']['RGB']) for i in range(self.num_agents)])
         new_obs = stacked_data[np.newaxis, ...]

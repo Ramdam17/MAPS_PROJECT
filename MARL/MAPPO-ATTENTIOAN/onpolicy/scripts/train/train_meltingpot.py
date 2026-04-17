@@ -81,7 +81,15 @@ def parse_args(args, parser):
     parser.add_argument("--roles", type=str, default='default')
 
     parser.add_argument('--scale_factor', type=int, default=1, help="the scale factor for the observation")
-    
+
+    # Opt-in deterministic cProfile wrapping of runner.run().
+    # See docs/reproduction/profiling_report_*.md for analysis workflow.
+    parser.add_argument('--profile', action='store_true',
+                        help="Wrap runner.run() with cProfile and dump stats to --profile-out")
+    parser.add_argument('--profile-out', type=str, default=None,
+                        help="Destination .prof file when --profile is set. "
+                             "Default: <run_dir>/profile_run.prof")
+
     all_args = parser.parse_known_args(args)[0]
 
     return all_args
@@ -241,8 +249,15 @@ def main(args):
 
     ###################
     runner = Runner(config)
-    # cProfile.runctx('runner.run()', globals(), locals(), 'profile_run.prof')
-    runner.run()
+
+    if all_args.profile:
+        profile_out = all_args.profile_out or str(run_dir / "profile_run.prof")
+        print(f"[profile] cProfile active — stats will be dumped to {profile_out}")
+        # runctx lets us expose `runner` from locals() to the profiled frame
+        # without turning runner.run() into a module-level import.
+        cProfile.runctx("runner.run()", globals(), locals(), profile_out)
+    else:
+        runner.run()
 
     # post process
     envs.close()
