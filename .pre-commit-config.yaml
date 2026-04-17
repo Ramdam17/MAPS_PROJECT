@@ -1,0 +1,106 @@
+# Pre-commit hooks for MAPS_PROJECT
+# Install: uv run pre-commit install
+# Run manually: uv run pre-commit run --all-files
+#
+# The primary goal is to prevent regressions of the mess we just cleaned:
+# leaked secrets, hardcoded absolute paths, committed binaries, print() spam.
+
+repos:
+  # ─── Secret scanning ─────────────────────────────────────────────────────
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+              uv\.lock|
+              requirements-legacy\.txt|
+              .*\.ipynb|
+              external/.*|
+              METTA/metta_MAPS/uv\.lock|
+              METTA/.*
+          )$
+
+  # ─── Block large files + committed secrets basics ────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+        exclude: |
+          (?x)^(
+              pdf/.*\.pdf|
+              docs/.*\.pdf|
+              images/.*|
+              uv\.lock
+          )$
+      - id: check-merge-conflict
+      - id: check-yaml
+        exclude: ^external/|^METTA/
+      - id: check-toml
+      - id: check-json
+        exclude: ^external/|^METTA/
+      # Cosmetic fixers restricted to new code only — legacy files stay as-is
+      # until they are refactored in Phase 3 (avoids gigantic noise diffs).
+      - id: end-of-file-fixer
+        files: ^(src/|scripts/|tests/|config/|\.pre-commit-config\.yaml|pyproject\.toml|README\.md|CLAUDE\.md)
+      - id: trailing-whitespace
+        files: ^(src/|scripts/|tests/|config/|\.pre-commit-config\.yaml|pyproject\.toml|README\.md|CLAUDE\.md)
+      - id: no-commit-to-branch
+        args: ['--branch', 'main']
+      - id: detect-private-key
+
+  # ─── Ban hardcoded absolute home paths (learned from Juan/Zahra leaks) ───
+  - repo: local
+    hooks:
+      - id: ban-abs-home-paths
+        name: Ban hardcoded /home/<user> or /Users/<user> paths
+        entry: '/(home|Users)/[A-Za-z0-9._-]+/'
+        language: pygrep
+        types_or: [python, shell, yaml]
+        # Only enforce on NEW code. Legacy shell scripts (SARL*.sh,
+        # meltingpot.sh, MARL/) are known-bad and will be migrated to
+        # config/paths.yaml in Phase 3.
+        files: ^(src/|scripts/|tests/|config/)
+
+      - id: ban-aws-key-prefix
+        name: Ban AWS access key ID prefix
+        entry: 'AKIA[0-9A-Z]{16}'
+        language: pygrep
+        types_or: [python, shell, yaml, markdown]
+        exclude: |
+          (?x)^(
+              \.pre-commit-config\.yaml|
+              docs/.*
+          )$
+
+      - id: ban-wandb-literal-login
+        name: Ban 'wandb login <token>' literal
+        entry: 'wandb[[:space:]]+login[[:space:]]+[0-9a-f]{40}'
+        language: pygrep
+        types_or: [python, shell]
+        exclude: ^docs/
+
+  # ─── Python linting + formatting ─────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.11
+    hooks:
+      # Ruff only runs on NEW code. Legacy monoliths (Blindsight_TMLR.py,
+      # AGL_TMLR.py, MARL/MAPPO-ATTENTIOAN/, SARL/MinAtar/, SARL_CL/) are
+      # touched by refactors in Phase 3 and will be linted once moved to src/.
+      - id: ruff
+        args: ['--fix', '--exit-non-zero-on-fix']
+        files: ^(src/|scripts/|tests/)
+      - id: ruff-format
+        files: ^(src/|scripts/|tests/)
+
+  # ─── Notebook hygiene ────────────────────────────────────────────────────
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout
+
+ci:
+  autofix_prs: false
+  autoupdate_schedule: monthly

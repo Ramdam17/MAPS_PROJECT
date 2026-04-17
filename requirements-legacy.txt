@@ -1,3 +1,17 @@
+# ────────────────────────────────────────────────────────────────────────────
+# LEGACY — DO NOT USE.
+#
+# This is the original requirements.txt from the pre-refactor codebase. It is
+# unusable as-is: 416 lines, no versions pinned, duplicated entries, and it
+# lists Python stdlib modules (`typing`, `dataclasses`, `contextvars`,
+# `configparser`) as PyPI packages which shadow the stdlib on Python 3.12+.
+#
+# The canonical dependency manifest is now `pyproject.toml` at the repo root.
+# Install with:  uv sync --extra blindsight --extra agl --extra sarl --extra dev
+#
+# This file is kept only for historical reference and will be deleted in a
+# future cleanup once the reproduction is validated.
+# ────────────────────────────────────────────────────────────────────────────
 typer
 typing
 einops
@@ -399,19 +413,19 @@ zipp
 zmq
 ray
 ray[tune]
-pygame 
-dm-env 
+pygame
+dm-env
 dmlab2d
 jax==0.4.20
 jaxlib==0.4.20
 lz4
 pynvml
 peft
-omegaconf 
-pytorch-ignite 
-torchvision 
-scikit-learn 
-pytorch_lightning 
+omegaconf
+pytorch-ignite
+torchvision
+scikit-learn
+pytorch_lightning
 timm
 readme_renderer
 scikit-image

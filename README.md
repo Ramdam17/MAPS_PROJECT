@@ -1,6 +1,6 @@
 # MAPS: A Metacognitive Architecture for Improved Social Learning
 
-This repository contains the implementation of MAPS (Metacognitive Architecture for Improved Social Learning) as described in our paper published in the Proceedings of the International Workshop on Advancing AI Through Theory of Mind, 2025. 
+This repository contains the implementation of MAPS (Metacognitive Architecture for Improved Social Learning) as described in our paper published in the Proceedings of the International Workshop on Advancing AI Through Theory of Mind, 2025.
 [TOM4AI Workshop proceedings](https://arxiv.org/abs/2505.03770)
 [Full length paper - preprint](pdf/MAPS_TMLR_Journal_Submission.pdf)
 
@@ -22,7 +22,7 @@ MAPS is a novel architecture that combines metacognitive components with advance
 1. A secondary network (2nd-Net) with a comparator matrix connected to wagering units
 2. A cascade model facilitating graded accumulation of activation
 
-Our experiments demonstrate significant performance improvements across multiple domains including Blindsight, Artificial Grammar Learning (AGL), Single-Agent Reinforcement Learning (SARL), and Multi-Agent Reinforcement Learning (MARL). We test our architecture over 6 settings, alternating with these 2 components on and off. 
+Our experiments demonstrate significant performance improvements across multiple domains including Blindsight, Artificial Grammar Learning (AGL), Single-Agent Reinforcement Learning (SARL), and Multi-Agent Reinforcement Learning (MARL). We test our architecture over 6 settings, alternating with these 2 components on and off.
 
    ![](images/RLC_Figures.png)
 
@@ -61,7 +61,7 @@ Additionall requirements for MARL:
 ```bash
 cd ../..
 cd MARL
-pip install "ray[cpp]" 
+pip install "ray[cpp]"
 git clone -b main https://github.com/deepmind/meltingpot
 cd meltingpot
 pip install --editable .[dev]
@@ -82,7 +82,7 @@ unzip awscliv2.zip
 sudo ./aws/install
 ```
 
-Get your aws [keys](https://aws.amazon.com/free/), and export your keys 
+Get your aws [keys](https://aws.amazon.com/free/), and export your keys
 ```bash
 export AWS_ACCESS_KEY_ID="your_key"
 export AWS_SECRET_ACCESS_KEY="your_secret_key"
@@ -119,13 +119,13 @@ python AGL_TMLR.py
    ![](images/SARL_architecture.png)
 
 
-The SARL experiments are conducted on MinAtar environments. The experiments recorded on the short version of our paper use "Seaquest" and "Asterix". However, you can run "Breakout", "Space Invaders", "Freeway", "Seaquest" and "Asterix". To run SARL, there are 3 experiments: standard (running a single environment), transfer learning, and continual learning. 
+The SARL experiments are conducted on MinAtar environments. The experiments recorded on the short version of our paper use "Seaquest" and "Asterix". However, you can run "Breakout", "Space Invaders", "Freeway", "Seaquest" and "Asterix". To run SARL, there are 3 experiments: standard (running a single environment), transfer learning, and continual learning.
 
 For each of this cases, you need to change the generic variable = $general_dir to $local_repo_directory/SARL/MinAtar. Then for each case you need to run:
 
-Standard run ( environment, seed, setting) 
+Standard run ( environment, seed, setting)
 ```bash
-cd SARL/ 
+cd SARL/
 ./SARL_Training_Standard.sh BREAK 1 1
 ```
 You can change BREAK for the corresponding environment. Please see the script in SARL_Training_Standard.sh to change the corresponding flag name for each environment.
@@ -135,13 +135,13 @@ You can change BREAK for the corresponding environment. Please see the script in
 
 Transfer learning ( setting, number_steps)
 ```bash
-cd SARL_CL/ 
+cd SARL_CL/
 ./SARL_Training_TransferLearning_TernaryPlot.sh 1 100000
 ```
 
 Continual learning ( seed, setting)
 ```bash
-cd SARL_CL/ 
+cd SARL_CL/
 ./SARL_Training_ContinuousLearning.sh 1 1
 ```
 
@@ -182,35 +182,35 @@ You can change TERRITORY_I for the corresponding environment. Please see the scr
 
 Our results demonstrate significant improvements using the MAPS architecture:
 
-1. **Blindsight and AGL**: 
+1. **Blindsight and AGL**:
    - Blindsight: 0.97 +/- 0.02 (Z-score: 9.01)
    - AGL- High Awareness: 0.66 +/- 0.05 (Z-score: 8.20)
    - AGL- Low Awareness: 0.62 +/- 0.07 (Z-score: 15.70)
 
 
    ![](images/Perceptual_table.png)
-   
-2. **MinAtar SARL**: 
+
+2. **MinAtar SARL**:
    - Seaquest: 3.06 +/- 0.34 (Z-score: 7.03)
    - Asterix: 4.54 +/- 1.01 (Z-score: 1.32)
    - Breakout: 8.07 +/- 0.72 (Z-score: 3.70)
    - Space Invaders: 26.80 +/- 1.59 (Z-score: 4.13)
    - Freeway: 34.20 +/- 2.83 (Z-score: 0.95)
-      
+
    ![](images/SARL_table.png)
 
    ![](images/SARL_results.jpg)
 
-4. **MinAtar SARL + continual/transfer learning**: 
+4. **MinAtar SARL + continual/transfer learning**:
    - Achieved a mean retention of 45.1% +/- 31.1% for transfer learning. Results for continual learning are still exploratory.
      ![](images/Ternary_space.png)
 
-5. **MARL**: 
+5. **MARL**:
    - Commons Harvest Partnership: 34.52 +/- 0.98 (Z-score: 6.20)
    - Commons Harvest Closed: 25.21 +/- 1.06 (Z-score: 6.31)
    - Chemistry: 1.11 +/- 0.05 (Z-score: -0.91)
    - Territory Inside Out: 48.47 +/- 1.45 (Z-score: -1.92)
-      
+
      ![](images/MARL_table.png)
      ![](images/MARL_plot.png)
 
