@@ -1,0 +1,11 @@
+# Filesystem layout.
+# Paths are relative to the project root, which is auto-discovered by
+# maps.utils.paths.get_paths() (MAPS_ROOT env var > parent of config/ > cwd).
+# Override a single path with CLI: --paths.outputs /scratch/me/outputs
+
+data: data
+outputs: outputs
+models: models
+logs: logs
+figures: outputs/figures
+reports: outputs/reports

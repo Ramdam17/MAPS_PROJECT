@@ -1,0 +1,33 @@
+# AGL training defaults — extracted verbatim from AGL/AGL_TMLR.py (lines 1660-1678).
+
+defaults:
+  - /maps@_here_
+
+first_order:
+  input_dim: 48          # 8 letters × 6 bits
+  hidden_dim: 40         # AGL default
+
+# AGL-specific constant.
+bits_per_letter: 6       # winner-takes-all chunk size in decoder
+
+optimizer:
+  name: ADAMAX
+  lr_first_order: 0.4    # learning_rate_1
+  lr_second_order: 0.1   # learning_rate_2
+  lr_training_first_order: 0.4
+  lr_training_second_order: 0.1
+
+scheduler:
+  name: StepLR
+  step_size: 25
+  gamma: 0.98
+
+train:
+  n_epochs_pre: 200      # pre-training epochs
+  momentum: 0.5
+  temperature: 1.0
+  threshold: 0.5
+  patterns_number_pre: 80
+  data_factor: 1
+
+ema_window: 25
