@@ -12,6 +12,7 @@
 | 07 | Reproduction — SARL on Narval | ⚪ planned | `repro/sarl` | 1-2 weeks compute |
 | 08 | Reproduction — MARL on Narval | ⚪ planned | `repro/marl` | 1-2 weeks compute |
 | 09 | Docs + release | ⚪ planned | `feat/docs` | 2 days |
+| ⚡ | [Perf — MARL MAPPO speedup](sprint-perf-marl-speedup.md) | 🟡 in progress (Phases 1+2 shipped, gated on Narval profile) | `perf/marl-mappo-speedup` | 3-5 days |
 
 ## Dependency graph
 
