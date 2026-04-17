@@ -1,0 +1,30 @@
+# Blindsight training defaults — extracted verbatim from BLINDSIGHT/Blindsight_TMLR.py.
+# See docs/reproduction/deviations.md if any value differs from the paper.
+
+defaults:
+  - /maps@_here_      # inherit cascade / first_order / second_order / losses / seed
+
+# Override shared dims for Blindsight (perceptual: 100-d input).
+first_order:
+  input_dim: 100
+  hidden_dim: 100        # Blindsight reuses input dim as hidden
+
+optimizer:
+  name: ADAMAX           # Blindsight_TMLR.py §prepare_pre_training (default)
+  lr_first_order: 0.5    # learning_rate_1
+  lr_second_order: 0.1   # learning_rate_2
+
+scheduler:
+  name: StepLR
+  step_size: 25          # stepsize
+  gamma: 0.98            # gam
+
+train:
+  n_epochs: 200
+  batch_size: 100        # patterns per epoch (Blindsight pattern-level)
+  noise_level: 0.1       # overridden per-experiment
+  data_factor: 1
+  momentum: 0.9
+  threshold: 0.5
+
+ema_window: 25           # shell-level EMA for reporting

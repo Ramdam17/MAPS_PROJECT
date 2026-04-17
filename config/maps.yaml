@@ -1,0 +1,35 @@
+# Canonical MAPS constants (Vargas et al., TMLR submission).
+# These values are LOCKED — any deviation must be logged in
+# docs/reproduction/deviations.md and justified.
+
+cascade:
+  # McClelland (1979, 1989) cascade model.
+  # alpha = integration rate per iteration; 50 iterations ≈ 1/alpha.
+  alpha: 0.02            # paper §2.1 eq.6
+  n_iterations: 50       # paper §2.1 ("empirically selected")
+
+first_order:
+  # Domain-agnostic MLP (FirstOrderMLP). Defaults reflect AGL; Blindsight
+  # overrides input_dim=100 in config/training/blindsight.yaml.
+  input_dim: 48          # AGL: 8 letters × 6 bits
+  hidden_dim: 40
+  encoder_dropout: 0.1
+  weight_init_range: [-1.0, 1.0]
+
+second_order:
+  # Pasquali & Cleeremans (2010) comparator + wagering head.
+  input_dim: 100
+  dropout: 0.5
+  n_wager_units: 1       # reference code uses 1-unit sigmoid;
+                         # paper §2.2 describes 2-unit softmax (Koch & Preuschoff 2007).
+                         # Set to 2 to match paper (see deviations.md D-001).
+  wager_weight_init_range: [0.0, 0.1]
+
+losses:
+  # Contractive AutoEncoder (Rifai et al. 2011).
+  cae_lambda: 1.0e-4
+  # Knowledge distillation (Hinton et al. 2015) — SARL+CL.
+  distillation_alpha: 0.5
+  distillation_temperature: 2.0
+
+seed: 42                 # lab-wide convention

@@ -1,0 +1,31 @@
+# 2×2 factorial on/off ablation (Vargas et al., §3.1, Table 2).
+# Each setting flips cascade and/or second-order on/off.
+# "Both on" = full MAPS; "neither" = vanilla First-order MLP baseline.
+
+settings:
+
+  - id: neither
+    label: "Vanilla (no cascade, no 2nd-order)"
+    cascade: false
+    second_order: false
+    # With cascade off, cascade_rate = 1.0 → passthrough.
+
+  - id: cascade_only
+    label: "Cascade only"
+    cascade: true
+    second_order: false
+
+  - id: second_order_only
+    label: "Second-order only (no cascade)"
+    cascade: false
+    second_order: true
+
+  - id: both
+    label: "Full MAPS (cascade + 2nd-order)"
+    cascade: true
+    second_order: true
+
+# Per-domain compute: n_seeds × n_settings runs.
+# Paper uses 5 seeds; during dev we can drop to 2 for smoke-tests.
+n_seeds: 5
+seeds: [42, 43, 44, 45, 46]     # deterministic seed pool (lab-wide convention)
