@@ -1,0 +1,179 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "maps"
+version = "0.1.0"
+description = "Metacognitive Architecture for Perceptual and Social Learning (Vargas et al., 2025) — PPSP fork, cleaned for reproducibility"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Juan David Vargas" },
+    { name = "Natalie Kastel" },
+    { name = "Antoine Pasquali" },
+    { name = "Axel Cleeremans" },
+    { name = "Zahra Sheikhbahaee" },
+    { name = "Guillaume Dumas" },
+]
+maintainers = [
+    { name = "Rémy Ramadour", email = "remy.ramadour@ppsp.team" },
+]
+
+# Shared runtime deps (every experiment needs these)
+dependencies = [
+    "numpy>=1.26,<3",
+    "scipy>=1.11",
+    "pandas>=2.1",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "scikit-learn>=1.4",
+    "torch>=2.2",
+    "tabulate>=0.9",
+    "psutil>=5.9",
+    "tqdm>=4.66",
+    "pyyaml>=6.0",
+    "omegaconf>=2.3",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+
+# Perceptual tasks — works on Mac CPU/MPS
+blindsight = [
+    "torchmetrics>=1.2",
+    "torch-optimizer>=0.3",
+]
+agl = [
+    "torchmetrics>=1.2",
+    "torch-optimizer>=0.3",
+]
+
+# Single-agent RL — MinAtar (installed as editable path dep below; see [tool.uv.sources])
+sarl = [
+    "gym>=0.26",
+    "minatar",
+]
+
+# Multi-agent RL — Linux-only (dmlab2d, meltingpot native wheels)
+# Install with: uv sync --extra marl   (will fail on macOS by design)
+marl = [
+    "ray[default,tune]>=2.9; sys_platform == 'linux'",
+    "gymnasium>=0.29",
+    "dm-env>=1.6",
+    "ml-collections>=0.1.1",
+    "absl-py>=2.0",
+    "cloudpickle>=3.0",
+    "setproctitle>=1.3",
+    "tensorboardX>=2.6",
+    "wandb>=0.16",
+    "opencv-python>=4.9",
+    "imageio>=2.34",
+    "dm-tree>=0.1.8",
+    "six>=1.16",
+    # dmlab2d / meltingpot / pysc2 / smacv2 / gfootball are Linux-only native
+    # packages and must be installed manually from source — see docs/install_linux.md
+]
+
+# Codecarbon-style energy tracking (used by all domains via shared energy_tracker.py)
+energy = [
+    "codecarbon>=2.3",
+    "nvidia-ml-py>=12.535",
+]
+
+# Development tools
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "pytest-xdist>=3.5",
+    "ruff>=0.3",
+    "black>=24.0",
+    "pre-commit>=3.6",
+    "detect-secrets>=1.4",
+    "ipykernel>=6.29",
+    "jupyter>=1.0",
+    "nbstripout>=0.7",
+]
+
+# Convenience — everything that works on Mac
+all-local = [
+    "maps[blindsight,agl,sarl,energy,dev]",
+]
+
+[project.urls]
+Homepage = "https://github.com/Ramdam17/MAPS_PROJECT"
+Paper = "https://arxiv.org/abs/2505.03770"
+
+[project.scripts]
+# CLI entry points (wired in Phase 3)
+# maps-train = "maps.cli:train"
+# maps-eval  = "maps.cli:evaluate"
+
+# ─── Tooling ────────────────────────────────────────────────────────────────
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/maps"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/maps", "config", "scripts", "README.md", "LICENSE"]
+
+# Allow building before src/maps/ exists (Phase 3 refactor)
+[tool.hatch.build]
+skip-excluded-dirs = true
+
+[tool.uv]
+# Reproducible resolution
+resolution = "highest"
+
+# Point MinAtar to the vendored copy
+[tool.uv.sources]
+minatar = { path = "external/MinAtar", editable = true }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "scripts", "tests"]
+extend-exclude = [
+    "external/",
+    "METTA/",
+    "MARL/MAPPO-ATTENTIOAN/",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle + pyflakes
+    "I",             # isort
+    "N",             # pep8-naming
+    "UP",            # pyupgrade
+    "B",             # bugbear
+    "SIM",           # simplify
+    "NPY",           # numpy-specific
+    "RUF",           # ruff-specific
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "N803",  # allow UPPERCASE args (scientific convention)
+    "N806",  # allow UPPERCASE locals (scientific convention)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N802"]  # test names
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --strict-markers"
+markers = [
+    "slow: long-running tests (reproduction, multi-seed)",
+    "gpu: requires CUDA/MPS",
+    "linux_only: MARL tests requiring dmlab2d/meltingpot",
+]
+
+[tool.coverage.run]
+source = ["src/maps"]
+omit = ["tests/*", "scripts/*"]

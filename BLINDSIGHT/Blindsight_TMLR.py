@@ -37,7 +37,7 @@ import torch_optimizer as optim2
 
 
 # Import the EnergyTracker class
-from energy_tracker import NvidiaEnergyTracker , MLModelEnergyEfficiency # Assuming you saved the previous code as energy_tracker.py
+from maps.utils.energy_tracker import NvidiaEnergyTracker, MLModelEnergyEfficiency
 import time
 
 
