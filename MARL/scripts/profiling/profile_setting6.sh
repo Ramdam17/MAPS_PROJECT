@@ -11,10 +11,16 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-MARL_DIR="${REPO_ROOT}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Resolve python ($PY) and verify torch + meltingpot + dmlab2d import.
+# Fails fast with a helpful message on macOS (MARL deps are Linux-only).
+# shellcheck source=_preflight.sh
+source "${SCRIPT_DIR}/_preflight.sh"
+
+MARL_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TRAIN_PY="${MARL_DIR}/MAPPO-ATTENTIOAN/onpolicy/scripts/train/train_meltingpot.py"
-OUT_DIR="${REPO_ROOT}/outputs/profiling"
+OUT_DIR="${MARL_DIR}/outputs/profiling"
 
 mkdir -p "${OUT_DIR}"
 export PYTHONPATH="${PYTHONPATH:-}:${MARL_DIR}/MAPPO-ATTENTIOAN"
@@ -31,7 +37,7 @@ echo "[profile] setting 6 (meta=True, cascade1=50, cascade2=50) on ${SUBSTRATE}"
 echo "[profile] stats -> ${PROF}"
 echo "[profile] log   -> ${LOG}"
 
-CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" python "${TRAIN_PY}" \
+CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" ${PY} "${TRAIN_PY}" \
     --setting 6 \
     --profile \
     --profile-out "${PROF}" \
@@ -63,8 +69,8 @@ CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}" python "${TRAIN_PY}" \
 
 echo ""
 echo "[profile] DONE. Top 30 by cumulative time:"
-python -c "import pstats,sys; p=pstats.Stats('${PROF}'); p.sort_stats('cumulative').print_stats(30)" | tee -a "${LOG}"
+${PY} -c "import pstats,sys; p=pstats.Stats('${PROF}'); p.sort_stats('cumulative').print_stats(30)" | tee -a "${LOG}"
 
 echo ""
 echo "[profile] Top 30 by total time (self):"
-python -c "import pstats,sys; p=pstats.Stats('${PROF}'); p.sort_stats('tottime').print_stats(30)" | tee -a "${LOG}"
+${PY} -c "import pstats,sys; p=pstats.Stats('${PROF}'); p.sort_stats('tottime').print_stats(30)" | tee -a "${LOG}"
