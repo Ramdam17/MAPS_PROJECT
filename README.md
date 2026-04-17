@@ -89,9 +89,9 @@ export AWS_SECRET_ACCESS_KEY="your_secret_key"
 export AWS_DEFAULT_REGION="your_region"
 ```
 
-export AWS_ACCESS_KEY_ID="REDACTED_AWS_KEY_ID"
-export AWS_SECRET_ACCESS_KEY="REDACTED_AWS_SECRET"
-export AWS_DEFAULT_REGION="us-east-1"
+> **Note:** AWS is only required for the METTA-AI experiments (S3 artifact storage).
+> All other experiments (Blindsight, AGL, SARL, SARL_CL, MARL) run locally and do not need AWS.
+> On HPC clusters (e.g. Compute Canada), use local `$SCRATCH` storage and set `wandb=off`.
 
 ## Experiments
 

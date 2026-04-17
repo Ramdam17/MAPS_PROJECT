@@ -2,7 +2,9 @@
 conda init bash
 
 conda shell.bash activate marl
-wandb login REDACTED_WANDB_TOKEN
+# wandb login expects $WANDB_API_KEY to be exported in the environment
+# (never commit the token). Alternatively run `wandb login` interactively once.
+wandb login "${WANDB_API_KEY:?set WANDB_API_KEY or run 'wandb login' manually}"
 conda activate marl
 
 

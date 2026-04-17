@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+venv/
+env/
+.env
+.env.local
+
+# uv
+# uv.lock is intentionally committed
+
+# Secrets — NEVER commit
+*.pem
+*.key
+*_rsa
+*_rsa.pub
+.aws/
+aws/
+awscliv2.zip
+.wandb-key
+credentials.json
+secrets.yaml
+
+# Outputs / large artifacts
+outputs/
+logs/
+models/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+wandb/
+mlruns/
+energy_data/
+emissions_data/
+*.csv.zstd
+
+# Data (keep tiny fixtures in tests/fixtures)
+data/
+!data/.gitkeep
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Jupyter
+.ipynb_checkpoints/
