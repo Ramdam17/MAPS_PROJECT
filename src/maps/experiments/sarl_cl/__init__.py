@@ -47,13 +47,35 @@ from maps.experiments.sarl_cl.model import (
     SarlCLQNetwork,
     SarlCLSecondOrderNetwork,
 )
+from maps.experiments.sarl_cl.trainer import (
+    LossMixingWeights,
+    SarlCLComponentLosses,
+    SarlCLUpdateOutput,
+    sarl_cl_update_step,
+)
+from maps.experiments.sarl_cl.training_loop import (
+    CLTrainingMetrics,
+    SarlCLTrainingConfig,
+    load_partial_state_dict,
+    run_training_cl,
+    setting_to_config_cl,
+)
 
 __all__ = [
     "AdaptiveQNetwork",
+    "CLTrainingMetrics",
     "DynamicLossWeighter",
+    "LossMixingWeights",
+    "SarlCLComponentLosses",
     "SarlCLQNetwork",
     "SarlCLSecondOrderNetwork",
+    "SarlCLTrainingConfig",
+    "SarlCLUpdateOutput",
     "individual_losses",
+    "load_partial_state_dict",
     "min_max_norm",
+    "run_training_cl",
+    "sarl_cl_update_step",
+    "setting_to_config_cl",
     "update_moving_average",
 ]

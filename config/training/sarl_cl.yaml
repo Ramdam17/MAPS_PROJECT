@@ -1,0 +1,71 @@
+# SARL+CL (MinAtar DQN with continual learning) training defaults.
+# Ports SARL_CL/examples_cl/maps.py hyperparameters. The OPTIMIZATION
+# constants are identical to standard SARL; the new keys are under the
+# `cl` block (teacher checkpoints, adaptive backbone, loss mixing).
+
+defaults:
+  - /maps@_here_              # inherit cascade / seed / losses
+
+# ── Environment ─────────────────────────────────────────────────────────────
+game: space_invaders          # one of {space_invaders, breakout, seaquest, asterix, freeway}
+
+# ── Paper setting (1-6) — same table as standard SARL.
+setting: 6
+
+# ── Continual-learning controls ─────────────────────────────────────────────
+cl:
+  # When true, the run expects a previous-task checkpoint at `teacher_load_path`
+  # and trains with task + distillation + feature losses.
+  curriculum: false
+
+  # Variable-channel backbone for cross-game transfer. Needed when the
+  # curriculum spans games with different in_channels (SpaceInvaders=6,
+  # Breakout=4, Seaquest=10, Freeway=7, Asterix=4). Zero-pads inputs to
+  # max_input_channels. Paper default: max_input_channels=7 (but Seaquest
+  # has 10 — set accordingly when including it).
+  adaptive_backbone: false
+  max_input_channels: 7
+
+  # Path to previous-task checkpoint (required when curriculum=true).
+  # Accepts a relative path resolved against the project root.
+  teacher_load_path: null
+
+  # Loss mixing — applied AFTER DynamicLossWeighter running-max normalization.
+  # Paper default (1.0, 1.0, 1.0). See trainer.LossMixingWeights for details.
+  weight_task: 1.0
+  weight_distillation: 1.0
+  weight_feature: 1.0
+
+# ── DQN hyperparameters ─────────────────────────────────────────────────────
+training:
+  num_frames: 5_000_000
+  batch_size: 128
+  replay_buffer_size: 100_000
+  replay_start_size: 5_000
+  training_freq: 1
+  # CL branch uses 500 (not 1000) per SARL_CL/examples_cl/maps.py:1121.
+  target_update_freq: 500
+
+# ── Optimizer (Adam, same as standard SARL) ─────────────────────────────────
+optimizer:
+  name: Adam
+  lr_first_order: 0.0003
+  lr_second_order: 0.00005
+  eps: 0.01
+
+# ── Scheduler (StepLR, same as standard SARL) ───────────────────────────────
+scheduler:
+  name: StepLR
+  step_size: 1_000
+  gamma: 0.999
+
+# ── EMA for target_wager (paper passes alpha in percent, /100 internally) ───
+alpha: 1.0
+
+# ── Validation cadence ──────────────────────────────────────────────────────
+validation:
+  every_episodes: 50
+  n_episodes: 3
+
+# ── Runtime ─────────────────────────────────────────────────────────────────
+device: cpu
