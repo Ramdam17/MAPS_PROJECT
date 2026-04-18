@@ -1,7 +1,7 @@
 # Sprint 01 — Dedup & prune
 
-**Status:** ⚪ planned
-**Branch:** `refactor/clean-rerun` (continuation)
+**Status:** ✅ done
+**Branch:** `refactor/dedup` (merged to main as `5cf1ee4`)
 **Owner:** Rémy Ramadour
 **Est. effort:** 1-2 days
 **Depends on:** Sprint 00 ✅

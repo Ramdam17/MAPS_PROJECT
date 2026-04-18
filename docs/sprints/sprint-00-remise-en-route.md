@@ -1,9 +1,10 @@
 # Sprint 00 — Remise en route MAPS
 
-**Status:** 🟡 in progress
-**Branch:** `refactor/clean-rerun`
+**Status:** ✅ done
+**Branch:** `refactor/clean-rerun` (merged to main)
 **Owner:** Rémy Ramadour
 **Started:** 2026-04-17
+**Completed:** 2026-04-17
 
 ---
 

@@ -1,10 +1,25 @@
 # Sprint 04 — Seed control + logging + split monoliths
 
-**Status:** ⚪ planned
-**Branch:** `refactor/monoliths`
+**Status:** 🟡 in progress
+**Branch:** `refactor/blindsight-train` (merged as `325c73b`) → next: `refactor/monoliths`
 **Owner:** Rémy Ramadour
 **Est. effort:** 2-3 days
-**Depends on:** Sprint 03
+**Depends on:** Sprint 03 ✅
+
+---
+
+## Progress (2026-04-17)
+
+- ✅ **4.1 Seeding** — landed earlier as part of Sprint 03 (`src/maps/utils/seeding.py` + unit tests)
+- ✅ **4.3 Blindsight split** — `src/maps/experiments/blindsight/{data.py,trainer.py}` shipped, parity-tested vs reference (atol=1e-5, 4/4 factorial settings) — merged as `325c73b`
+- ❌ **4.2 Logging setup** — `src/maps/utils/logging_setup.py` not created; T201 lint rule not enforced
+- ❌ **4.4 AGL split** — 2785 LOC monolith still at `AGL/AGL_TMLR.py`
+- ❌ **4.5 SARL split** — monoliths still at `SARL/MinAtar/examples/`
+- ❌ **4.6 SARL+CL split** — monoliths still at `SARL_CL/`
+- ❌ **4.7 Legacy delete** — `BLINDSIGHT/`, `AGL/`, `SARL/`, `SARL_CL/` roots untouched
+- ❌ **4.8 `except:` cleanup** — not audited
+
+Sprint is ~25% complete. Remaining scope = AGL split (the next parity-critical piece) + logging audit + legacy delete of Blindsight. SARL / SARL+CL splits may be deferred to a sub-sprint given their size.
 
 ---
 
