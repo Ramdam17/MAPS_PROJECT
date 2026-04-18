@@ -1,10 +1,10 @@
 # Sprint 03 — Config-first migration
 
-**Status:** ⚪ planned
-**Branch:** `refactor/config-first`
+**Status:** ✅ done
+**Branch:** `refactor/config-first` (merged to main as `f296cb8`)
 **Owner:** Rémy Ramadour
 **Est. effort:** 2-3 days
-**Depends on:** Sprint 02
+**Depends on:** Sprint 02 ✅
 
 ---
 

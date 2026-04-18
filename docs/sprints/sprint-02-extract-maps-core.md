@@ -1,10 +1,10 @@
 # Sprint 02 — Extract MAPS core components
 
-**Status:** ⚪ planned
-**Branch:** `refactor/extract-core`
+**Status:** ✅ done
+**Branch:** `refactor/extract-core` (merged to main as `5865111`)
 **Owner:** Rémy Ramadour
 **Est. effort:** 3 days
-**Depends on:** Sprint 01
+**Depends on:** Sprint 01 ✅
 
 ---
 

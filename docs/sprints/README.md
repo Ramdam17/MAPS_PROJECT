@@ -2,11 +2,11 @@
 
 | # | Sprint | Status | Branch | Est. effort |
 |---|--------|--------|--------|------------:|
-| 00 | [Remise en route (bootstrap)](sprint-00-remise-en-route.md) | 🟢 in progress | `refactor/clean-rerun` | 1 day |
-| 01 | [Dedup & prune](sprint-01-dedup-and-prune.md) | ⚪ planned | `refactor/clean-rerun` | 1-2 days |
-| 02 | [Extract MAPS core](sprint-02-extract-maps-core.md) | ⚪ planned | `refactor/extract-core` | 3 days |
-| 03 | [Config-first migration](sprint-03-config-first.md) | ⚪ planned | `refactor/config-first` | 2-3 days |
-| 04 | [Seed + logging + split monoliths](sprint-04-seeding-logging-split.md) | ⚪ planned | `refactor/monoliths` | 2-3 days |
+| 00 | [Remise en route (bootstrap)](sprint-00-remise-en-route.md) | ✅ done | `refactor/clean-rerun` | 1 day |
+| 01 | [Dedup & prune](sprint-01-dedup-and-prune.md) | ✅ done | `refactor/dedup` | 1-2 days |
+| 02 | [Extract MAPS core](sprint-02-extract-maps-core.md) | ✅ done | `refactor/extract-core` | 3 days |
+| 03 | [Config-first migration](sprint-03-config-first.md) | ✅ done | `refactor/config-first` | 2-3 days |
+| 04 | [Seed + logging + split monoliths](sprint-04-seeding-logging-split.md) | 🟡 in progress (Blindsight ✅; AGL / SARL / logging / legacy delete ❌) | `refactor/blindsight-train` → next: `refactor/monoliths` | 2-3 days |
 | 05 | [Tests + CI](sprint-05-tests-and-ci.md) | ⚪ planned | `feat/tests-ci` | 1-2 days |
 | 06 | Reproduction — Blindsight + AGL (local) | ⚪ planned | `repro/perceptual` | 2-3 days compute |
 | 07 | Reproduction — SARL on Narval | ⚪ planned | `repro/sarl` | 1-2 weeks compute |
