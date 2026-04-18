@@ -88,3 +88,31 @@ def get_state(s: Any, device: torch.device | str = "cpu") -> torch.Tensor:
     assumptions.
     """
     return torch.tensor(s, device=device).permute(2, 0, 1).unsqueeze(0).float()
+
+
+def target_wager(rewards: torch.Tensor, alpha: float) -> torch.Tensor:
+    """EMA-based target wager label for the second-order network.
+
+    Paper source: ``external/MinAtar/examples/maps.py:514-532``.
+
+    The paper passes ``alpha`` in *percent* (e.g. ``alpha=1.0`` means a 0.01
+    EMA smoothing factor) — this function divides by 100 internally, exactly
+    as the paper does. Do not pre-scale ``alpha`` at the call site.
+
+    For each reward ``G`` in the batch (processed sequentially to preserve
+    the paper's in-place EMA update), label ``[1, 0]`` if ``G > EMA`` (bet)
+    else ``[0, 1]`` (no-bet). Return shape: ``(batch, 2)``.
+    """
+    flattened_rewards = rewards.view(-1)
+    scaled_alpha = float(alpha / 100)
+    ema = 0.0
+    batch_size = rewards.size(0)
+    new_tensor = torch.zeros(batch_size, 2, device=rewards.device)
+    for i in range(batch_size):
+        g = flattened_rewards[i]
+        ema = scaled_alpha * g + (1 - scaled_alpha) * ema
+        if g > ema:
+            new_tensor[i] = torch.tensor([1, 0], device=rewards.device)
+        else:
+            new_tensor[i] = torch.tensor([0, 1], device=rewards.device)
+    return new_tensor

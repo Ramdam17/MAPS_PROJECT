@@ -16,6 +16,7 @@ from maps.experiments.sarl.data import (
     SarlReplayBuffer,
     Transition,
     get_state,
+    target_wager,
 )
 from maps.experiments.sarl.losses import cae_loss
 from maps.experiments.sarl.model import (
@@ -42,4 +43,5 @@ __all__ = [
     "cae_loss",
     "get_state",
     "sarl_update_step",
+    "target_wager",
 ]
