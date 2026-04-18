@@ -340,3 +340,103 @@ class BlindsightTrainer:
             losses_1[epoch] = float(loss_1.item())
 
         return losses_1, losses_2
+
+    def evaluate(
+        self,
+        *,
+        eval_patterns_number: int | None = None,
+        conditions: tuple[StimulusCondition | str, ...] = (
+            StimulusCondition.SUPERTHRESHOLD,
+            StimulusCondition.SUBTHRESHOLD,
+            StimulusCondition.LOW_VISION,
+        ),
+    ) -> dict[str, dict[str, float]]:
+        """Held-out evaluation — ports the paper's `testing()` loop.
+
+        For each of the three stimulus regimes, generates a fresh 200-trial
+        batch (100 noise-only + 100 stimulus-present) and computes:
+
+        - ``discrimination_accuracy`` — fraction of stimulus-present trials
+          where ``h2.argmax(dim=1) == stim_present.argmax(dim=1)`` (paper's
+          detection metric on the first-order reconstruction).
+        - ``wager_accuracy`` — binary classification accuracy of the 2nd-order
+          wager output (``high_wager > threshold`` vs. target presence label).
+          Only populated when ``setting.second_order`` is True.
+
+        Threshold is 0.5 for superthreshold/subthreshold, 0.15 for low-vision
+        (matches the reference `testing()` branch at BLINDSIGHT line 816).
+
+        Returns
+        -------
+        dict
+            Keys are condition names; values are per-condition metric dicts.
+        """
+        if self.first_order is None or self.second_order is None:
+            raise RuntimeError("Call `.build()` before `.evaluate()`.")
+
+        self.first_order.eval()
+        self.second_order.eval()
+
+        num_units = int(self.cfg.first_order.input_dim)
+        eval_cfg = self.env_cfg.eval
+        n_eval = int(
+            eval_patterns_number if eval_patterns_number is not None else eval_cfg.patterns_number
+        )
+        thresholds = eval_cfg.wager_thresholds
+        results: dict[str, dict[str, float]] = {}
+
+        with torch.no_grad():
+            for cond in conditions:
+                cond_name = cond.name.lower() if isinstance(cond, StimulusCondition) else str(cond)
+                params = _condition_params_from_env(self.env_cfg, cond_name)
+                threshold = float(thresholds[cond_name])
+
+                batch = generate_patterns(
+                    params=params,
+                    patterns_number=n_eval,
+                    num_units=num_units,
+                    factor=1,
+                    device=self.device,
+                )
+                # Reference uses delta = int(100 * factor) — the stimulus-present
+                # half of the eval batch.
+                delta = n_eval // 2
+
+                h1: torch.Tensor | None = None
+                h2: torch.Tensor | None = None
+                for _ in range(self.cascade_iters):
+                    h1, h2 = self.first_order(
+                        batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate
+                    )
+                assert h2 is not None
+
+                # Discrimination accuracy on the stimulus-present portion.
+                # Reference compares argmax(output) to argmax(*input*), not to
+                # argmax(stim_present) — stim_present can be all-zero when the
+                # drawn stimulus magnitude fell below multiplier/2, but the
+                # input still carries the stimulus signal at ``stim_idx``.
+                pred_idx = h2[delta:].argmax(dim=1)
+                true_idx = batch.patterns[delta:].argmax(dim=1)
+                discrimination_acc = float((pred_idx == true_idx).float().mean().item())
+
+                metrics = {"discrimination_accuracy": discrimination_acc}
+
+                if self.setting.second_order:
+                    comparison: torch.Tensor | None = None
+                    wager: torch.Tensor | None = None
+                    for _ in range(self.cascade_iters):
+                        wager, comparison = self.second_order(
+                            batch.patterns, h2, comparison, self.cascade_rate
+                        )
+                    assert wager is not None
+                    # high-wager > threshold vs. binary presence (target[:,0] is high-wager).
+                    high_w = wager[delta:, 0].cpu().numpy()
+                    tgt = batch.order_2_target[delta:, 0].detach().cpu().numpy()
+                    pred_bin = (high_w > threshold).astype(int)
+                    tgt_bin = (tgt > threshold).astype(int)
+                    wager_acc = float((pred_bin == tgt_bin).mean())
+                    metrics["wager_accuracy"] = wager_acc
+
+                results[cond_name] = metrics
+
+        return results

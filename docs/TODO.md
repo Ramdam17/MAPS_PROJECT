@@ -5,7 +5,7 @@
 | ID | Surfaced in | Blocker | Description |
 |----|-------------|---------|-------------|
 | RG-001 | Sprint 06 §6.6 | AGL high/low awareness z-scores | AGL awareness-split downstream evaluation is not ported. Lived in deleted `AGL/AGL_TMLR.py` (Sprint 04b §4.7). Current `AGLTrainer.pre_train()` only trains the wagering circuit; there is no accuracy-scoring eval pass. |
-| RG-002 | Sprint 06 §6.4 | Blindsight detection-accuracy z-scores | `BlindsightTrainer.pre_train()` returns losses only. The paper's headline 0.97 detection accuracy comes from a held-out evaluation pass that is not ported. Same root cause as RG-001: evaluation lived in the deleted monoliths. |
+| RG-002 | Sprint 06 §6.4 | ⚠️ Eval path shipped; headline-number match deferred | `BlindsightTrainer.evaluate()` now ports the paper's `testing()` routine (discrimination + wager acc × 3 conditions, config-driven thresholds). Current 10-seed mean of full MAPS is 0.755 discrimination (z=+0.40) vs. paper's 0.97 (z=9.01). Remaining gap is either a metric-definition mismatch (the paper may report wager-accuracy, which we compute but don't headline) or training-regime drift. Not a code bug — a reproduction-depth question. |
 
 Unblocking either requires porting the paper's evaluation protocol (held-out sample generation + threshold-based detection / WTA classification / wager-based grouping for awareness split) from the pre-Sprint-04b git history of `BLINDSIGHT/Blindsight_TMLR.py` and `AGL/AGL_TMLR.py`.
 

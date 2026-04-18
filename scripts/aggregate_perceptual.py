@@ -34,11 +34,34 @@ log = logging.getLogger("maps.aggregate_perceptual")
 
 BASELINE = "neither"
 # Which summary.json field is the "score" for each domain.
-# Lower is better for losses — we negate for z-score so "higher = more MAPS gain".
+# Nested paths use dot notation (resolved in `_extract_metric`).
+# For Blindsight, the paper's headline is wager accuracy under the
+# superthreshold condition (detection task). AGL still uses loss_2_final
+# until the awareness-split eval is ported (RG-001).
 METRIC_FIELD = {
-    "blindsight": "loss_1_final",
+    # Discrimination accuracy on superthreshold stimuli is defined for all
+    # 4 settings (including the baseline without second-order). Wager
+    # accuracy only exists when second_order=True, so we pick discrimination
+    # as the headline axis and report wager stats separately when available.
+    "blindsight": "eval.superthreshold.discrimination_accuracy",
     "agl": "loss_2_final",
 }
+# For accuracies, higher is better → positive z = MAPS improvement.
+# For losses, lower is better → we flip in `_z_vs_baseline`.
+HIGHER_IS_BETTER = {
+    "blindsight": True,
+    "agl": False,
+}
+
+
+def _extract_metric(cell: dict, path: str) -> float:
+    """Dot-path lookup: 'eval.superthreshold.wager_accuracy'."""
+    v: object = cell
+    for key in path.split("."):
+        if not isinstance(v, dict) or key not in v:
+            raise KeyError(f"Missing key {path!r} in summary (stopped at {key!r})")
+        v = v[key]
+    return float(v)  # type: ignore[arg-type]
 
 
 def _collect_cells(domain_dir: Path, settings: list[str], seeds: list[int]) -> dict:
@@ -62,7 +85,7 @@ def _per_setting_stats(cells: dict, field: str) -> dict[str, dict]:
     """Compute mean/std of `field` across seeds for each setting."""
     out = {}
     for s, by_seed in cells.items():
-        vals = [c[field] for c in by_seed.values()]
+        vals = [_extract_metric(c, field) for c in by_seed.values()]
         out[s] = {
             "n": len(vals),
             "mean": mean(vals),
@@ -72,10 +95,12 @@ def _per_setting_stats(cells: dict, field: str) -> dict[str, dict]:
     return out
 
 
-def _z_vs_baseline(stats: dict, baseline: str) -> dict[str, float | None]:
+def _z_vs_baseline(stats: dict, baseline: str, higher_is_better: bool) -> dict[str, float | None]:
     """Z-score of each non-baseline setting's mean vs. baseline's seed distribution.
 
-    Sign convention: negative loss delta (our loss < baseline loss) → positive z.
+    Sign convention: positive z always means "MAPS gain over baseline".
+    When `higher_is_better`, that's (current − baseline) / σ_baseline.
+    When losses, it's (baseline − current) / σ_baseline.
     """
     b = stats[baseline]
     z = {}
@@ -84,10 +109,10 @@ def _z_vs_baseline(stats: dict, baseline: str) -> dict[str, float | None]:
             z[s] = 0.0
             continue
         if b["std"] == 0.0:
-            z[s] = None  # undefined
+            z[s] = None
         else:
-            # "gain" = baseline − current  (positive means improvement on losses)
-            z[s] = (b["mean"] - row["mean"]) / b["std"]
+            delta = (row["mean"] - b["mean"]) if higher_is_better else (b["mean"] - row["mean"])
+            z[s] = delta / b["std"]
     return z
 
 
@@ -113,7 +138,7 @@ def _aggregate_domain(domain: str, base_out: Path, settings: list[str], seeds: l
     cells = _collect_cells(dom_dir, settings, seeds)
     field = METRIC_FIELD[domain]
     stats = _per_setting_stats(cells, field)
-    zs = _z_vs_baseline(stats, BASELINE)
+    zs = _z_vs_baseline(stats, BASELINE, higher_is_better=HIGHER_IS_BETTER[domain])
     return {
         "domain": domain,
         "field": field,
