@@ -171,9 +171,6 @@ ignore = [
 # Seeding module & its test deliberately seed the legacy global np.random state.
 "src/maps/utils/seeding.py" = ["NPY002"]
 "tests/unit/utils/test_seeding.py" = ["NPY002"]
-# Legacy vendored energy tracker — many residual print() calls; follow-up cleanup
-# tracked in docs/TODO.md (logging migration for energy_tracker).
-"src/maps/utils/energy_tracker.py" = ["T201"]
 
 [tool.black]
 line-length = 100

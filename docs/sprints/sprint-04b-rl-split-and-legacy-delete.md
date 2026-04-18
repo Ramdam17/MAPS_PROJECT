@@ -1,7 +1,7 @@
 # Sprint 04b — RL domain splits + legacy delete (deferred from Sprint 04)
 
-**Status:** ⚪ planned (deferred)
-**Branch:** `refactor/sarl-train` (next), then `refactor/legacy-delete`
+**Status:** 🟡 in progress — 4.9 shipped, 4.5/4.6/4.7 pending
+**Branch:** `refactor/energy-tracker-logging` ✅ → `refactor/sarl-train` (next) → `refactor/legacy-delete`
 **Owner:** Rémy Ramadour
 **Est. effort:** 3-5 days
 **Depends on:** Sprint 04 ✅ (perceptual-domain scope)
@@ -47,10 +47,14 @@ This is a scope deferral, not a cancellation. All items below are tracked.
 
 **Gate:** do not delete until 4.5 + 4.6 land and their parity harnesses are green.
 
-### 4.9 — `energy_tracker.py` print → log migration (new)
-- [ ] Replace the 13 residual `print()` calls in `src/maps/utils/energy_tracker.py` with `log.info()` / `log.warning()` / `log.error()` as appropriate.
-- [ ] Remove the scoped `T20` ignore in `pyproject.toml`.
-- [ ] This was flagged during Sprint 04 §4.2 execution; the file is ~600 LOC of vendored tracker logic and wasn't refactored in-sprint to avoid unauthorized changes.
+### 4.9 — `energy_tracker.py` print → log migration ✅
+- [x] Replaced 14 residual `print()` calls in `src/maps/utils/energy_tracker.py` with structured logging:
+    - 9 `log.info()` — normal lifecycle and result output (GPU count, project start, energy/emissions totals, save paths)
+    - 4 `log.warning()` — invalid states (tracker already running / not running / no data collected)
+    - 1 `log.error()` — inside the `except` block when GPU metric parsing fails
+- [x] Added module-level `log = logging.getLogger(__name__)`.
+- [x] Removed the scoped `T201` per-file ignore in `pyproject.toml` (ruff `T20` now uniform across `src/`).
+- [x] Verified module still imports.
 
 ---
 
@@ -76,8 +80,8 @@ Tier 1 + 2 live in `tests/parity/`; tier 3 in `tests/reproduction/` with `@pytes
 - `scripts/run_sarl.py` runs `uv run python scripts/run_sarl.py --env breakout --setting both --n-steps 1000` on Mac CPU
 - Three-tier parity tests all pass
 - Legacy paths (`BLINDSIGHT/`, `AGL/`, `SARL/`, `SARL_CL/` — except MinAtar which is in `external/`) deleted
-- `grep -rn "print(" src/maps/ | wc -l` returns **0** (energy_tracker migrated)
-- Ruff `T20` per-file ignore for `energy_tracker.py` removed
+- `grep -rn "print(" src/maps/ | wc -l` returns **0** (energy_tracker migrated) ✅
+- Ruff `T20` per-file ignore for `energy_tracker.py` removed ✅
 
 ---
 
