@@ -44,13 +44,12 @@ METRIC_FIELD = {
     # accuracy only exists when second_order=True, so we pick discrimination
     # as the headline axis and report wager stats separately when available.
     "blindsight": "eval.superthreshold.discrimination_accuracy",
-    "agl": "loss_2_final",
+    "agl": "eval.classification_precision",
 }
 # For accuracies, higher is better → positive z = MAPS improvement.
-# For losses, lower is better → we flip in `_z_vs_baseline`.
 HIGHER_IS_BETTER = {
     "blindsight": True,
-    "agl": False,
+    "agl": True,
 }
 
 
@@ -139,7 +138,7 @@ def _aggregate_domain(domain: str, base_out: Path, settings: list[str], seeds: l
     field = METRIC_FIELD[domain]
     stats = _per_setting_stats(cells, field)
     zs = _z_vs_baseline(stats, BASELINE, higher_is_better=HIGHER_IS_BETTER[domain])
-    return {
+    result = {
         "domain": domain,
         "field": field,
         "baseline": BASELINE,
@@ -148,6 +147,27 @@ def _aggregate_domain(domain: str, base_out: Path, settings: list[str], seeds: l
         "stats": stats,
         "z_vs_baseline": zs,
     }
+
+    # AGL paper reports High Awareness vs Low Awareness — a post-hoc seed-pool
+    # split (reference `metrics_testing_table` L1276: first half = high, second
+    # half = low). Replicate that at aggregation time when we have an even
+    # number of seeds.
+    if domain == "agl" and len(seeds) >= 2 and len(seeds) % 2 == 0:
+        mid = len(seeds) // 2
+        hi_seeds, lo_seeds = seeds[:mid], seeds[mid:]
+        hi_cells = _collect_cells(dom_dir, settings, hi_seeds)
+        lo_cells = _collect_cells(dom_dir, settings, lo_seeds)
+        result["awareness_split"] = {
+            "high": {
+                "seeds": hi_seeds,
+                "stats": _per_setting_stats(hi_cells, field),
+            },
+            "low": {
+                "seeds": lo_seeds,
+                "stats": _per_setting_stats(lo_cells, field),
+            },
+        }
+    return result
 
 
 @app.command()
@@ -173,6 +193,20 @@ def main(
         result = _aggregate_domain(d, paths.outputs, settings, seed_list)
         payload[d] = result
         md_sections.append(_render_md(d, result["stats"], result["z_vs_baseline"], result["field"]))
+        if "awareness_split" in result:
+            for tier in ("high", "low"):
+                sub = result["awareness_split"][tier]
+                sub_zs = _z_vs_baseline(
+                    sub["stats"], BASELINE, higher_is_better=HIGHER_IS_BETTER[d]
+                )
+                md_sections.append(
+                    _render_md(
+                        f"{d} — {tier} awareness (seeds {sub['seeds']})",
+                        sub["stats"],
+                        sub_zs,
+                        result["field"],
+                    )
+                )
 
     (reports_dir / "perceptual_summary.json").write_text(json.dumps(payload, indent=2))
     md = "# Perceptual reproduction summary\n\n" + "\n\n".join(md_sections) + "\n"
