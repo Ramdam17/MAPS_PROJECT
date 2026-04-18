@@ -31,3 +31,13 @@ conditions:
 # Pre-training always draws from the superthreshold regime (reference code,
 # pre_train line 530). Testing sweeps all three.
 pre_training_condition: superthreshold
+
+# Held-out evaluation parameters — ported from BLINDSIGHT/Blindsight_TMLR.py
+# `testing()` (line 806). 200 trials = 100 noise + 100 stimulus-present; the
+# wager threshold is per-condition (low_vision override at line 816).
+eval:
+  patterns_number: 200
+  wager_thresholds:
+    superthreshold: 0.5
+    subthreshold: 0.5
+    low_vision: 0.15

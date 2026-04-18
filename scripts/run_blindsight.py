@@ -48,7 +48,11 @@ def _run_one(cfg, setting: BlindsightSetting, seed: int, out_dir: Path) -> dict:
 
     t0 = time.perf_counter()
     losses_1, losses_2 = trainer.pre_train()
-    elapsed = time.perf_counter() - t0
+    train_elapsed = time.perf_counter() - t0
+
+    t1 = time.perf_counter()
+    eval_metrics = trainer.evaluate()
+    eval_elapsed = time.perf_counter() - t1
 
     np.save(out_dir / "losses_1.npy", losses_1)
     np.save(out_dir / "losses_2.npy", losses_2)
@@ -63,17 +67,22 @@ def _run_one(cfg, setting: BlindsightSetting, seed: int, out_dir: Path) -> dict:
         "loss_2_final": float(losses_2[-1]),
         "loss_1_min": float(losses_1.min()),
         "loss_2_min": float(losses_2.min()) if setting.second_order else 0.0,
-        "elapsed_seconds": elapsed,
+        "elapsed_seconds": train_elapsed,
+        "eval": eval_metrics,
+        "eval_elapsed_seconds": eval_elapsed,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     log.info(
-        "[%s | seed=%d] %d epochs in %.1fs, loss_1[-1]=%.3f, loss_2[-1]=%.3f",
+        "[%s | seed=%d] %d epochs in %.1fs (+%.1fs eval), "
+        "loss_1[-1]=%.3f, loss_2[-1]=%.3f, super.wager=%.3f",
         setting.id,
         seed,
         cfg.train.n_epochs,
-        elapsed,
+        train_elapsed,
+        eval_elapsed,
         losses_1[-1],
         losses_2[-1],
+        eval_metrics["superthreshold"].get("wager_accuracy", float("nan")),
     )
     return summary
 

@@ -56,6 +56,49 @@ Our current trainers (`src/maps/experiments/{blindsight,agl}/trainer.py`) expose
 
 Implication: the 0.30σ Blindsight effect above is **on training loss, not on the paper's reported detection metric**. It is not directly comparable to the paper's z=9.01. We make no claim that we have reproduced the paper's perceptual numbers until the evaluation pass is ported.
 
+## Addendum — Blindsight eval pass ported (RG-002 partially closed)
+
+After the initial closeout, ported the paper's `testing()` routine into
+`BlindsightTrainer.evaluate()` (see `feat/blindsight-evaluation` branch,
+merged into Sprint 06 work). Config-first: the 200-trial test size and
+per-condition wager thresholds (0.5 / 0.5 / 0.15) now live in
+`config/env/blindsight.yaml`.
+
+Re-ran the 40-cell grid with the eval step attached. Per-setting headline
+(discrimination accuracy on superthreshold, 10 seeds each):
+
+| Setting | Mean | Std | Z vs baseline | Paper z |
+|---------|-----:|----:|---------------:|--------:|
+| neither | 0.729 | 0.065 | +0.00 | 0.00 |
+| cascade_only | 0.752 | 0.054 | +0.36 | n/a |
+| second_order_only | 0.728 | 0.059 | −0.02 | n/a |
+| both (full MAPS) | 0.755 | 0.054 | +0.40 | **9.01** |
+
+The discrimination-accuracy effect is in the right direction (MAPS variants
+beat the vanilla baseline on both mean and effect size) but the magnitude is
+far below the paper's z=9.01. Two remaining hypotheses:
+
+1. **Metric definition mismatch** — the paper's 0.97 may refer to *wager*
+   (metacognitive) accuracy, not first-order discrimination. The reference
+   `testing()` flattens a `(N, 2)` wager tensor against a `(N,)` target
+   vector before thresholding, which is either a subtle protocol we need
+   to mirror exactly or a reference-code quirk. Needs a close re-read of
+   the paper's §3 methods.
+2. **Training regime drift** — 200 epochs × 100 patterns/epoch may not
+   drive the CAE loss to the same plateau as the reference runs. Needs
+   a loss-trajectory diff against the original notebook's saved curves.
+
+Neither is a protocol error in our code path; both are *reproduction-depth*
+questions worth a dedicated follow-up, not a silent tweak. RG-002 is
+therefore "eval path shipped, headline-number match deferred".
+
+RG-001 (AGL awareness split) remains open — AGL evaluation is not ported.
+
+**Test coverage:** 6 new unit tests under
+`tests/unit/experiments/blindsight/test_evaluate.py` cover the eval
+contract (condition set, with/without second-order, threshold plumbing,
+build precondition).
+
 ## Deviations logged
 
 None — no hyperparameter changes from `config/training/{blindsight,agl}.yaml`. The gap is a missing evaluation pipeline, not a deviation.
