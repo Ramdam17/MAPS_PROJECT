@@ -32,7 +32,7 @@ from omegaconf import OmegaConf
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from maps.experiments.blindsight import BlindsightSetting, BlindsightTrainer
-from maps.utils import get_paths, load_config, set_all_seeds
+from maps.utils import configure_logging, get_paths, load_config, set_all_seeds
 
 app = typer.Typer(add_completion=False, help=__doc__)
 log = logging.getLogger("maps.run_blindsight")
@@ -104,10 +104,7 @@ def main(
     ),
     log_level: str = typer.Option("INFO", help="Python logging level"),
 ) -> None:
-    logging.basicConfig(
-        level=log_level.upper(),
-        format="%(asctime)s %(name)s [%(levelname)s] %(message)s",
-    )
+    configure_logging(level=log_level)
 
     cfg = load_config("training/blindsight", overrides=list(override))
     factorial = load_config("experiments/factorial_2x2")
