@@ -140,6 +140,12 @@ extend-exclude = [
     "external/",
     "METTA/",
     "MARL/MAPPO-ATTENTIOAN/",
+    # Verbatim paper-code extracts used as parity ground truth.
+    # Reformatting would break the "do not touch" guarantee documented in
+    # each file's header banner. Per-file lint ignores live in
+    # [tool.ruff.lint.per-file-ignores] below.
+    "tests/parity/_reference_*.py",
+    "tests/parity/*/_reference_*.py",
 ]
 
 [tool.ruff.lint]
