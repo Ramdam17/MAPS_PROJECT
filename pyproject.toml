@@ -151,6 +151,8 @@ select = [
     "SIM",           # simplify
     "NPY",           # numpy-specific
     "RUF",           # ruff-specific
+    "T20",           # flake8-print (no print() in src/)
+    "BLE",           # flake8-blind-except (no bare `except:` / `except Exception:`)
 ]
 ignore = [
     "E501",    # line too long (handled by formatter)
@@ -163,10 +165,14 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["N802"]  # test names
+"tests/**" = ["N802", "T201"]  # test names; prints OK in tests
+"scripts/**" = ["T201"]         # CLI scripts may print when appropriate
 # Seeding module & its test deliberately seed the legacy global np.random state.
 "src/maps/utils/seeding.py" = ["NPY002"]
 "tests/unit/utils/test_seeding.py" = ["NPY002"]
+# Legacy vendored energy tracker — many residual print() calls; follow-up cleanup
+# tracked in docs/TODO.md (logging migration for energy_tracker).
+"src/maps/utils/energy_tracker.py" = ["T201"]
 
 [tool.black]
 line-length = 100

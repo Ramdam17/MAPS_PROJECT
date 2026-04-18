@@ -1,33 +1,40 @@
-# AGL training defaults — extracted verbatim from AGL/AGL_TMLR.py (lines 1660-1678).
+# AGL training defaults — extracted from AGL/AGL_TMLR.py (L1660-1678).
 
 defaults:
-  - /maps@_here_
+  - /maps@_here_      # inherit cascade / first_order / second_order / losses / seed
 
+# Override shared dims for AGL (symbolic: 48-d input, 8 letters × 6 bits).
 first_order:
   input_dim: 48          # 8 letters × 6 bits
-  hidden_dim: 40         # AGL default
+  hidden_dim: 40         # AGL default (paper §2.3)
+
+second_order:
+  input_dim: 48          # matches first-order output for the comparator
+  # dropout / n_wager_units / wager_weight_init_range inherited from maps.yaml
 
 # AGL-specific constant.
 bits_per_letter: 6       # winner-takes-all chunk size in decoder
 
 optimizer:
-  name: ADAMAX
+  name: ADAMAX           # AGL_TMLR.py supports multiple; ADAMAX matches Blindsight/lab default
   lr_first_order: 0.4    # learning_rate_1
   lr_second_order: 0.1   # learning_rate_2
+  # Downstream-training LRs (used by Sprint 05+, not by pre-training).
   lr_training_first_order: 0.4
   lr_training_second_order: 0.1
 
 scheduler:
   name: StepLR
-  step_size: 25
-  gamma: 0.98
+  step_size: 25          # reference passes `stepsize` via train()
+  gamma: 0.98            # reference passes `gam` via train()
 
 train:
-  n_epochs_pre: 200      # pre-training epochs
+  # Pre-training parameters used by AGLTrainer.pre_train().
+  n_epochs: 200          # reference default was 60; 200 is the published run length
+  batch_size: 80         # patterns_number_pre (words per epoch)
+  data_factor: 1
   momentum: 0.5
   temperature: 1.0
   threshold: 0.5
-  patterns_number_pre: 80
-  data_factor: 1
 
-ema_window: 25
+ema_window: 25           # shell-level EMA for reporting

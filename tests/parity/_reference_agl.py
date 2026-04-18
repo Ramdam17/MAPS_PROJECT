@@ -1,15 +1,15 @@
-"""Frozen snapshot of the original AGL_TMLR.py FirstOrderNetwork.
+"""Frozen snapshots of the original AGL_TMLR.py networks.
 
-Copied verbatim from AGL/AGL_TMLR.py (commit 4a738604, lines 134-203).
-`bits_per_letter=6` matches line 1676 of the reference.
+Copied verbatim from AGL/AGL_TMLR.py (commit 4a738604).
+- `ReferenceAGLFirstOrderNetwork` ← L134-203
+- `ReferenceAGLSecondOrderNetwork` ← L211-256
 
-Only FirstOrderNetwork is mirrored here because the AGL SecondOrderNetwork
-differs from Blindsight only in its input dimension (48 vs 100) — the logic
-is identical and is already covered by the Blindsight parity test.
+`bits_per_letter=6` matches L1676 of the reference.
 """
 
 from __future__ import annotations
 
+import torch
 import torch.nn as nn
 import torch.nn.init as init
 
@@ -17,7 +17,7 @@ BITS_PER_LETTER = 6
 
 
 class ReferenceAGLFirstOrderNetwork(nn.Module):
-    """Verbatim copy of AGL_TMLR.py FirstOrderNetwork (lines 134-203)."""
+    """Verbatim copy of AGL_TMLR.py FirstOrderNetwork (L134-203)."""
 
     def __init__(self, hidden_units: int, data_factor: int, use_gelu: bool):
         super().__init__()
@@ -48,3 +48,35 @@ class ReferenceAGLFirstOrderNetwork(nn.Module):
         h1 = self.encoder(x)
         h2 = self.decoder(h1, prev_h2, cascade_rate)
         return h1, h2
+
+
+class ReferenceAGLSecondOrderNetwork(nn.Module):
+    """Verbatim copy of AGL_TMLR.py SecondOrderNetwork (L211-256).
+
+    Note: `hidden_second` is unused (the reference hard-codes input_dim=48 on
+    the wager layer). We keep the kwarg only for signature compatibility with
+    the reference `prepare_pre_training`.
+    """
+
+    def __init__(self, use_gelu: bool, hidden_second: int):
+        super().__init__()
+        self.wager = nn.Linear(48, 1)
+        self.dropout = nn.Dropout(0.5)
+        if use_gelu:
+            self.activation = torch.nn.GELU()
+        else:
+            self.activation = torch.nn.ReLU()
+        self.sigmoid = torch.sigmoid
+        self.softmax = nn.Softmax()
+        self._init_weights()
+
+    def _init_weights(self):
+        init.uniform_(self.wager.weight, 0.0, 0.1)
+
+    def forward(self, first_order_input, first_order_output, prev_comparison, cascade_rate):
+        comparison_matrix = first_order_input - first_order_output
+        comparison_out = self.dropout(comparison_matrix)
+        if prev_comparison is not None:
+            comparison_out = cascade_rate * comparison_out + (1 - cascade_rate) * prev_comparison
+        wager = self.sigmoid(self.wager(comparison_out))
+        return wager, comparison_out
