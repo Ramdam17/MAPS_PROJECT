@@ -38,3 +38,10 @@ train:
   threshold: 0.5
 
 ema_window: 25           # shell-level EMA for reporting
+
+# Held-out evaluation — AGL_TMLR.py `testing()` (L1150).
+# Each network is evaluated on (grammar A + grammar B) concatenated; per-seed
+# metrics are split post-hoc into High/Low Awareness at aggregation time.
+eval:
+  patterns_number: 60      # per-grammar test size (reference L1156: int(60*factor))
+  wager_threshold: 0.5     # reference-global `threshold`; matches train.threshold

@@ -92,12 +92,37 @@ Neither is a protocol error in our code path; both are *reproduction-depth*
 questions worth a dedicated follow-up, not a silent tweak. RG-002 is
 therefore "eval path shipped, headline-number match deferred".
 
-RG-001 (AGL awareness split) remains open — AGL evaluation is not ported.
-
 **Test coverage:** 6 new unit tests under
 `tests/unit/experiments/blindsight/test_evaluate.py` cover the eval
 contract (condition set, with/without second-order, threshold plumbing,
 build precondition).
+
+## Addendum 2 — AGL eval port + new gap RG-003
+
+Ported AGL_TMLR.py `testing()` into `AGLTrainer.evaluate()` (same pattern
+as RG-002): generates (grammar A + grammar B) held-out batch, cascades
+through both networks, returns `classification_precision` and (when
+second_order is enabled) `wager_accuracy`. The aggregation script now
+performs the paper's post-hoc seed-pool High/Low awareness split.
+
+Finding: `classification_precision` is ~0.08 across **all four settings**
+for every seed (std ~0.03). Root cause is the reference behavior
+`AGLTrainer.pre_train` inherits — the first-order network is reset to its
+*initial* random weights at the end of pre_train (AGL_TMLR.py L751). So
+post-pre_train, the first-order is untrained. The paper's 0.66 /
+0.62 High/Low awareness numbers come from a **downstream training phase**
+(supervised Grammar A vs B classification on the pre-trained 2nd-order,
+with a fresh first-order) that lived in the deleted `AGL/AGL_TMLR.py` and
+is **not yet ported**. Logged as **RG-003** in `docs/TODO.md`.
+
+What's shipped in this addendum:
+- `AGLTrainer.evaluate()` + 5 unit tests under `tests/unit/experiments/agl/`
+- `config/training/agl.yaml` eval section (patterns_number, wager_threshold)
+- `run_agl.py` writes eval metrics into `summary.json`
+- `aggregate_perceptual.py` computes high/low awareness seed-pool split
+- Fast-test suite: **206 passed** (+5 AGL eval + 6 Blindsight eval)
+
+RG-001 "eval path" is closed; RG-003 is the new downstream-training blocker.
 
 ## Deviations logged
 

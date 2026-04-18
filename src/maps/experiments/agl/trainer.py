@@ -314,3 +314,92 @@ class AGLTrainer:
         self.first_order.load_state_dict(self._initial_first_order_state)
 
         return losses_1, losses_2
+
+    def evaluate(
+        self,
+        *,
+        eval_patterns_number: int | None = None,
+        threshold: float | None = None,
+    ) -> dict[str, float]:
+        """Held-out evaluation — ports AGL_TMLR.py `testing()` (L1150).
+
+        Generates a concatenated batch of Grammar A + Grammar B test words
+        (size `2 * eval_patterns_number`), runs the cascade forward pass, and
+        computes:
+
+        - ``classification_precision`` — per-letter WTA precision on the
+          first-order reconstruction (`calculate_metrics` L451).
+        - ``wager_accuracy`` — binary classification accuracy of the
+          second-order wager against ``target_second``. Only populated when
+          ``setting.second_order`` is True.
+
+        Note: the paper's High/Low Awareness split is a **post-hoc seed-pool
+        split** (first half of networks → "high", second half → "low") and is
+        handled at aggregation time, not here. A single `evaluate()` call
+        returns per-network metrics regardless of awareness tier.
+        """
+        if self.first_order is None or self.second_order is None:
+            raise RuntimeError("Call `.build()` before `.evaluate()`.")
+
+        self.first_order.eval()
+        self.second_order.eval()
+
+        eval_cfg = self.cfg.get("eval", {}) if hasattr(self.cfg, "get") else {}
+        n_eval = int(
+            eval_patterns_number
+            if eval_patterns_number is not None
+            else eval_cfg.get("patterns_number", 60)
+        )
+        thr = float(
+            threshold
+            if threshold is not None
+            else eval_cfg.get("wager_threshold", self.cfg.train.get("threshold", 0.5))
+        )
+        bits_per_letter = int(self.cfg.get("bits_per_letter", BITS_PER_LETTER))
+
+        metrics: dict[str, float] = {}
+
+        with torch.no_grad():
+            batch_a = generate_batch(grammar_type=GrammarType.A, number=n_eval, device=self.device)
+            batch_b = generate_batch(grammar_type=GrammarType.B, number=n_eval, device=self.device)
+            patterns = torch.cat((batch_a.patterns, batch_b.patterns), dim=0)
+
+            h1: torch.Tensor | None = None
+            h2: torch.Tensor | None = None
+            for _ in range(self.cascade_iters):
+                h1, h2 = self.first_order(
+                    patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate
+                )
+            assert h2 is not None
+
+            # Classification precision: WTA on each 6-bit letter chunk, then
+            # per-unit precision against the one-hot input.
+            pred = torch.zeros_like(h2)
+            for row_idx in range(h2.shape[0]):
+                for chunk_start in range(0, h2.shape[1], bits_per_letter):
+                    chunk = h2[row_idx, chunk_start : chunk_start + bits_per_letter]
+                    max_idx = int(torch.argmax(chunk).item())
+                    if chunk[max_idx].item() > 0.1:
+                        pred[row_idx, chunk_start + max_idx] = 1.0
+            tp = float((patterns * pred).sum().item())
+            fp = float(((1 - patterns) * pred).sum().item())
+            metrics["classification_precision"] = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+
+            if self.setting.second_order:
+                comparison: torch.Tensor | None = None
+                wager: torch.Tensor | None = None
+                for _ in range(self.cascade_iters):
+                    wager, comparison = self.second_order(
+                        patterns, h2, comparison, self.cascade_rate
+                    )
+                assert wager is not None
+                wager = wager.squeeze()
+                target = target_second(patterns, h2)
+                # Reference flattens both then compares element-wise.
+                w = wager.detach().cpu().numpy().flatten()
+                t = target.cpu().numpy().flatten()
+                pred_bin = (w > thr).astype(int)
+                tgt_bin = (t > thr).astype(int)
+                metrics["wager_accuracy"] = float((pred_bin == tgt_bin).mean())
+
+        return metrics
