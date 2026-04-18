@@ -22,7 +22,8 @@ Stripped vs source:
 Nothing else is altered — formatting, comment layout, variable capitalisation,
 and (commented-out) lines are preserved exactly.
 """
-# ruff: noqa: N801, N802, N803, N806, E741, B007, SIM108, UP008, UP032, RUF001
+# ruff: noqa: N801, N802, N803, N806, E741, B007, SIM108, UP008, UP032, RUF001, E712, E711
+
 # flake8: noqa
 
 from collections import namedtuple
@@ -34,10 +35,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as f
 import torch.nn.init as init
+from torch.autograd import Variable  # deprecated but present in paper source
 
 # Parity tests pin CPU for reproducibility. The paper uses CUDA when available,
 # but forward-pass math is device-independent at atol=1e-6 for the sizes here.
 device = torch.device("cpu")
+
+# Paper constants (source: external/MinAtar/examples/maps.py:92-107)
+# Kept as module-level Globals for faithful transcription of `train()`.
+GAMMA = 0.99
+MIN_SQUARED_GRAD = 0.01
+step_size1 = 0.0003
+step_size2 = 0.00005
+scheduler_step = 0.999
 
 
 # ─── QNetwork support ────────────────────────────────────────────────────────
@@ -195,3 +205,185 @@ def target_wager(rewards, alpha):
             new_tensor[i] = torch.tensor([0, 1], device=rewards.device)
 
     return new_tensor
+
+
+# ─── CAE_loss ────────────────────────────────────────────────────────────────
+# Source: external/MinAtar/examples/maps.py:330-379
+
+def CAE_loss(W, x, recons_x, h, lam):
+    """Compute the Contractive AutoEncoder Loss
+
+    Evalutes the CAE loss, which is composed as the summation of a Mean
+    Squared Error and the weighted l2-norm of the Jacobian of the hidden
+    units with respect to the inputs.
+
+    Contrastive loss plays a crucial role in maintaining the similarity
+    and correlation of latent representations across different modalities.
+    This is because it helps to ensure that similar instances are represented
+    by similar vectors and dissimilar instances are represented by dissimilar vectors.
+
+
+    See reference below for an in-depth discussion:
+      #1: http://wiseodd.github.io/techblog/2016/12/05/contractive-autoencoder
+
+    Args:
+        `W` (FloatTensor): (N_hidden x N), where N_hidden and N are the
+          dimensions of the hidden units and input respectively.
+        `x` (Variable): the input to the network, with dims (N_batch x N)
+        recons_x (Variable): the reconstruction of the input, with dims
+          N_batch x N.
+        `h` (Variable): the hidden units of the network, with dims
+          batch_size x N_hidden
+        `lam` (float): the weight given to the jacobian regulariser term
+
+    Returns:
+        Variable: the (scalar) CAE loss
+    """
+
+    #input, target
+
+    #mse = mse_loss(recons_x, x)
+
+    #mse=f.smooth_l1_loss( recons_x , x)        # loss 1 is converging, eval reward not go up so fast
+    #mse=f.mse_loss( recons_x , x)               #loss 1 seems to explode at first but then go down fast, eval rewards go up fast
+    #mse=f.l1_loss( recons_x , x)                 # loss ok, but reward not so high
+    mse=f.huber_loss( recons_x , x)
+    #mse=f.cross_entropy(recons_x, x)
+
+
+    # Since: W is shape of N_hidden x N. So, we do not need to transpose it as
+    # opposed to #1
+    dh = h * (1 - h) # Hadamard product produces size N_batch x N_hidden
+    # Sum through the input dimension to improve efficiency, as suggested in #1
+    w_sum = torch.sum(Variable(W)**2, dim=1)
+    # unsqueeze to avoid issues with torch.mv
+    w_sum = w_sum.unsqueeze(1) # shape N_hidden x 1
+    contractive_loss = torch.sum(torch.mm(dh**2, w_sum), 0)
+    return mse + contractive_loss.mul_(lam)
+
+
+# ─── reference_dqn_update_step ───────────────────────────────────────────────
+# Source: external/MinAtar/examples/maps.py:663-887 (train function)
+#
+# De-globalized adaptation for parity testing:
+# - All globals (policy_net, target_net, second_order_net, optimizer,
+#   optimizer2, scheduler1, scheduler2) are passed as explicit arguments.
+# - The continuous-learning branch (`previous_loss != None`) is EXCISED — parity
+#   for CL lives in `sarl_cl` (Sprint 04b §4.6), and would require teacher nets
+#   and a loss_weighter. The standard DQN path is unchanged.
+# - `train_or_test` hardcoded to True (we always update during parity tests).
+# - `counter_list_losses` increment and anomaly detection removed (no side
+#   effect needed for single-step parity check).
+# - RETURN SIGNATURE: always (loss, loss_second_or_None, accuracy_second_or_None)
+#   so callers get a uniform shape regardless of `meta`.
+
+def reference_dqn_update_step(
+    sample,
+    policy_net,
+    target_net,
+    second_order_net,
+    optimizer,
+    optimizer2,
+    scheduler1,
+    scheduler2,
+    meta,
+    alpha,
+    cascade_iterations_1,
+    cascade_iterations_2,
+):
+    """Verbatim-structure DQN+MAPS update step, globals lifted to kwargs.
+
+    Preserves EXACT statement order from paper's ``train()``. In particular,
+    the meta branch executes ``loss_second.backward(retain_graph=True)`` →
+    ``optimizer2.step()`` BEFORE ``loss.backward()`` → ``optimizer.step()``.
+    Policy_net receives gradient contributions from BOTH losses.
+    """
+
+    # Calculate cascade rates for iterative information flow
+    cascade_rate_1 = float(1.0/cascade_iterations_1)
+    cascade_rate_2 = float(1.0/cascade_iterations_2)
+
+    # Initialize outputs for cascade model connections
+    comparison_out = None
+    main_task_out = None
+    target_task_out = None
+
+    # Reset gradients
+    optimizer.zero_grad()
+    if meta:
+        optimizer2.zero_grad()
+
+    # Unpack transitions from replay buffer
+    batch_samples = transition(*zip(*sample))
+
+    # Extract batch elements
+    states = torch.cat(batch_samples.state)
+    next_states = torch.cat(batch_samples.next_state)
+    actions = torch.cat(batch_samples.action)
+    rewards = torch.cat(batch_samples.reward)
+
+    # Calculate wagering targets based on rewards and alpha
+    targets_wagering = target_wager(rewards, alpha)
+
+    is_terminal = torch.cat(batch_samples.is_terminal)
+
+    # Process through cascade model for main DQN (iterative information flow)
+    for j in range(cascade_iterations_1):
+        output_DQN_policy, h1, comparison_1, main_task_out = policy_net(states, main_task_out, cascade_rate_1)
+
+    # Gather Q-values for the actions taken in each state
+    Q_s_a = output_DQN_policy.gather(1, actions)
+
+    # Handle target calculation for Q-learning (max Q-value in next state)
+    none_terminal_next_state_index = torch.tensor([i for i, is_term in enumerate(is_terminal) if is_term == 0], dtype=torch.int64, device=device)
+    none_terminal_next_states = next_states.index_select(0, none_terminal_next_state_index)
+
+    # Initialize target Q-values
+    Q_s_prime_a_prime = torch.zeros(len(sample), 1, device=device)
+    if len(none_terminal_next_states) != 0:
+        for k in range(cascade_iterations_1):
+            output_DQN_target, _, _, target_task_out = target_net(none_terminal_next_states, target_task_out, cascade_rate_1)
+        Q_s_prime_a_prime[none_terminal_next_state_index] = output_DQN_target.detach().max(1)[0].unsqueeze(1)
+
+    # Compute the TD target (reward + discounted future reward)
+    target = rewards + GAMMA * Q_s_prime_a_prime
+
+    # Setup for contractive autoencoder loss
+    W = policy_net.state_dict()['fc_hidden.weight']
+    lam = 1e-4
+
+    # Standard DQN loss when not using continuous learning
+    loss = CAE_loss(W, target, Q_s_a, h1, lam)
+
+    # Metacognitive (2nd order) network branch
+    if meta:
+        with torch.set_grad_enabled(True):
+            for i in range(cascade_iterations_2):
+                output_second, comparison_out = second_order_net(comparison_1, comparison_out, cascade_rate_2)
+
+        loss_second = f.binary_cross_entropy_with_logits(output_second, targets_wagering)
+
+        # wagering accuracy (stubbed — paper calls calculate_wagering_accuracy,
+        # which is a readout metric and does not affect gradients). Parity
+        # ignores this output.
+        accuracy_second = None
+
+        # Backward pass for metacognitive network first
+        loss_second.backward(retain_graph=True)
+        optimizer2.step()
+
+        # Then backward pass for main network
+        loss.backward()
+        optimizer.step()
+
+        # Step the learning rate schedulers
+        scheduler1.step()
+        scheduler2.step()
+
+        return loss, loss_second, accuracy_second
+
+    else:
+        loss.backward()
+        optimizer.step()
+        scheduler1.step()
+        return loss, None, None
