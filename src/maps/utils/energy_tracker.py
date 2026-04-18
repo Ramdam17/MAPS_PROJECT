@@ -1,3 +1,4 @@
+import logging
 import os
 import subprocess
 import time
@@ -8,6 +9,8 @@ import numpy as np
 import pandas as pd
 import psutil
 import torch
+
+log = logging.getLogger(__name__)
 
 
 class NvidiaEnergyTracker:
@@ -59,7 +62,7 @@ class NvidiaEnergyTracker:
 
         # Get GPU names
         self.gpu_names = self._get_gpu_names()
-        print(f"Detected {self.gpu_count} GPUs: {', '.join(self.gpu_names)}")
+        log.info("Detected %d GPUs: %s", self.gpu_count, ", ".join(self.gpu_names))
 
         # Emissions factors for different countries (kg CO2 per kWh)
         # Source: https://www.carbonfootprint.com/international_electricity_factors.html
@@ -109,7 +112,7 @@ class NvidiaEnergyTracker:
     def start(self):
         """Start tracking energy usage."""
         if self.is_tracking:
-            print("Tracker is already running.")
+            log.warning("Tracker is already running.")
             return
 
         # Record starting time
@@ -124,13 +127,13 @@ class NvidiaEnergyTracker:
         self._log_gpu_metrics()
 
         self.is_tracking = True
-        print(f"Energy tracking started for project: {self.project_name}")
-        print(f"Tracking {self.gpu_count} GPUs with nvidia-smi")
+        log.info("Energy tracking started for project: %s", self.project_name)
+        log.info("Tracking %d GPUs with nvidia-smi", self.gpu_count)
 
     def stop(self):
         """Stop tracking and return the results."""
         if not self.is_tracking:
-            print("Tracker is not running.")
+            log.warning("Tracker is not running.")
             return None
 
         # Record end time
@@ -167,16 +170,16 @@ class NvidiaEnergyTracker:
         # Save detailed logs
         self._save_logs()
 
-        print(f"Energy used: {total_energy_kwh:.6f} kWh")
-        print(f"Carbon emissions: {emissions_kg:.6f} kg CO2eq")
-        print(f"Duration: {duration:.2f} hours")
+        log.info("Energy used: %.6f kWh", total_energy_kwh)
+        log.info("Carbon emissions: %.6f kg CO2eq", emissions_kg)
+        log.info("Duration: %.2f hours", duration)
 
         return result
 
     def log_point(self):
         """Log current GPU metrics."""
         if not self.is_tracking:
-            print("Tracker is not running.")
+            log.warning("Tracker is not running.")
             return
 
         self._log_gpu_metrics()
@@ -225,7 +228,7 @@ class NvidiaEnergyTracker:
                         "temp_c": float(parts[6]),
                     }
         except (subprocess.SubprocessError, ValueError, IndexError) as e:
-            print(f"Error getting GPU metrics: {e}")
+            log.error("Error getting GPU metrics: %s", e)
             # Create empty data if we couldn't get metrics
             for i in range(self.gpu_count):
                 gpu_data[i] = {
@@ -346,7 +349,7 @@ class NvidiaEnergyTracker:
     def _save_logs(self):
         """Save detailed logs to CSV and generate plots."""
         if not self.gpu_readings:
-            print("No data points were collected during tracking.")
+            log.warning("No data points were collected during tracking.")
             return
 
         # Create DataFrame for time series data
@@ -381,7 +384,7 @@ class NvidiaEnergyTracker:
         # Generate plots
         self._generate_plots(df, timestamp)
 
-        print(f"Detailed logs saved to {csv_path}")
+        log.info("Detailed logs saved to %s", csv_path)
 
     def _generate_plots(self, df, timestamp):
         """Generate plots of energy usage and system utilization."""
@@ -435,7 +438,7 @@ class NvidiaEnergyTracker:
         plt.savefig(plot_path)
         plt.close()
 
-        print(f"Plots saved to {plot_path}")
+        log.info("Plots saved to %s", plot_path)
 
 
 class MLModelEnergyEfficiency:
@@ -605,5 +608,5 @@ class MLModelEnergyEfficiency:
         with open(report_path, "w") as f:
             f.write("\n".join(report))
 
-        print(f"Efficiency report saved to {report_path}")
+        log.info("Efficiency report saved to %s", report_path)
         return report_path

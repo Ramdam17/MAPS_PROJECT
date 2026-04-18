@@ -110,7 +110,7 @@ test strategy:
 - **4.5 / TD-008** SARL split (`maps_v1.py` + `maps_v2.py` → `src/maps/experiments/sarl/`)
 - **4.6 / TD-009** SARL+CL split (teacher network + distillation from shared components)
 - **4.7 / TD-006, TD-030** Legacy delete (`BLINDSIGHT/`, `AGL/`, `SARL/`, `SARL_CL/`) — gated on 4.5/4.6 parity passing
-- **4.9 (new) / TD-022** `src/maps/utils/energy_tracker.py` — 13 residual `print()` calls; ruff `T20` currently has a scoped per-file ignore
+- **4.9 (new) / TD-022** `src/maps/utils/energy_tracker.py` — 14 residual `print()` calls migrated to structured logging (9 info / 4 warning / 1 error); scoped ignore removed ✅ (2026-04-17)
 - **Sprint 05 §5.3 SARL smoke test** — cannot land until `src/maps/experiments/sarl/` exists
 
 None of these are cancellations. The Sprint 04b doc is the authoritative tracker.
