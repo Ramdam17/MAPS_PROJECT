@@ -23,3 +23,20 @@ A/B them without forking.
 - When running ablations that toggle these knobs, record which ones in the
   experiment YAML (`config/experiments/*.yaml`) so downstream analyses can
   filter.
+
+## Sprint 06 reproduction gaps (2026-04-18)
+
+None of the entries below are deviations from the reference code — they are
+missing pieces of the paper-faithful reproduction pipeline that were not
+recovered during the Sprint 04b monolith deletion. They belong here as "what
+the current MAPS core does *not* reproduce yet" and are tracked in `docs/TODO.md`
+under "Reproduction gaps".
+
+| # | Surface | Paper headline | Our number (N=10) | Root cause | Tracking ID |
+|---|---------|---------------:|------------------:|------------|:-----------:|
+| G-01 | Blindsight detection acc. (full MAPS) | 0.97 (z=9.01) | 0.755 discrim. / 0.71 wager (z=+0.40) | Metric-definition mismatch candidate: paper "detection accuracy" may refer to wager-head binary classification, an average over conditions, or a different threshold protocol. Eval code path is ported and correct per reference `testing()`. | RG-002 |
+| G-02 | AGL High Awareness classification acc. | 0.66 (z=8.20) | 0.073 (z=+0.00) | `AGLTrainer.pre_train` resets the first-order to init weights (reference L751 behavior). Paper numbers come from a downstream supervised phase on Grammar A vs B that used the *pre-trained* second-order + a fresh first-order — this phase is not ported. | RG-003 |
+| G-03 | AGL Low Awareness classification acc. | 0.62 (z=15.70) | 0.093 (z=+0.00) | Same root cause as G-02 — the post-hoc seed-pool split cannot create the "awareness" signal without the downstream training phase. | RG-003 |
+
+No hyperparameters were changed from `config/training/{blindsight,agl}.yaml` in
+Sprint 06. The gaps above are reproduction-depth, not protocol drift.
