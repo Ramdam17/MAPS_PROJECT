@@ -6,9 +6,9 @@
 | 01 | [Dedup & prune](sprint-01-dedup-and-prune.md) | ✅ done | `refactor/dedup` | 1-2 days |
 | 02 | [Extract MAPS core](sprint-02-extract-maps-core.md) | ✅ done | `refactor/extract-core` | 3 days |
 | 03 | [Config-first migration](sprint-03-config-first.md) | ✅ done | `refactor/config-first` | 2-3 days |
-| 04 | [Seed + logging + split monoliths](sprint-04-seeding-logging-split.md) | 🟡 perceptual done (Blindsight ✅ AGL ✅ logging ✅ except ✅; SARL / SARL+CL / legacy delete → 04b) | `refactor/blindsight-train` → `refactor/agl-train` | 2-3 days |
-| 04b | [RL splits + legacy delete](sprint-04b-rl-split-and-legacy-delete.md) | 🟡 in progress (energy_tracker ✅; SARL / SARL+CL / legacy delete pending) | `refactor/energy-tracker-logging` → `refactor/sarl-train` → `refactor/legacy-delete` | 3-5 days |
-| 05 | [Tests + CI](sprint-05-tests-and-ci.md) | 🟡 perceptual done (unit ✅ CI ✅ coverage 94% ✅ pre-push ✅; SARL smoke → 04b) | `feat/tests-ci` | 1-2 days |
+| 04 | [Seed + logging + split monoliths](sprint-04-seeding-logging-split.md) | ✅ done (perceptual in 04; RL/legacy rolled into 04b) | `refactor/blindsight-train` → `refactor/agl-train` | 2-3 days |
+| 04b | [RL splits + legacy delete](sprint-04b-rl-split-and-legacy-delete.md) | ✅ done (4.5 SARL ✅ 4.6 SARL+CL ✅ 4.7 legacy delete ✅ 4.9 energy_tracker ✅) | multi-branch (see spec) | 3-5 days |
+| 05 | [Tests + CI](sprint-05-tests-and-ci.md) | ✅ done (unit ✅ CI ✅ coverage 94% ✅ pre-push ✅ SARL smoke ✅ via 04b) | `feat/tests-ci` | 1-2 days |
 | 06 | Reproduction — Blindsight + AGL (local) | ⚪ planned | `repro/perceptual` | 2-3 days compute |
 | 07 | Reproduction — SARL on Narval | ⚪ planned | `repro/sarl` | 1-2 weeks compute |
 | 08 | Reproduction — MARL on Narval | ⚪ planned | `repro/marl` | 1-2 weeks compute |

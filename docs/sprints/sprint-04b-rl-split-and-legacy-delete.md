@@ -1,7 +1,7 @@
 # Sprint 04b — RL domain splits + legacy delete (deferred from Sprint 04)
 
-**Status:** 🟡 in progress — 4.9 shipped, 4.5/4.6/4.7 pending
-**Branch:** `refactor/energy-tracker-logging` ✅ → `refactor/sarl-train` (next) → `refactor/legacy-delete`
+**Status:** ✅ done — 4.5/4.6/4.7/4.9 all shipped (2026-04-18)
+**Branch:** `refactor/energy-tracker-logging` ✅ → `refactor/sarl-parity-harness` ✅ → `refactor/sarl-runner-and-cli` ✅ → `refactor/sarl-cl-split` ✅ → `refactor/legacy-delete` ✅
 **Owner:** Rémy Ramadour
 **Est. effort:** 3-5 days
 **Depends on:** Sprint 04 ✅ (perceptual-domain scope)
@@ -38,34 +38,39 @@ The paper's historical `SARL/MinAtar/examples/maps_v1.py` / `maps_v2.py` have al
 
 ## Deferred tasks (verbatim from Sprint 04 spec)
 
-### 4.5 — Split SARL (`external/MinAtar/examples/maps.py` → `src/maps/experiments/sarl/`)
-- [ ] `src/maps/experiments/sarl/`:
-    - [ ] `data.py` — `replay_buffer` + `get_state` transition sampler (refs: paper §3, `maps.py:290-327`)
-    - [ ] `model.py` — `QNetwork` (+ `AdaptiveQNetwork`) + `SecondOrderNetwork`, rewritten to use `maps.components.cascade` and `maps.components.second_order` from Sprint 02 (refs: `maps.py:135-281`)
-    - [ ] `trainer.py` — DQN training loop, ε-greedy, target-network sync, `train()` inner loop split into `compute_loss` / `step` (refs: `maps.py:663-1091`)
-    - [ ] `evaluate.py` — rollout metrics, episode reward, per-env score (refs: `maps.py:890-1091` `evaluation()`)
-- [ ] `scripts/run_sarl.py` — typer entry (mirror `run_blindsight.py` / `run_agl.py`); exposes `--game`, `--setting {1..6}`, `--seed`, `--steps`, `--cascade`, `--ema`
-- [ ] Keep the paper's 6-setting matrix (not 2×2=4): settings 1-6 where 1=baseline, 2=cascade-only, 3=2nd-order-only, 4=2nd-order+cascade-on-FO, 5=2nd-order+cascade-on-SO, 6=2nd-order+cascade-on-both. See `maps.py:2683-2710`.
-- [ ] `count_parameters` and `curriculum` flag → expose as kwargs on `SarlTrainer`.
+### 4.5 — Split SARL ✅ (`external/MinAtar/examples/maps.py` → `src/maps/experiments/sarl/`)
+- [x] `src/maps/experiments/sarl/`:
+    - [x] `data.py` — `replay_buffer` + `get_state` transition sampler (refs: paper §3, `maps.py:290-327`)
+    - [x] `model.py` — `QNetwork` + `SecondOrderNetwork`, rewritten to use `maps.components.cascade` and `maps.components.second_order` from Sprint 02 (refs: `maps.py:135-281`)
+    - [x] `trainer.py` — DQN update step, ε-greedy, target-network sync, `train()` inner loop (refs: `maps.py:663-1091`)
+    - [x] `evaluate.py` — rollout metrics, episode reward, per-env score (refs: `maps.py:890-1091` `evaluation()`)
+    - [x] `rollout.py` — action-selection + per-frame environment step (refs: `maps.py:462-495`)
+    - [x] `training_loop.py` — outer DQN loop orchestrator + `setting_to_config(1..6)`
+- [x] `scripts/run_sarl.py` — typer entry with `--game`, `--setting {1..6}`, `--seed`, `--num-frames`, `--override`, `--log-level`
+- [x] Keep the paper's 6-setting matrix (settings 1-6 mapped in `setting_to_config`)
+- [x] Three-tier parity harness (`tests/parity/sarl/`): forward ✅, buffer ✅, update ✅ — all at atol=1e-6
 
-### 4.6 — SARL+CL (continual learning, `SARL_CL/examples_cl/maps.py` → `src/maps/experiments/sarl_cl/`)
-- [ ] `src/maps/experiments/sarl_cl/` — teacher network + `DistillationLoss` (refs: `SARL_CL/examples_cl/maps.py:384-434`)
-- [ ] `scripts/run_sarl_cl.py`
-- [ ] Do **not** re-implement shared bits — import `QNetwork`, `replay_buffer`, `SecondOrderNetwork`, `world_dynamics` from `maps.experiments.sarl` / `maps.components`. Current SARL_CL duplicates these (see TD-009).
-- [ ] `DistillationLoss` + `compute_weight_regularization` go to `maps.components.losses` (shared with any future distillation use).
+### 4.6 — SARL+CL ✅ (continual learning, `SARL_CL/examples_cl/maps.py` → `src/maps/experiments/sarl_cl/`)
+- [x] `src/maps/experiments/sarl_cl/` — CL-specific networks (`SarlCLQNetwork` with explicit `fc_output`, `SarlCLSecondOrderNetwork` with explicit `comparison_layer`, `AdaptiveQNetwork` for cross-game transfer)
+- [x] `loss_weighting.py` — `DynamicLossWeighter` (running-max normalization) + helpers
+- [x] `trainer.py` — `sarl_cl_update_step` with 3-term CL loss (task + weight-reg + feature); paper-faithful backward order (SO.backward(retain_graph) → FO.backward)
+- [x] `training_loop.py` — `run_training_cl` with optional teacher, adaptive backbone, `load_partial_state_dict`, per-episode component-loss metrics, target-sync freq=500 (not 1000)
+- [x] `scripts/run_sarl_cl.py` — typer CLI with `--curriculum`, `--adaptive`, `--teacher-load-path`
+- [x] `config/training/sarl_cl.yaml` — inherits `maps.yaml`, adds `cl.*` block
+- [x] Deliberate architectural preservation: CL networks differ from standard SARL (NOT refactored to share) — see `src/maps/experiments/sarl_cl/__init__.py` docstring
+- [x] Tests: 47 unit (networks + loss weighting + weight_regularization) in 4.6a + 10 unit (trainer branches) + 10 integration (vanilla, curriculum, `load_partial_state_dict`, setting table) in 4.6b
 
-### 4.7 — Delete / relocate legacy
-- [ ] Delete `BLINDSIGHT/Blindsight_TMLR.py` (already re-implemented in `src/maps/experiments/blindsight/`)
-- [ ] Delete `AGL/AGL_TMLR.py` (already re-implemented in `src/maps/experiments/agl/`)
-- [ ] Delete `external/MinAtar/examples/maps.py` (re-implemented in `src/maps/experiments/sarl/`)
-- [ ] Delete `SARL_CL/examples_cl/maps.py` (re-implemented in `src/maps/experiments/sarl_cl/`)
-- [ ] Delete `SARL_CL/examples_cl/AC_lambda.py` if Sprint 07 baseline-comparison chart is produced via the paper's figures (TBD — do **not** delete until Sprint 07 scope is locked)
-- [ ] **Keep** `external/MinAtar/examples/{dqn.py, AC_lambda.py}` — these are Young et al.'s original MinAtar baselines (pre-MAPS), not re-implementations of our code
-- [ ] Delete now-empty `BLINDSIGHT/`, `AGL/`
-- [ ] Leave `SARL_CL/` shell if `AC_lambda.py` survives; otherwise delete
-- [ ] Leave `MARL/` for Sprint 08
+### 4.7 — Delete / relocate legacy ✅
+- [x] Deleted `BLINDSIGHT/Blindsight_TMLR.py` (→ `src/maps/experiments/blindsight/`)
+- [x] Deleted `AGL/AGL_TMLR.py` (→ `src/maps/experiments/agl/`)
+- [x] Deleted `external/MinAtar/examples/maps.py` (→ `src/maps/experiments/sarl/`); also fixes the `maps` package name self-shadow trap
+- [x] Deleted `SARL_CL/examples_cl/maps.py` (→ `src/maps/experiments/sarl_cl/`)
+- [x] Kept `SARL_CL/examples_cl/AC_lambda.py` — retention decision deferred to Sprint 07 (baseline-comparison scope lock)
+- [x] Kept `external/MinAtar/examples/{dqn.py, AC_lambda.py}` — Young et al.'s pre-MAPS baselines, NOT re-implementations of our code
+- [x] `BLINDSIGHT/` and `AGL/` directories auto-removed by git once their single file was deleted
+- [x] `SARL_CL/` shell kept (holds `AC_lambda.py` + two `.sh` launcher scripts); `MARL/` kept for Sprint 08
 
-**Gate:** do not delete until 4.5 + 4.6 land and their parity harnesses are green.
+**Gate cleared:** 4.5 (Tier 1/2/3 parity green) + 4.6 (20 unit + 10 integration tests green) landed before deletion. Full suite 196 passed post-deletion.
 
 ### 4.9 — `energy_tracker.py` print → log migration ✅
 - [x] Replaced 14 residual `print()` calls in `src/maps/utils/energy_tracker.py` with structured logging:

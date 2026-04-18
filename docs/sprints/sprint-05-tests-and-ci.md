@@ -1,6 +1,6 @@
 # Sprint 05 — Tests + CI
 
-**Status:** 🟡 perceptual scope shipped (SARL smoke deferred to Sprint 04b)
+**Status:** ✅ done (perceptual in 05; SARL smoke shipped via Sprint 04b §4.5/§4.6)
 **Branch:** `feat/tests-ci`
 **Owner:** Rémy Ramadour
 **Est. effort:** 1-2 days
@@ -8,11 +8,11 @@
 
 ---
 
-## Progress (2026-04-17)
+## Progress (2026-04-18 — updated after 04b close)
 
 - ✅ **5.1 Unit tests** — `tests/unit/utils/test_logging_setup.py` (8 cases); `test_paths.py` extended with `_discover_root` coverage; `test_seeding.py` extended with CUDA-branch mocks. Cascade / second_order / losses / first_order_mlp already covered from Sprint 02.
-- ✅ **5.2 Parity / numerical** — Blindsight + AGL parity shipped in Sprint 04; seeding determinism in Sprint 03. No action this sprint.
-- 🟡 **5.3 Reproduction smoke** — Blindsight (Sprint 04) + AGL (Sprint 04) already cover the perceptual-domain smoke tests (they run in < 2s and fit the "fast" tier rather than `@slow` — see note below). **SARL smoke deferred to Sprint 04b** because the SARL module doesn't exist yet.
+- ✅ **5.2 Parity / numerical** — Blindsight + AGL parity shipped in Sprint 04; SARL three-tier parity (forward / buffer / update) shipped in Sprint 04b §4.5; seeding determinism in Sprint 03.
+- ✅ **5.3 Reproduction smoke** — Blindsight + AGL (Sprint 04), SARL (Sprint 04b §4.5 — `tests/integration/sarl/test_training_loop_smoke.py`, 3 `@slow` cases), SARL+CL (Sprint 04b §4.6 — `tests/integration/sarl_cl/test_training_loop_smoke.py`, 3 `@slow` cases covering vanilla setting 1 + setting 6 + 2-stage curriculum with real teacher).
 - ✅ **5.4 GitHub Actions** — `.github/workflows/ci.yaml` (ruff + fast pytest on push/PR) and `.github/workflows/slow-tests.yaml` (workflow_dispatch + weekly cron).
 - ✅ **5.5 Coverage** — `--cov-fail-under=80` on `src/maps/components` + `src/maps/utils`; current: **94%**. `energy_tracker.py` and `src/maps/experiments/*` omitted (deferred to 04b / covered by parity+reproduction).
 - ✅ **5.6 Pre-push hook** — `.pre-commit-config.yaml` extended with local `pre-push` hook running `pytest -m "not slow and not gpu and not linux_only" --timeout=60`. Installed via `uv run pre-commit install --hook-type pre-push`. Current wall clock: ~1.5 s.
