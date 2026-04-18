@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_SYSTEM_PYTHON: 1
+  PYTHONUNBUFFERED: 1
+
+jobs:
+  lint-and-test:
+    name: Lint + fast tests + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies (perceptual + dev)
+        run: |
+          # SARL extras (MinAtar) and MARL extras (dmlab2d/meltingpot) are
+          # deferred to Sprint 04b / Sprint 07 respectively. Keep CI lean.
+          uv sync --extra blindsight --extra agl --extra dev
+
+      - name: Ruff — lint
+        run: uv run ruff check src scripts tests
+
+      - name: Ruff — format check
+        run: uv run ruff format --check src scripts tests
+
+      - name: Pytest — fast tiers (unit + parity + integration)
+        # Skip slow reproduction runs and GPU-gated tests in this job.
+        run: |
+          uv run pytest \
+            -m "not slow and not gpu and not linux_only" \
+            --cov=src/maps/components \
+            --cov=src/maps/utils \
+            --cov-report=xml \
+            --cov-report=term
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 14

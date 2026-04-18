@@ -8,7 +8,7 @@
 | 03 | [Config-first migration](sprint-03-config-first.md) | ✅ done | `refactor/config-first` | 2-3 days |
 | 04 | [Seed + logging + split monoliths](sprint-04-seeding-logging-split.md) | 🟡 perceptual done (Blindsight ✅ AGL ✅ logging ✅ except ✅; SARL / SARL+CL / legacy delete → 04b) | `refactor/blindsight-train` → `refactor/agl-train` | 2-3 days |
 | 04b | [RL splits + legacy delete](sprint-04b-rl-split-and-legacy-delete.md) | ⚪ deferred | `refactor/sarl-train` → `refactor/legacy-delete` | 3-5 days |
-| 05 | [Tests + CI](sprint-05-tests-and-ci.md) | 🟡 in progress (perceptual scope; SARL smoke deferred to 04b) | `feat/tests-ci` | 1-2 days |
+| 05 | [Tests + CI](sprint-05-tests-and-ci.md) | 🟡 perceptual done (unit ✅ CI ✅ coverage 94% ✅ pre-push ✅; SARL smoke → 04b) | `feat/tests-ci` | 1-2 days |
 | 06 | Reproduction — Blindsight + AGL (local) | ⚪ planned | `repro/perceptual` | 2-3 days compute |
 | 07 | Reproduction — SARL on Narval | ⚪ planned | `repro/sarl` | 1-2 weeks compute |
 | 08 | Reproduction — MARL on Narval | ⚪ planned | `repro/marl` | 1-2 weeks compute |

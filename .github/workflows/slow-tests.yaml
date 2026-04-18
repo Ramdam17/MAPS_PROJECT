@@ -1,0 +1,49 @@
+name: Slow tests
+
+# Reproduction smoke tests marked `@pytest.mark.slow` — short training runs
+# that verify loss trajectories stay within tolerance. Not on every push
+# because they take several minutes; triggered manually or on a schedule.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every Monday 06:00 UTC — catch dependency drift without blocking PRs.
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  UV_SYSTEM_PYTHON: 1
+  PYTHONUNBUFFERED: 1
+
+jobs:
+  slow-reproduction-tests:
+    name: Reproduction smoke (@slow)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --extra blindsight --extra agl --extra dev
+
+      - name: Pytest — slow tier
+        run: |
+          uv run pytest \
+            -m "slow and not gpu and not linux_only" \
+            --durations=10
