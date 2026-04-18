@@ -9,7 +9,7 @@
 | 04 | [Seed + logging + split monoliths](sprint-04-seeding-logging-split.md) | ✅ done (perceptual in 04; RL/legacy rolled into 04b) | `refactor/blindsight-train` → `refactor/agl-train` | 2-3 days |
 | 04b | [RL splits + legacy delete](sprint-04b-rl-split-and-legacy-delete.md) | ✅ done (4.5 SARL ✅ 4.6 SARL+CL ✅ 4.7 legacy delete ✅ 4.9 energy_tracker ✅) | multi-branch (see spec) | 3-5 days |
 | 05 | [Tests + CI](sprint-05-tests-and-ci.md) | ✅ done (unit ✅ CI ✅ coverage 94% ✅ pre-push ✅ SARL smoke ✅ via 04b) | `feat/tests-ci` | 1-2 days |
-| 06 | [Reproduction — Blindsight + AGL (local)](sprint-06-reproduction-perceptual.md) | ⚪ planned | `repro/perceptual` | 2-3 days compute |
+| 06 | [Reproduction — Blindsight + AGL (local)](sprint-06-reproduction-perceptual.md) | ✅ done (runs ✅ eval ported ✅ docs synced ✅; headline-number gaps logged as RG-002/003) | `repro/perceptual` | 2-3 days compute (actual: ~half-day) |
 | 07 | Reproduction — SARL on Narval | ⚪ planned | `repro/sarl` | 1-2 weeks compute |
 | 08 | Reproduction — MARL on Narval | ⚪ planned | `repro/marl` | 1-2 weeks compute |
 | 09 | Docs + release | ⚪ planned | `feat/docs` | 2 days |

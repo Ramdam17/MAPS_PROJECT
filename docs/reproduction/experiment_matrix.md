@@ -11,11 +11,17 @@ Our reproduction tolerance: **±2σ** around reported mean.
 
 ## 1. Perceptual Tasks
 
-| Task | Metric | Paper mean | Paper std | Z-score vs baseline | Our target range (±2σ) |
-|------|--------|-----------:|----------:|--------------------:|-----------------------:|
-| Blindsight | detection acc. | 0.97 | 0.02 | 9.01 | [0.93, 1.01] |
-| AGL — High Awareness | classification acc. | 0.66 | 0.05 | 8.20 | [0.56, 0.76] |
-| AGL — Low Awareness | classification acc. | 0.62 | 0.07 | 15.70 | [0.48, 0.76] |
+| Task | Metric | Paper mean | Paper std | Paper z | Our target range (±2σ) | Our mean (N=10) | Our z | Verdict |
+|------|--------|-----------:|----------:|--------:|-----------------------:|----------------:|------:|:-------:|
+| Blindsight | detection acc. (full MAPS) | 0.97 | 0.02 | 9.01 | [0.93, 1.01] | 0.755 (discrim.) / 0.71 (wager) | +0.40 | ⚠️ see RG-002 |
+| AGL — High Awareness | classification acc. | 0.66 | 0.05 | 8.20 | [0.56, 0.76] | 0.073 | +0.00 | ⚠️ see RG-003 |
+| AGL — Low Awareness | classification acc. | 0.62 | 0.07 | 15.70 | [0.48, 0.76] | 0.093 | +0.00 | ⚠️ see RG-003 |
+
+**Sprint 06 reproduction status (2026-04-18):**
+
+- Numbers above come from `outputs/reports/perceptual_summary.json` (10 seeds × 4 settings × 200 epochs, on M-series CPU, Sprint 06 grid).
+- **Blindsight**: eval path ported (`BlindsightTrainer.evaluate()`) with `superthreshold` discrimination accuracy as the primary axis. Full-MAPS sits at 0.755 ± 0.054 vs paper's 0.97 — z=+0.40 vs paper's z=9.01. Gap is most likely a metric-definition question (paper may report wager or a cross-condition aggregate, not single-condition discrimination). Tracked in `docs/TODO.md` → RG-002.
+- **AGL**: eval path ported (`AGLTrainer.evaluate()` + seed-pool High/Low split in `aggregate_perceptual.py`), but `classification_precision` sits at ~chance (0.07-0.09) across all settings because `pre_train` intentionally resets the first-order to initial weights (ref L751). The paper's 0.66 / 0.62 require a **downstream supervised training phase** on Grammar A vs B that was never ported. Tracked as **RG-003**.
 
 ## 2. SARL — MinAtar DQN
 
