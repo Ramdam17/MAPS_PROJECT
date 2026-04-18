@@ -107,6 +107,11 @@ def main(
         False, "--all-settings", help="Loop over every factorial setting × seed."
     ),
     seed: int | None = typer.Option(None, help="Override seed (single-setting mode only)."),
+    seeds: str | None = typer.Option(
+        None,
+        "--seeds",
+        help="Comma-separated seed list overriding factorial.seeds in --all-settings mode (e.g. '42,43,...,51').",
+    ),
     override: list[str] = typer.Option(  # noqa: B008
         [],
         "--override",
@@ -125,16 +130,16 @@ def main(
     base_out = paths.outputs / "agl"
 
     if all_settings:
-        runs = [
-            (AGLSetting.from_dict(s), s_idx)
-            for s_idx in list(factorial.seeds)
-            for s in factorial.settings
-        ]
+        seed_pool = (
+            [int(x) for x in seeds.split(",")] if seeds is not None else list(factorial.seeds)
+        )
+        runs = [(AGLSetting.from_dict(s), s_idx) for s_idx in seed_pool for s in factorial.settings]
         log.info(
-            "Running %d cells (%d settings × %d seeds)",
+            "Running %d cells (%d settings × %d seeds): seeds=%s",
             len(runs),
             len(factorial.settings),
-            len(factorial.seeds),
+            len(seed_pool),
+            seed_pool,
         )
         for s, sd in runs:
             _run_one(cfg, s, sd, base_out / s.id / f"seed-{sd}")
