@@ -1,11 +1,20 @@
-"""Unit tests for cae_loss, wagering_bce_loss, distillation_loss."""
+"""Unit tests for cae_loss, wagering_bce_loss, distillation_loss, weight_regularization."""
 
 from __future__ import annotations
 
+import copy
+
+import pytest
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
-from maps.components import cae_loss, distillation_loss, wagering_bce_loss
+from maps.components import (
+    cae_loss,
+    distillation_loss,
+    wagering_bce_loss,
+    weight_regularization,
+)
 
 
 def test_cae_loss_bce_sum_matches_reference():
@@ -71,3 +80,71 @@ def test_distillation_with_hard_labels_is_mixture():
     out = distillation_loss(student, teacher, hard_labels=hard, alpha=0.5, temperature=2.0)
     out.backward()
     assert student.grad is not None
+
+
+# ── weight_regularization (SARL+CL "distillation" anchor) ───────────────────
+
+
+def _small_net() -> nn.Module:
+    """Minimal two-layer network for parity tests."""
+    return nn.Sequential(nn.Linear(8, 4), nn.ReLU(), nn.Linear(4, 2))
+
+
+def test_weight_regularization_zero_when_identical():
+    """Zero drift when student and teacher share parameters exactly."""
+    student = _small_net()
+    teacher = copy.deepcopy(student)
+    reg = weight_regularization(student, teacher)
+    assert reg.item() == pytest.approx(0.0)
+    assert reg.shape == ()
+
+
+def test_weight_regularization_matches_manual_l2_sum():
+    """Formula matches Σ_i (θ_i − θ_i^teacher)² across all parameters."""
+    student = _small_net()
+    teacher = _small_net()
+    expected = sum(
+        torch.sum((p - p_t) ** 2)
+        for p, p_t in zip(student.parameters(), teacher.parameters(), strict=True)
+    )
+    reg = weight_regularization(student, teacher)
+    assert torch.allclose(reg, expected)
+
+
+def test_weight_regularization_gradient_flows_to_student_only():
+    """Grad reaches student params; teacher params are untouched."""
+    student = _small_net()
+    teacher = _small_net()
+    # Freeze teacher explicitly (the function does not do this for us).
+    for p in teacher.parameters():
+        p.requires_grad_(False)
+
+    reg = weight_regularization(student, teacher)
+    reg.backward()
+
+    assert all(p.grad is not None for p in student.parameters())
+    assert all(not p.requires_grad or p.grad is None for p in teacher.parameters())
+
+
+def test_weight_regularization_grows_with_drift():
+    """Larger parameter drift → larger regularization value."""
+    student = _small_net()
+    teacher = copy.deepcopy(student)
+
+    reg_zero = weight_regularization(student, teacher).item()
+    # Nudge every student parameter.
+    with torch.no_grad():
+        for p in student.parameters():
+            p.add_(0.1)
+    reg_drifted = weight_regularization(student, teacher).item()
+
+    assert reg_zero == pytest.approx(0.0)
+    assert reg_drifted > reg_zero
+
+
+def test_weight_regularization_mismatched_param_count_raises():
+    """``strict=True`` zip catches student/teacher topology mismatches."""
+    student = nn.Sequential(nn.Linear(8, 4), nn.Linear(4, 2))
+    teacher = nn.Sequential(nn.Linear(8, 4))  # fewer params
+    with pytest.raises(ValueError):
+        weight_regularization(student, teacher)

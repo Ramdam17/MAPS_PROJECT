@@ -168,3 +168,47 @@ def distillation_loss(
 
     hard_loss = F.cross_entropy(student_logits, hard_labels)
     return alpha * soft_loss + (1.0 - alpha) * hard_loss
+
+
+def weight_regularization(model: torch.nn.Module, teacher_model: torch.nn.Module) -> torch.Tensor:
+    """Elastic-Weight-Consolidation-inspired L2 penalty on parameter drift.
+
+    Computes ``Σ_i (θ_i − θ_i^teacher)²`` where parameters are paired by
+    position in ``parameters()`` — i.e. the two modules must have identical
+    structure and parameter order. This mirrors the paper's
+    ``compute_weight_regularization`` (SARL_CL/examples_cl/maps.py:410-416)
+    which is used as the "distillation" loss component in continual learning.
+
+    Unlike true EWC (Kirkpatrick et al., 2017), this does NOT weight per-
+    parameter drift by Fisher-information; all weights contribute equally.
+    This is a deliberate simplification in the paper's code and carries to
+    this port.
+
+    Parameters
+    ----------
+    model : nn.Module
+        Student network currently being trained.
+    teacher_model : nn.Module
+        Frozen teacher checkpoint. Must have the same parameter topology
+        as ``model``; we do not assert this so the caller can pass e.g.
+        networks sharing only a prefix — mismatches surface as shape errors
+        from ``torch.sum``.
+
+    Returns
+    -------
+    torch.Tensor
+        Scalar L2 drift. Requires grad through ``model`` but not through
+        ``teacher_model`` (caller is responsible for freezing the teacher).
+
+    Notes
+    -----
+    The paper calls this "distillation" but strictly speaking it is an L2
+    regularization anchor, not output-distillation. We keep the ``distillation``
+    key in ``DynamicLossWeighter`` for faithful parity with the paper's
+    dictionary keys, but code-level we use ``weight_regularization`` to avoid
+    confusion with :func:`distillation_loss` above.
+    """
+    reg_loss = model.parameters().__next__().new_zeros(())  # scalar on the right device
+    for param, param_teacher in zip(model.parameters(), teacher_model.parameters(), strict=True):
+        reg_loss = reg_loss + torch.sum((param - param_teacher) ** 2)
+    return reg_loss
