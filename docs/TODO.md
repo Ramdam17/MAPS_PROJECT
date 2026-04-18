@@ -1,5 +1,16 @@
 # MAPS_PROJECT — Cleanup TODO
 
+## Reproduction gaps
+
+| ID | Surfaced in | Blocker | Description |
+|----|-------------|---------|-------------|
+| RG-001 | Sprint 06 §6.6 | AGL high/low awareness z-scores | AGL awareness-split downstream evaluation is not ported. Lived in deleted `AGL/AGL_TMLR.py` (Sprint 04b §4.7). Current `AGLTrainer.pre_train()` only trains the wagering circuit; there is no accuracy-scoring eval pass. |
+| RG-002 | Sprint 06 §6.4 | Blindsight detection-accuracy z-scores | `BlindsightTrainer.pre_train()` returns losses only. The paper's headline 0.97 detection accuracy comes from a held-out evaluation pass that is not ported. Same root cause as RG-001: evaluation lived in the deleted monoliths. |
+
+Unblocking either requires porting the paper's evaluation protocol (held-out sample generation + threshold-based detection / WTA classification / wager-based grouping for awareness split) from the pre-Sprint-04b git history of `BLINDSIGHT/Blindsight_TMLR.py` and `AGL/AGL_TMLR.py`.
+
+---
+
 ## Technical Debt Register
 _Last audited: 2026-04-17_
 _Auditor: tech-debt agent_

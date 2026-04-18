@@ -29,7 +29,7 @@ If the numbers fall outside the paper's ±2σ tolerance, the sprint **fails loud
 ## Objectives
 
 1. Run Blindsight × 4 settings × 10 seeds (= 40 runs) on Mac CPU.
-2. Run AGL × 4 settings × 10 seeds × 2 awareness conditions (= 80 runs) on Mac CPU.
+2. Run AGL × 4 settings × 10 seeds (= 40 runs) **pre-training only** on Mac CPU — see §6.6 for the awareness-split gap.
 3. Compute per-setting mean/std; compute z-score of full-MAPS vs. baseline; compare against paper's z-score (not just the raw mean).
 4. Write `docs/reports/sprint-06-report.md` with a replicable summary (seeds, wall-clock, deviations, pass/fail per cell).
 
@@ -41,20 +41,19 @@ If the numbers fall outside the paper's ±2σ tolerance, the sprint **fails loud
 
 ## Tasks
 
-### 6.1 — Seed + setting matrix
+### 6.1 — Seed + setting matrix ✅
 
-- [ ] Extend `scripts/run_blindsight.py --all-settings` to accept `--seeds "1,2,...,10"` and write each cell to `outputs/blindsight/<setting>/seed-<NN>/`.
-- [ ] Same for `scripts/run_agl.py`, with `--awareness {high,low}` already present.
-- [ ] Verify `outputs/<domain>/<setting>/seed-<NN>/metrics.json` is written per-cell with the final-epoch accuracy.
-- [ ] Dry-run one cell per domain (1 setting × 1 seed) to verify the schema before unleashing the full 120-run grid.
+- [x] Extended `scripts/run_blindsight.py --all-settings` with `--seeds "42,43,..."` (overrides `factorial.seeds`). Writes each cell to `outputs/blindsight/<setting>/seed-<NN>/`.
+- [x] Same for `scripts/run_agl.py`.
+- [x] Per-cell artifacts: `summary.json`, `losses_1.npy`, `losses_2.npy`, `first_order.pt`, `second_order.pt`. `summary.json` carries final-loss fields + wall-clock.
+- [x] Dry-run: 1 setting × 1 seed × 5 epochs, both domains, completed end-to-end (<0.1 s each at reduced horizon).
 
 ### 6.2 — Run the grid
 
-- [ ] Blindsight: 4 settings × 10 seeds = **40 runs**, estimated ~15 min/run on M-series → ~10 h wall-clock.
-- [ ] AGL high-awareness: 4 × 10 = **40 runs**, similar wall-clock.
-- [ ] AGL low-awareness: 4 × 10 = **40 runs**.
+- [ ] Blindsight: 4 settings × 10 seeds = **40 runs**. Wall-clock TBD after first full-horizon (200-epoch) cell.
+- [ ] AGL (pre-training): 4 × 10 = **40 runs**.
 - [ ] Use tmux for babysitting (see `tmux-pipelines` skill). Single process is fine; MPS does not parallelize cleanly on M-series.
-- [ ] Log each run's wall-clock into the per-cell `metrics.json` for later scaling estimates.
+- [ ] Capture each run's wall-clock (already in `summary.json.elapsed_seconds`) for the scaling estimate.
 
 ### 6.3 — Aggregation
 
@@ -71,6 +70,18 @@ If the numbers fall outside the paper's ±2σ tolerance, the sprint **fails loud
     - Per-cell table: our mean/std, paper mean/std, z-score ours, z-score paper, delta, verdict (✅ within ±2σ / ⚠️ outside)
     - Any deviations logged against `docs/reproduction/deviations.md`
     - Short narrative: did MAPS outperform baseline in our hands, at what effect size?
+
+### 6.6 — AGL awareness-split gap (⚠️ flagged)
+
+The paper reports AGL under **High Awareness** and **Low Awareness** conditions separately. These are *downstream evaluation* regimes (post-pre-training classification over grammatical vs. random strings, with/without attentional load), not a pre-training-time toggle.
+
+Current state: `src/maps/experiments/agl/trainer.py` exposes `pre_train` only. The awareness-split evaluation was in the deleted monolith `AGL/AGL_TMLR.py` (removed in Sprint 04b §4.7) and has **not been ported**.
+
+Sprint 06 decision:
+- Run the 40 AGL pre-training cells (covers the wagering-circuit training signal).
+- **Do not** report AGL-High / AGL-Low accuracy until the awareness-split eval is ported.
+- Open a task in `docs/TODO.md` under "Reproduction gaps" → "AGL awareness-split evaluation".
+- If scope allows at the end of the sprint, port the evaluation and add a §6.7 run. Otherwise defer to a follow-up sprint.
 
 ### 6.5 — Deviation handling (only if needed)
 
