@@ -58,6 +58,7 @@ data/
 .idea/
 .vscode/
 *.swp
+.claude/
 
 # Jupyter
 .ipynb_checkpoints/
