@@ -12,6 +12,11 @@ Sprint 04b scope:
 
 from __future__ import annotations
 
+from maps.experiments.sarl.data import (
+    SarlReplayBuffer,
+    Transition,
+    get_state,
+)
 from maps.experiments.sarl.model import (
     NUM_LINEAR_UNITS,
     SarlQNetwork,
@@ -21,5 +26,8 @@ from maps.experiments.sarl.model import (
 __all__ = [
     "NUM_LINEAR_UNITS",
     "SarlQNetwork",
+    "SarlReplayBuffer",
     "SarlSecondOrderNetwork",
+    "Transition",
+    "get_state",
 ]
