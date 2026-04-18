@@ -88,6 +88,7 @@ dev = [
     "pytest>=8.0",
     "pytest-cov>=4.1",
     "pytest-xdist>=3.5",
+    "pytest-timeout>=2.3",   # pre-push hook enforces a 60s wall clock
     "ruff>=0.3",
     "black>=24.0",
     "pre-commit>=3.6",
@@ -189,4 +190,20 @@ markers = [
 
 [tool.coverage.run]
 source = ["src/maps"]
-omit = ["tests/*", "scripts/*"]
+omit = [
+    "tests/*",
+    "scripts/*",
+    # Legacy vendored energy tracker — print→log migration scheduled for Sprint 04b.
+    "src/maps/utils/energy_tracker.py",
+    # Experiment modules — covered by parity + reproduction tests (Sprint 06).
+    "src/maps/experiments/*",
+]
+
+[tool.coverage.report]
+# Coverage gate for the modules we target in Sprint 05 (components + utils core).
+fail_under = 80
+exclude_also = [
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
