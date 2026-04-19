@@ -3,7 +3,8 @@
 Loads the composed config (config/training/agl.yaml ← config/maps.yaml),
 seeds every RNG, builds the networks described by ``cfg``, runs pre-training
 for one of the four 2×2 factorial settings, and saves loss curves + final
-model state under ``outputs/agl/<setting>/seed-<seed>/``.
+model state under ``$SCRATCH/maps/outputs/agl/<setting>/seed-<seed>/`` (falls back to
+``./outputs/agl/...`` when ``$SCRATCH`` is unset — dev boxes).
 
 Usage
 -----
@@ -137,7 +138,7 @@ def main(
     paths = get_paths()
     paths.ensure_dirs()
 
-    base_out = paths.outputs / "agl"
+    base_out = paths.scratch_root / "maps" / "outputs" / "agl"
 
     if all_settings:
         seed_pool = (

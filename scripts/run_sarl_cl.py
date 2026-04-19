@@ -178,7 +178,7 @@ def main(
     output_dir: Path | None = typer.Option(  # noqa: B008
         None,
         "--output-dir",
-        help="Override output directory. Default: outputs/sarl_cl/<game>/setting-<N>/seed-<seed>/",
+        help="Override output directory. Default: $SCRATCH/maps/outputs/sarl_cl/<game>/setting-<N>/seed-<seed>/ (or ./outputs/sarl_cl/... when $SCRATCH unset).",
     ),
     override: list[str] = typer.Option(  # noqa: B008
         [],
@@ -198,7 +198,7 @@ def main(
     out_dir = (
         output_dir
         if output_dir is not None
-        else paths.outputs / "sarl_cl" / game / f"setting-{setting}" / f"seed-{effective_seed}"
+        else paths.scratch_root / "maps" / "outputs" / "sarl_cl" / game / f"setting-{setting}" / f"seed-{effective_seed}"
     )
 
     training_cfg = _build_training_config(

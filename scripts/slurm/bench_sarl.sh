@@ -15,7 +15,8 @@
 #
 # Defaults: breakout 6 42 500000.
 #
-# Writes: outputs/bench/bench-<mode>-<git_sha>.json
+# Writes: $SCRATCH/maps/bench/bench-<mode>-s<SETTING>-seed<SEED>-<git_sha>.json
+#         (falls back to ./outputs/bench/... when $SCRATCH is unset — dev boxes).
 
 #SBATCH --job-name=sarl-bench
 #SBATCH --account=aip-gdumas85
@@ -60,7 +61,7 @@ case "${MODE}" in
         ;;
 esac
 
-OUT_DIR="${REPO_ROOT}/outputs/bench"
+OUT_DIR="${SCRATCH:-${REPO_ROOT}/outputs}/maps/bench"
 mkdir -p "${OUT_DIR}"
 
 echo "[bench] MODE=${MODE} DEVICE=${DEVICE} game=${GAME} setting=${SETTING} seed=${SEED} frames=${N_FRAMES}"

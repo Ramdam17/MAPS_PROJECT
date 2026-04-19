@@ -3,7 +3,8 @@
 Loads ``config/training/sarl.yaml``, instantiates the MinAtar environment,
 and runs one training cell (game × setting × seed) via
 :func:`maps.experiments.sarl.training_loop.run_training`. Writes metrics JSON
-and final network weights under ``outputs/sarl/<game>/setting-<N>/seed-<seed>/``.
+and final network weights under ``$SCRATCH/maps/outputs/sarl/<game>/setting-<N>/seed-<seed>/``
+(falls back to the project-local ``outputs/sarl/...`` tree when ``$SCRATCH`` is unset — dev boxes).
 
 Usage
 -----
@@ -132,7 +133,7 @@ def main(
     output_dir: Path | None = typer.Option(  # noqa: B008
         None,
         "--output-dir",
-        help="Override output directory. Default: outputs/sarl/<game>/setting-<N>/seed-<seed>/",
+        help="Override output directory. Default: $SCRATCH/maps/outputs/sarl/<game>/setting-<N>/seed-<seed>/ (or ./outputs/sarl/... when $SCRATCH unset).",
     ),
     override: list[str] = typer.Option(  # noqa: B008
         [],
@@ -152,7 +153,7 @@ def main(
     out_dir = (
         output_dir
         if output_dir is not None
-        else paths.outputs / "sarl" / game / f"setting-{setting}" / f"seed-{effective_seed}"
+        else paths.scratch_root / "maps" / "outputs" / "sarl" / game / f"setting-{setting}" / f"seed-{effective_seed}"
     )
 
     training_cfg = _build_training_config(

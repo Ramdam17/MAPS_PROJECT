@@ -3,7 +3,8 @@
 Loads the composed config (config/training/blindsight.yaml ← config/maps.yaml),
 seeds every RNG, builds the networks described by ``cfg``, runs pre-training
 for one of the four 2×2 factorial settings, and saves loss curves + final
-model state under ``outputs/blindsight/<setting>/seed-<seed>/``.
+model state under ``$SCRATCH/maps/outputs/blindsight/<setting>/seed-<seed>/`` (falls
+back to ``./outputs/blindsight/...`` when ``$SCRATCH`` is unset — dev boxes).
 
 Usage
 -----
@@ -125,7 +126,7 @@ def main(
     paths = get_paths()
     paths.ensure_dirs()
 
-    base_out = paths.outputs / "blindsight"
+    base_out = paths.scratch_root / "maps" / "outputs" / "blindsight"
 
     if all_settings:
         seed_pool = (

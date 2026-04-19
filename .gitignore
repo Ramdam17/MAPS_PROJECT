@@ -12,8 +12,10 @@ dist/
 .coverage
 htmlcov/
 
-# Environments
+# Environments — match both directory and symlink (Sprint-08 A.2 moves .venv → $SCRATCH)
+.venv
 .venv/
+venv
 venv/
 env/
 !config/env/
