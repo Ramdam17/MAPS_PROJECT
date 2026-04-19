@@ -103,3 +103,63 @@ Décodage minimal pour les phases d'audit suivantes (Phase B.7) :
   ambiguïté interne papier, à flagger.
 
 ---
+
+## Table 9 — Blindsight hyperparameters
+
+**Paper location :** Appendix B.1, p. 28.
+
+### Preamble (verbatim)
+
+> For the blindsight task, we used a Nvidia RTX3070 gpu for training, with 8GB of RAM. The training
+> time was maximum for MAPS (2nd order network and cascade model in both 1st and 2nd order network).
+> For this setting, training over the 500 seeds took roughly 12 hours.
+
+### Table 9 (verbatim, 11 data rows)
+
+| Hyperparameter                  | Value   |
+|---------------------------------|--------:|
+| Input size                      | 100     |
+| Output size                     | 100     |
+| Hidden size                     | 60      |
+| lr first order                  | 0.5     |
+| lr second order                 | 0.1     |
+| Temperature                     | 1.0     |
+| Step size                       | 25      |
+| Gamma                           | 0.98    |
+| Epochs number for training      | 200     |
+| Optimizer                       | Adamax  |
+| Cascade iterations              | 50      |
+
+### Known ambiguities
+
+Aucune incohérence interne détectée à la lecture de Table 9. La table est autosuffisante et ses
+valeurs sont reprises à l'identique dans le main text §4 "Blindsight Results" (page 12-13).
+
+### Interpretation notes
+
+Décodage minimal pour Phase B.9 (audit Blindsight) :
+
+- `Input size = Output size = 100` → Blindsight est un **autoencoder** sur un vecteur 100-dim
+  (paper §A.1 p. 25 : *"400 patterns, equally split between two types: Random noise patterns
+  (0.0–0.02 activations) and Designed stimulus patterns (each pattern includes one unit with
+  0.0–1.0 activation)"*). Un pattern = 100 dimensions.
+- `Hidden size = 60` — valeur **Blindsight-specific**, distincte de la constante MAPS AGL
+  (`first_order_hidden_dim = 40` selon CLAUDE.md). Pas une déviation : chaque domaine a son hidden
+  dim.
+- `lr first order = 0.5` — lr très élevé. L'optimizer est **Adamax** (Kingma & Ba 2015 §8), qui
+  tolère des lr plus grands que Adam grâce à la normalisation infinity-norm. Pas une erreur, c'est
+  une caractéristique d'Adamax.
+- `Step size = 25` + `Gamma = 0.98` = `StepLR` scheduler (période en epochs × décroissance multiplicative).
+  Cohérent avec les constantes canoniques MAPS dans `config/maps.yaml` (`scheduler_step = 25`,
+  `scheduler_gamma = 0.98`).
+- `Epochs number for training = 200` — Blindsight s'entraîne en un seul passage (vs AGL qui a une
+  pre-train + training split — voir Table 10).
+- `Cascade iterations = 50` ⇒ α_cascade = 1/50 = 0.02, cohérent paper main text p. 6.
+- `Temperature = 1.0` — paramètre du softmax final de l'autoencoder, à confirmer côté `blindsight_tmlr.py`.
+- `Optimizer = Adamax` — **pas Adam**, contrairement à SARL/MARL. Blindsight + AGL utilisent des
+  optimizers différents des RL tasks (plus grands lr + optimizers spéciaux).
+- **N = 500 seeds** par le préambule (*"training over the 500 seeds took roughly 12 hours"*) —
+  valeur à refléter dans `experiment_matrix.md` (Phase B.13), qui pour l'instant dit N=10 et est
+  donc WRONG.
+
+---
