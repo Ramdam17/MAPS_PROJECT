@@ -267,3 +267,157 @@ etc.).
 **Next** : Phase B.9 audit Blindsight (section suivante).
 
 ---
+
+## Blindsight (B.9)
+
+**Sources comparées :**
+
+- Paper Table 9 (p. 28) + eqs. 1-6 (Know-Thyself, p. 6). Table 5a cible z-scores (p. 13,
+  suprathreshold condition).
+- Student monolith `external/paper_reference/blindsight_tmlr.py` (2 419 lignes). **Pas de
+  constantes module-level** : `main()` (L2164) définit une **grid search**
+  `hidden_sizes = [30, 40, 50, 60, 100]`, `step_sizes = [12, 25, 50]`, `gammas = [0.98, 0.99]`,
+  `optimizer = ['ADAMAX']`, `cascade_mode = 0.02`, `seeds = 5` (basic) / `seeds_violin = 10`
+  (stat plots). Table 9 paper reporte les **valeurs sélectionnées** après la grid search
+  (hidden=60, step=25, gamma=0.98).
+- Our port : `src/maps/experiments/blindsight/` (~600 LOC — `trainer.py` 442 L, `data.py` 161 L,
+  `__init__.py` 29 L) + `config/training/blindsight.yaml`.
+
+### 1. Hyperparameters — Table 9 vs student grid vs port
+
+| #  | Param                              | Paper T.9       | Student `blindsight_tmlr.py`                                | Our port + config                             | ∆    | Dev ID                          |
+|----|------------------------------------|----------------:|------------------------------------------------------------:|----------------------------------------------:|:----:|:--------------------------------|
+| B1 | Input size                         | 100             | 100 (paper §A.1 dataset, not a CLI param)                   | `first_order.input_dim = 100`                 | ✅   | —                               |
+| B2 | Output size                        | 100             | 100 (autoencoder reconstructs input)                        | (implicit: same as input_dim)                 | ✅   | —                               |
+| B3 | **Hidden size**                    | **60**          | grid `[30, 40, 50, 60, 100]` → Table 9 selects 60           | **`first_order.hidden_dim = 100`** ❌         | 🆘+❌ | D-blindsight-hidden-dim         |
+| B4 | lr first order                     | 0.5             | `learning_rate_1` (from train() signature, passed via main) | `optimizer.lr_first_order = 0.5`              | ✅   | —                               |
+| B5 | lr second order                    | 0.1             | `learning_rate_2`                                           | `optimizer.lr_second_order = 0.1`             | ✅   | —                               |
+| B6 | Temperature                        | 1.0             | (implicit — softmax without custom T in autoencoder forward) | (config silent)                             | ⚠️   | D-blindsight-temperature        |
+| B7 | Step size (scheduler)              | 25              | grid `[12, 25, 50]`                                          | `scheduler.step_size = 25`                    | ✅   | —                               |
+| B8 | Gamma (scheduler)                  | 0.98            | grid `[0.98, 0.99]`                                          | `scheduler.gamma = 0.98`                      | ✅   | —                               |
+| B9 | Epochs                             | 200             | grid search trains configs to **some** number (to verify)    | `train.n_epochs = 200`                        | ⚠️   | D-blindsight-epochs (verify)    |
+| B10| Optimizer                          | Adamax          | `optim.Adamax(...)` L454 (5 optimizer options available)    | `optimizer.name = "ADAMAX"`                   | ✅   | —                               |
+| B11| Cascade iterations                 | 50              | `cascade_mode = 0.02` → `int(1.0/0.02) = 50`                | (`maps.yaml` `cascade_iterations = 50`)       | ✅   | —                               |
+
+**11 hyperparam rows. Divergences majeures : 1 (hidden_dim).**
+
+**Note hidden_dim critique (row B3)** : paper Table 9 explicitly says 60 — résultat de la grid
+search du student (hidden_sizes=[30, 40, 50, 60, 100]). Notre port met **100**. 100 est la taille
+de l'input ; le commentaire du config dit *"Blindsight reuses input dim as hidden"*. **Mais ce
+n'est PAS ce que fait le papier** : le papier dit 60 (goulot de l'autoencoder, pas identité).
+Avec hidden=100, notre autoencoder **n'a plus de bottleneck** — la reconstruction devient
+triviale, la comparison matrix devient ≈ 0, le wager n'a plus rien à lire. **C'est une cause
+structurelle plausible de RG-002.** À fix Phase D.25.
+
+**Note optimizer (row B10)** : student a **5 optimizer options** implémentées dans `pre_training()`
+(Adam, AdamW, RMSprop, Adamax, RangerVA — lignes 434-459). Table 9 selectionne Adamax. Our port
+aussi. Toutefois le student run réel peut avoir testé plusieurs — à confirmer avant conclure port
+correct.
+
+### 2. Architectural choices
+
+| # | Item                                   | Paper (§2.1 + eq.1-6)                             | Student code                                                            | Our port                                                  | ∆    | Dev ID                          |
+|---|----------------------------------------|---------------------------------------------------|-------------------------------------------------------------------------|-----------------------------------------------------------|:----:|:-------------------------------|
+| Q | Architecture                           | Autoencoder + comparator matrix + 2-wager head   | `FirstOrderNetwork` (AE) + `SecondOrderNetwork` (comparator + wager)    | `FirstOrderMLP` (AE) + `SecondOrderNetwork` (per `maps.yaml`) | ✅   | —                                |
+| R | Dropout rate (wager head)              | paper silent                                      | `nn.Dropout(0.1)` (L160) in wager + `nn.Dropout(0.5)` (L222) elsewhere  | per `maps.yaml` (dropout const)                           | ⚠️   | D-blindsight-dropout-rate       |
+| S | Cascade position                       | eq. 6 on activations                              | applied in `pre_training` forward (inside loops L536-567)               | `cascade_update` in `FirstOrderMLP.forward`               | ✅   | —                                |
+| T | Comparator matrix                      | eq. 1 : `C = X - Ŷ`                              | residual computation in `testing()` L806                                | `ComparatorMatrix.forward` → `X - reconstruction`         | ✅   | —                                |
+| U | Wager head                             | eq. 3 : 2 raw logits                              | 2-unit linear                                                           | `WageringHead` — **1-unit sigmoid** (D-001 already open)  | ❌   | D-001 (already open)            |
+| V | Main-task loss                         | eq. 4 : contrastive                               | CAE (same as SARL — D-002)                                              | Same CAE                                                  | 🆘+❌ | D-002 (already open)            |
+| W | **Evaluation metric**                  | Table 5 "Main Task Acc" = 0.97 (paper §Results p. 12) | `testing()` L806 — returns `discrimination_performances`, `f1_scores_wager` | `BlindsightTrainer.evaluate()` L344 — returns `discrimination_accuracy`, `wager_accuracy` | ⚠️🚨 | D-blindsight-metric-mismatch    |
+
+**7 architectural rows. Divergences : 2 héritées (D-001 wager 1-unit sigmoid, D-002 CAE vs contrastive) + 1 🚨 nouvelle (metric mismatch — RG-002 cause probable).**
+
+### 3. Seeds
+
+| Source                               | Seeds                                                    |
+|--------------------------------------|:--------------------------------------------------------:|
+| Paper Table 9 preamble               | **500** *("training over the 500 seeds took roughly 12 hours")* |
+| Student `main()` `seeds = 5`          | 5 (basic) / 10 (violin_seeds)                            |
+| Our `experiment_matrix.md` (pre-B.13) | 10 ❌                                                     |
+
+**🚨 Findings** : le student code ne fait qu'au max **10 seeds** (seeds_violin) — **pas 500**.
+Le "500 seeds" du préambule Table 9 reste un mystère :
+
+- Hypothèse (a) : aggregation cross-configs de la grid search (5 hidden × 3 step × 2 gamma × 5 seeds
+  ≈ 150 ; or 10 seeds × 50 configs = 500). **Plausible.**
+- Hypothèse (b) : une version du code non-vendored a une boucle seeds plus large.
+- Hypothèse (c) : le préambule est une estimation marketing, pas une valeur exacte.
+
+**À documenter comme `D-blindsight-seeds`** (Phase B.13) et décider Phase D.23 comment reproduire :
+probablement 500 seeds littéral est raisonnable (Blindsight est petit, 12h paper).
+
+### 4. Test conditions
+
+Paper §A.1 p. 25 liste **3 conditions** de test :
+1. **Suprathreshold** — familiar patterns, stimulus-present.
+2. **Subthreshold** — noise increased (bruit ≈ stimulus).
+3. **Low vision** — stimulus intensity reduced.
+
+Table 5a (p. 13) **ne rapporte que suprathreshold**.
+
+| Condition      | Paper data | Student `testing()` | Our port evaluate() | ∆ |
+|----------------|:----------:|:-------------------:|:-------------------:|:-:|
+| Suprathreshold | Table 5a row | computed            | computed            | ✅ |
+| Subthreshold   | (paper silent on results)  | computed            | computed ?          | ⚠️ |
+| Low vision     | (paper silent on results)  | computed            | computed ?          | ⚠️ |
+
+À vérifier Phase D.24 : notre port génère-t-il les 3 conditions comme le student ?
+
+### 5. RG-002 diagnostic (spécifique B.9)
+
+**Gap mesuré** : reproduction Sprint-06 à N=10 seeds a donné :
+
+| Metric                 | Paper (N=500) | Our measured (N=10) | Gap   |
+|------------------------|:-------------:|:-------------------:|:-----:|
+| Main Task Accuracy     | 0.97 ± 0.02   | **0.755** (discrimination)   | −22 % |
+| Main Task Z            | 9.01          | **+0.40**            | 22× en-dessous |
+| Wagering Accuracy      | 0.85 ± 0.04   | 0.71                | −16 % |
+
+**3 hypothèses causales, ordonnées par plausibilité** :
+
+1. **H1 — hidden_dim = 100 au lieu de 60** (D-blindsight-hidden-dim, row B3). Avec hidden=input=100,
+   l'autoencoder n'a plus de goulot → reconstruction triviale → comparison matrix ≈ 0 → wager
+   aveugle. Le student paper a sélectionné 60 après grid search parce que c'était le meilleur point
+   signal/compression. **Fix proposé Phase D.25** : `config.first_order.hidden_dim = 60`.
+
+2. **H2 — metric mismatch (D-blindsight-metric-mismatch, row W)**. Paper "Main Task Acc" vs notre
+   "discrimination_accuracy". Notre `evaluate()` L413 :
+   *"Discrimination accuracy on the stimulus-present portion."* — **c'est du recall, pas de
+   l'accuracy overall.** Paper peut vouloir (TP+TN)/(TP+TN+FP+FN), pas TP/(TP+FN). Si le
+   baseline (setting 1) a 50 % recall et 95 % accuracy (classifier qui dit toujours "present" →
+   100 % recall 50 % accuracy ; ou baseline qui a appris → 95 % acc mais 75 % recall), le gap
+   est une illusion métrique. **Fix proposé Phase D.25** : étendre `evaluate()` à reporter
+   `overall_accuracy` en plus, et tester les deux.
+
+3. **H3 — N trop petit** (N=10 vs paper 500). Avec N=10, la variance est haute → z=+0.40 peut
+   être du bruit statistique. Repasser à N=500 requiert ~6-12h CPU local (paper : 12h pour 500
+   sur RTX3070) ou qq heures GPU Tamia. **Fix Phase F.1**.
+
+**Procédure de fix RG-002 proposée (Phase D.25)** : appliquer H1 + H2 d'abord (courtes), puis
+re-runner à N=100 puis N=500 seulement si le gap subsiste. Si H1+H2 ne ferme pas le gap,
+investiguer autres architectural choices (dropout, eval threshold, training loop).
+
+### 6. Summary of Blindsight divergences
+
+**Divergences identifiées Blindsight (8 distinctes) + héritées** :
+
+| # | Deviation ID                        | Paper T.9 / text | Student                       | Port              | Verdict | Action                               |
+|---|-------------------------------------|-----------------:|------------------------------:|------------------:|:-------:|:-------------------------------------|
+| 1 | **D-blindsight-hidden-dim**         | **60**           | grid [30,40,50,60,100]        | **100** ❌         | 🆘+❌   | D.25 — fix to 60 (likely RG-002 cause H1) |
+| 2 | **D-blindsight-metric-mismatch**    | "Main Task Acc" 0.97 | `testing()` reports similar  | `evaluate()` reports `discrimination_accuracy` = recall-only | 🚨 | D.25 — align metric definition (H2) |
+| 3 | D-blindsight-seeds                  | 500              | 5-10                          | 10 (matrix)       | ⚠️      | D.23 + B.13 + F.1 — run N=500        |
+| 4 | D-blindsight-temperature            | 1.0              | inferred                      | config silent     | ⚠️      | D.23 — confirm softmax temperature   |
+| 5 | D-blindsight-epochs                 | 200              | grid runs                     | 200               | ⚠️      | D.23 — verify 200 applies            |
+| 6 | D-blindsight-dropout-rate           | silent           | p=0.1 (wager) / p=0.5 (other) | per maps.yaml     | ⚠️      | D.23 — confirm match                 |
+| 7 | D-001 (wager 1-unit vs 2-unit)     | 2 raw logits     | 2-unit                        | **1-unit sigmoid** | ❌     | already open, D.23 — re-audit |
+| 8 | D-002 (contrastive-vs-CAE)          | SimCLR eq. 4     | CAE                           | CAE               | ❌+🆘   | already open, C.7-C.9                |
+
+**Finding le plus important B.9** : **D-blindsight-hidden-dim** (port 100 vs paper 60) est une
+divergence **silencieuse majeure** qui n'avait jamais été flagguée. **C'est la cause #1 suspectée
+de RG-002.** La fix la plus probable : `hidden_dim: 60` + re-run N=10 local pour voir si
+z-score passe de +0.40 à qqch de significatif avant d'aller jusqu'à N=500.
+
+**Next** : Phase B.10 audit AGL (section suivante).
+
+---
