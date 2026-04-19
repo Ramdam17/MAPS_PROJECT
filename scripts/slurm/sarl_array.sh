@@ -1,41 +1,54 @@
 #!/usr/bin/env bash
-# Sprint 07 — SARL reproduction on Compute Canada Narval.
+# Sprint 07 Phase 4 — SARL reproduction array on Tamia.
 #
-# Submits 150 DQN training cells as a SLURM array:
-#   games    = {breakout, seaquest, space_invaders, asterix, freeway}    (5)
-#   settings = {1, 2, 3, 4, 5, 6}                                         (6)
-#   seeds    = {42, 43, 44, 45, 46}                                       (5)
-#   total    = 5 × 6 × 5 = 150 cells
+# 300 cells = 5 games × 6 settings × 10 seeds (paper-conforming N=10).
+#   games    = {breakout, seaquest, space_invaders, asterix, freeway}
+#   settings = {1..6}
+#   seeds    = {42..51}
 #
-# Each array task runs `scripts/run_sarl.py` for one (game, setting, seed)
-# cell at the paper's 5M-frame horizon. Outputs land in
-# $SCRATCH/maps/outputs/sarl/<game>/setting-<N>/seed-<SEED>/ which a
-# post-array sbatch (`aggregate.sh`) then picks up.
+# Per-cell resources are CONSERVATIVE DEFAULTS; they MUST be re-calibrated
+# from Phase 2 bench numbers before the full run. Override at submit time.
 #
-# Submit with:
-#   sbatch --account=<rrg-group> scripts/slurm/sarl_array.sh
+#   # CPU path (default, safe on Tamia without GPU contention):
+#   sbatch scripts/slurm/sarl_array.sh
 #
-# Tune --time, --gres, --mem based on actual per-cell wall-clock from
-# Sprint 07 §7.1 smoke test calibration.
+#   # GPU path (decided only if Phase 2 shows ≥ 1.5× CPU speedup):
+#   sbatch --gpus-per-node=h100:4 --cpus-per-task=4 --mem=16000M --time=04:00:00 \
+#          --export=DEVICE=cuda scripts/slurm/sarl_array.sh
+#
+# Outputs land in $SCRATCH/maps/outputs/sarl/<game>/setting-<N>/seed-<SEED>/
+# and are rsync'd to outputs/sarl/ by scripts/slurm/aggregate.sh.
 
-#SBATCH --job-name=maps-sarl
-#SBATCH --array=0-149%20               # 150 tasks, up to 20 concurrent
-#SBATCH --time=24:00:00                # per-task — revise after smoke test
-#SBATCH --mem=8G
+#SBATCH --job-name=sarl-array
+#SBATCH --account=aip-gdumas85
+#SBATCH --array=0-299%10                # 300 cells, 10 concurrent — widen after Phase 2
+#SBATCH --time=06:00:00                 # per-task; calibrate = 1.1 × bench_wall_500k × 10
+#SBATCH --mem=8000M                     # calibrate from peak_rss_mb + margin
 #SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:1
-#SBATCH --output=logs/slurm/maps-sarl-%A_%a.out
-#SBATCH --error=logs/slurm/maps-sarl-%A_%a.err
+#SBATCH --requeue                       # survive pre-emption
+#SBATCH --output=logs/slurm/sarl-array-%A_%a.out
+#SBATCH --error=logs/slurm/sarl-array-%A_%a.err
 
-set -euo pipefail
+# Device: cpu (default) or cuda. Override with `--export=DEVICE=cuda` at submit.
+DEVICE=${DEVICE:-cpu}
+
+# shellcheck source=scripts/slurm/common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 # ── Task → (game, setting, seed) decode ────────────────────────────────────
 GAMES=(breakout seaquest space_invaders asterix freeway)
-SEEDS=(42 43 44 45 46)
+SEEDS=(42 43 44 45 46 47 48 49 50 51)
 N_SETTINGS=6
 N_SEEDS=${#SEEDS[@]}
+N_GAMES=${#GAMES[@]}
+EXPECTED_TASKS=$(( N_GAMES * N_SETTINGS * N_SEEDS ))  # 300
 
 TASK_ID=${SLURM_ARRAY_TASK_ID:-0}
+if (( TASK_ID >= EXPECTED_TASKS )); then
+    echo "[array] TASK_ID=${TASK_ID} >= ${EXPECTED_TASKS} — out of range" >&2
+    exit 64
+fi
+
 GAME_IDX=$(( TASK_ID / (N_SETTINGS * N_SEEDS) ))
 REM=$(( TASK_ID % (N_SETTINGS * N_SEEDS) ))
 SETTING=$(( REM / N_SEEDS + 1 ))
@@ -44,24 +57,38 @@ SEED_IDX=$(( REM % N_SEEDS ))
 GAME=${GAMES[$GAME_IDX]}
 SEED=${SEEDS[$SEED_IDX]}
 
-echo "Task $TASK_ID → game=$GAME setting=$SETTING seed=$SEED"
+echo "[array] task=${TASK_ID} game=${GAME} setting=${SETTING} seed=${SEED} device=${DEVICE}"
 
-# ── Environment (Narval-specific — see docs/install_linux.md) ──────────────
-module load python/3.12
-cd "${SLURM_SUBMIT_DIR:-$PWD}"
+# ── GPU sanity ─────────────────────────────────────────────────────────────
+if [[ "${DEVICE}" == "cuda" ]]; then
+    if [[ -z "${SLURM_GPUS_ON_NODE:-}" && -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+        echo "[array] DEVICE=cuda but no GPU visible — submit with --gpus-per-node=h100:4" >&2
+        exit 64
+    fi
+fi
 
-# uv is lab-standard; activate the pre-synced venv
-source .venv/bin/activate
+# ── Output dir — $SCRATCH on DRAC ──────────────────────────────────────────
+OUT_BASE="${SCRATCH:-${REPO_ROOT}/outputs}/maps/outputs/sarl"
+OUT_DIR="${OUT_BASE}/${GAME}/setting-${SETTING}/seed-${SEED}"
+mkdir -p "${OUT_DIR}"
 
-OUTDIR="${SCRATCH:-$PWD}/maps/outputs/sarl/$GAME/setting-$SETTING/seed-$SEED"
-mkdir -p "$OUTDIR"
+# Idempotent re-run guard: if metrics.json already exists and is non-empty,
+# this cell is done — skip (useful after --requeue).
+if [[ -s "${OUT_DIR}/metrics.json" ]]; then
+    echo "[array] ${OUT_DIR}/metrics.json already present — skip"
+    exit 0
+fi
 
 # ── Run ────────────────────────────────────────────────────────────────────
-python scripts/run_sarl.py \
-    --game "$GAME" \
-    --setting "$SETTING" \
-    --seed "$SEED" \
-    -o "device=cuda" \
-    -o "output_dir=$OUTDIR"
+uv run --offline python scripts/run_sarl.py \
+    --game "${GAME}" \
+    --setting "${SETTING}" \
+    --seed "${SEED}" \
+    --output-dir "${OUT_DIR}" \
+    -o "device=${DEVICE}"
 
-echo "Cell complete: $OUTDIR"
+if [[ ! -s "${OUT_DIR}/metrics.json" ]]; then
+    echo "[array] FAIL: ${OUT_DIR}/metrics.json missing or empty" >&2
+    exit 1
+fi
+echo "[array] OK cell=${GAME}/${SETTING}/${SEED}"
