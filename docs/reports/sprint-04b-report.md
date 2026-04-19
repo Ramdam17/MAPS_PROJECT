@@ -10,10 +10,12 @@
 |------|--------|-------|
 | 4.5 SARL split | ✅ | 3-tier parity harness (forward/buffer/update) atol=1e-6; `scripts/run_sarl.py` CLI |
 | 4.6 SARL+CL split | ✅ | CL networks + `DynamicLossWeighter` + `sarl_cl_update_step` + `run_training_cl` + CLI; 67 new tests |
-| 4.7 Legacy delete | ✅ | 10,509 LOC removed across 4 monolithic files |
+| 4.7 Legacy delete | ✅ (partial — see note) | 10,509 LOC removed from the 4 TMLR monoliths |
 | 4.9 energy_tracker logging | ✅ (shipped earlier in sprint) | 14 `print()` → `logging`; removed `T201` scoped ignore |
 
 All items from the spec landed. Nothing dropped or deferred.
+
+**Correction (2026-04-18, Sprint 07 P1.1-P1.3):** 4.7 was partial. The 4 TMLR monolith scripts were deleted, but surrounding legacy trees remained tracked — `SARL/` (shell wrappers), `SARL_CL/` (shell wrappers + `AC_lambda.py`), `MARL/MAPPO-ATTENTIOAN/` (2.1 MB vendored MAPPO + dmlab2d wheel + committed tokens), `MARL/meltingpot.sh` (orphan once MAPPO removed), `requirements-legacy.txt`. Sprint 07 Phase 1 removed them (~197 files). `BLINDSIGHT/`, `AGL/`, `METTA/` had already been cleared in Sprint 04b.
 
 ## Code / test deltas
 

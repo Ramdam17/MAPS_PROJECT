@@ -15,7 +15,28 @@ Unblocking either requires porting the paper's evaluation protocol (held-out sam
 ## Technical Debt Register
 _Last audited: 2026-04-17_
 _Auditor: tech-debt agent_
-_Scope: BLINDSIGHT, AGL, SARL, SARL_CL, MARL, METTA_
+_Scope: BLINDSIGHT, AGL, SARL, SARL_CL, MARL, METTA — all legacy trees now removed (see resolution banner below)_
+
+### Resolution banner (2026-04-18 — Sprint 04b + Sprint 07 P1.1-P1.3)
+
+The entire legacy footprint surveyed in this audit has been deleted. The register below is kept for historical/audit purposes; individual TDs map to the source trees as follows:
+
+| Source tree | Deleted in | TDs retired |
+|---|---|---|
+| `BLINDSIGHT/`, `AGL/` (TMLR monoliths) | Sprint 04b (4.7) | TD-006 (partial), TD-010, TD-011 (partial), TD-020, TD-022 (partial), TD-023, TD-024, TD-025, TD-030, TD-034 |
+| `SARL/` (shell wrappers + MinAtar `build/` + `maps_v1.py`/`maps_v2.py`) | Sprint 04b (ports) + Sprint 07 (shell + build) | TD-003 (partial), TD-007 (SARL copy), TD-008, TD-011 (SARL part), TD-015 (SARL energy_data), TD-018 (SARL build), TD-019 (SARL minatar), TD-022 (SARL part), TD-031, TD-035, TD-040 |
+| `SARL_CL/` | Sprint 04b (ports) + Sprint 07 (shell + `AC_lambda.py`) | TD-009, TD-018 (SARL_CL build) |
+| `MARL/MAPPO-ATTENTIOAN/` + `MARL/meltingpot.sh` | Sprint 07 (P1.1) | TD-002, TD-003 (MARL part), TD-004, TD-007 (MAPPO copy), TD-012, TD-016, TD-017, TD-026, TD-037, TD-038 |
+| `METTA/` | Sprint 04b | TD-013, TD-021, TD-029, TD-036, TD-039 |
+| `requirements.txt` / `requirements-legacy.txt` | Sprint 04b (pyproject) + Sprint 07 (requirements-legacy) | TD-005, TD-032 |
+
+Still open (not deletion-resolvable):
+- **TD-001** — README.md AWS keys (needs revoke + history rewrite).
+- **TD-014** — `.gitignore` hygiene (needs audit of what's still committed).
+- **TD-027, TD-028** — tests + CI. Partly addressed by Sprint 05/06; CI status TBD.
+- **TD-033** — README AWS instructions.
+
+`RG-001`, `RG-002`, `RG-003` (reproduction gaps, Blindsight/AGL) remain unchanged — they track the ported code, not the deleted monoliths.
 
 ---
 
