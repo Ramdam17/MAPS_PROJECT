@@ -226,3 +226,83 @@ Décodage minimal pour Phase B.10 (audit AGL) + Phase D.28 (port RG-003) :
 - **N = 500 seeds** par le préambule — à propager dans `experiment_matrix.md` Phase B.13.
 
 ---
+
+## Table 12 — MeltingPot (MARL) hyperparameters
+
+**Paper location :** Appendix B.4, p. 30.
+
+### Preamble (verbatim)
+
+> For the meltingpot tasks, we used a Nvidia A100 gpu for training. The average training time was
+> roughly 16 hours per seed (baseline, MAPS not implemented fully, only with simple 2nd order
+> network with no cascade model due to limitations with computational resources). Every run
+> required roughly 4-6 GB of RAM, mainly depending on the number of agents.
+
+### Table 12 (verbatim, 13 data rows)
+
+| Hyperparameter                    | Value  |
+|-----------------------------------|-------:|
+| Num agents (harvest closed)       | 6      |
+| Num agents (harvest partnership)  | 4      |
+| Num agents (chemistry)            | 8      |
+| Num agents (territory)            | 5      |
+| Hidden size                       | 100    |
+| Actor lr                          | 7e-5   |
+| Critic lr                         | 100    |
+| Num env steps                     | 15e6   |
+| Entropy coef                      | 0.01   |
+| Clip param                        | 0.2    |
+| Weight decay                      | 1e-5   |
+| PPO epoch                         | 15     |
+| Optimizer                         | Adam   |
+
+*(1 header + 13 data rows. Plan B.4 Vérifier disait 12 ; recomptage paper Table 12 = 13 comme pour
+B.1. Off-by-one plan à corriger dans le changelog.)*
+
+### Known ambiguities — internes au papier
+
+Deux flags critiques à lever avant tout port ou config alignment (Phase B.11, E.17) :
+
+- ⚠️ **`Critic lr = 100`** — **quasi-certainement un typo**. Aucun sens sous Adam (`lr=100` diverge
+  immédiatement). Hypothèses plausibles :
+  - `7e-3` (= 100 × 7e-5, ratio actor-critic usuel en MAPPO — Yu et al. 2022 default `critic_lr=7e-3`)
+  - `1e-2` (ratio 142× vs actor)
+  - Perte d'un suffixe "e-3" au copy-paste vers LaTeX
+  À **vérifier** contre `MARL/MAPPO-ATTENTIOAN/` Phase B.11 pour arbitrer.
+- ⚠️ **`Num env steps = 15e6` (15 millions)** — **conflit main text**. Paper page 15, MARL Results :
+  > *"The agents were trained for 300,000 steps on three seeds, due to computational constraints
+  > (refer to Table 4)."*
+
+  Écart **50×**. Incohérence interne du papier :
+  1. **15e6 est faux** : A100 × 15M steps × 84 cells ≈ semaines, incompatible avec le "16h per seed"
+     du preamble lui-même.
+  2. **300k est faux** : possible mais très peu plausible (un ordre de magnitude entre table et
+     texte sur le même domaine c'est rare).
+  Hypothèse forte : **table wrong, texte right → 300,000 est la bonne valeur**. À confirmer via
+  `MARL/MAPPO-ATTENTIOAN/` shells ou code Phase B.11.
+- **MAPS "not implemented fully"** (preamble) — paper avoue que le 2nd-order MARL n'a pas de cascade
+  model faute de compute. Implication : reproduction MARL **ne pourra pas** être strictement
+  paper-faithful pour les settings qui utilisent cascade (2, 4, 5, 6). À documenter dans
+  `deviations.md` Phase B.12 comme **limitation déclarée par le papier lui-même**.
+- **"Optimizer = Adam"** — confirmé. Pas RangerVA ni Adamax ici.
+
+### Interpretation notes
+
+Pour Phase B.11 (audit MARL) + Phase E.11-E.17 (port MARL) :
+
+- **4 Num agents distincts** par substrate (harvest_closed=6, harvest_partnership=4, chemistry=8,
+  territory=5). Le code devra dispatcher la valeur au bon substrate au runtime.
+- `Hidden size = 100` = constante MAPS canonique `second_order_hidden_dim = 100` (CLAUDE.md).
+  Cohérent cross-domain.
+- `Actor lr = 7e-5` — faible, standard pour MAPPO large-scale (Yu et al. 2022).
+- `Critic lr = 100` — **à ignorer** jusqu'à arbitrage Phase B.11 ; ne **pas** aligner notre config
+  sur cette valeur littérale.
+- `Num env steps` — **idem**, utiliser 300k du main text jusqu'à arbitrage.
+- `Entropy coef = 0.01` — terme d'entropy bonus classique PPO, encourage l'exploration.
+- `Clip param = 0.2` — PPO standard (Schulman et al. 2017).
+- `Weight decay = 1e-5` — L2 reg actor+critic, faible.
+- `PPO epoch = 15` — nombre de passes gradient par rollout (plus élevé que le 10 default PPO).
+- **N = 3 seeds** (main text p. 15, confirmé pour SARL/SARL+CL/MARL) — **pas 10** (nos docs actuels).
+  À propager Phase B.13.
+
+---

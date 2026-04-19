@@ -283,7 +283,7 @@ Chaque sous-phase a : **titre · préambule court · ce qu'on fait · vérificat
 
 ### B.4 Extraire Table 12 du papier (MeltingPot hyperparams)
 - **Faire :** idem Table 12. Flagger les incohérences (critic_lr=100 est suspect, num_env_steps=15e6 vs texte 300k).
-- **Vérifier :** 12 hyperparams + flags.
+- **Vérifier :** 13 hyperparams + flags (paper Table 12 p. 30 = 13 rows).
 - **DoD :** Table 12 présente.
 - **Effort :** 10 min.
 
@@ -900,3 +900,4 @@ Chaque composante suit ce pattern :
 
 - 2026-04-19 (init) — plan créé en réponse au mandat Rémy "tout ce qui permet de refaire le papier doit rester + review composante par composante + intégrer MeltingPot/ACB/alignement hyperparams + respecter queue partagée + storage scratch". 82 sous-phases, séquentielles strict.
 - 2026-04-19 (B.1 correction) — B.1 Vérifier: `24 hyperparams` → `23 hyperparams`. Recomptage depuis paper Table 11 p. 30 = 23 data rows (19 SARL + 4 CL). Contenu extrait conforme verbatim.
+- 2026-04-19 (B.4 correction) — B.4 Vérifier: `12 hyperparams` → `13 hyperparams`. Recomptage depuis paper Table 12 p. 30 = 13 data rows (4 Num agents per substrate + 9 MAPPO hyperparams). Contenu extrait conforme verbatim avec 2 flags critiques (Critic lr=100 typo, Num env steps 15e6 vs 300k).
