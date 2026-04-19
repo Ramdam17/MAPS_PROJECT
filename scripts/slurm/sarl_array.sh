@@ -29,11 +29,13 @@
 #SBATCH --output=logs/slurm/sarl-array-%A_%a.out
 #SBATCH --error=logs/slurm/sarl-array-%A_%a.err
 
+set -euo pipefail
+
 # Device: cpu (default) or cuda. Override with `--export=DEVICE=cuda` at submit.
 DEVICE=${DEVICE:-cpu}
 
 # shellcheck source=scripts/slurm/common.sh
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+source "${SLURM_SUBMIT_DIR:-$(pwd)}/scripts/slurm/common.sh"
 
 # ── Task → (game, setting, seed) decode ────────────────────────────────────
 GAMES=(breakout seaquest space_invaders asterix freeway)

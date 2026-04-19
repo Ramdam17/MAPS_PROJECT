@@ -31,6 +31,8 @@
 # We can't easily conditionalize --gres in #SBATCH, and Tamia rejects
 # --gpus-per-node when running CPU-only, so we keep both as submit-time flags.
 
+set -euo pipefail
+
 MODE=${1:?"usage: sbatch [--cpus-per-task=N --gpus-per-node=...] bench_sarl.sh MODE [GAME] [SETTING] [SEED] [N_FRAMES]"}
 GAME=${2:-breakout}
 SETTING=${3:-6}
@@ -38,7 +40,7 @@ SEED=${4:-42}
 N_FRAMES=${5:-500000}
 
 # shellcheck source=scripts/slurm/common.sh
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+source "${SLURM_SUBMIT_DIR:-$(pwd)}/scripts/slurm/common.sh"
 
 case "${MODE}" in
     cpu_4c)

@@ -22,6 +22,8 @@
 #SBATCH --output=logs/slurm/sarl-smoke-%j.out
 #SBATCH --error=logs/slurm/sarl-smoke-%j.err
 
+set -euo pipefail
+
 # Positional args (before common.sh — it does `set -u`)
 GAME=${1:-breakout}
 SETTING=${2:-6}
@@ -30,7 +32,7 @@ N_FRAMES=${4:-50000}
 DEVICE=${5:-cpu}
 
 # shellcheck source=scripts/slurm/common.sh
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+source "${SLURM_SUBMIT_DIR:-$(pwd)}/scripts/slurm/common.sh"
 
 # ── GPU sanity (Tamia H100 = whole-node allocation) ────────────────────────
 if [[ "${DEVICE}" == "cuda" ]]; then

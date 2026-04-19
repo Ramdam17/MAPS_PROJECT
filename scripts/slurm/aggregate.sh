@@ -18,8 +18,10 @@
 #SBATCH --output=logs/slurm/sarl-agg-%j.out
 #SBATCH --error=logs/slurm/sarl-agg-%j.err
 
+set -euo pipefail
+
 # shellcheck source=scripts/slurm/common.sh
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+source "${SLURM_SUBMIT_DIR:-$(pwd)}/scripts/slurm/common.sh"
 
 SCRATCH_OUT="${SCRATCH:-${REPO_ROOT}/outputs}/maps/outputs/sarl"
 REPO_OUT="${REPO_ROOT}/outputs/sarl"

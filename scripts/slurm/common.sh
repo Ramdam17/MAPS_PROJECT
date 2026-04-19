@@ -19,11 +19,18 @@
 set -euo pipefail
 
 # ── Repository root ────────────────────────────────────────────────────────
-# When sbatch is invoked with a relative path the caller's cwd is preserved,
-# but `source` expands to the sourced file's dir. We want the project root.
-_common_sh_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${_common_sh_dir}/../.." && pwd)"
+# sbatch copies the script to /var/spool/slurmd/job<N>/slurm_script, so
+# BASH_SOURCE is useless for locating the repo. SLURM_SUBMIT_DIR is the dir
+# from which `sbatch` was invoked — we always submit from the project root,
+# so that's the repo. Fallback to cwd for interactive `source common.sh`.
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
 export REPO_ROOT
+
+# Sanity: this must be a MAPS checkout (has config/paths.yaml at root).
+if [[ ! -f "${REPO_ROOT}/config/paths.yaml" ]]; then
+    echo "[common.sh] REPO_ROOT=${REPO_ROOT} does not contain config/paths.yaml — submit sbatch from project root, or set SLURM_SUBMIT_DIR explicitly." >&2
+    exit 78  # EX_CONFIG
+fi
 
 cd "${REPO_ROOT}"
 mkdir -p "${REPO_ROOT}/logs/slurm"
