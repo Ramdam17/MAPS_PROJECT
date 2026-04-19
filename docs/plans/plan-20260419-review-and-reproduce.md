@@ -265,7 +265,7 @@ Chaque sous-phase a : **titre · préambule court · ce qu'on fait · vérificat
 
 ### B.1 Extraire Table 11 du papier (hyperparams SARL/SARL+CL)
 - **Faire :** copier Table 11 du papier dans un nouveau `docs/reproduction/paper_tables_extracted.md` section "Table 11 — MinAtar hyperparams". Cite exacte + référence page.
-- **Vérifier :** 24 hyperparams retranscrits, zéro paraphrase.
+- **Vérifier :** 23 hyperparams retranscrits, zéro paraphrase (paper Table 11 p. 30 = 23 rows).
 - **DoD :** doc existe, Table 11 copiée intégralement.
 - **Effort :** 15 min.
 
@@ -899,3 +899,4 @@ Chaque composante suit ce pattern :
 ## Changelog
 
 - 2026-04-19 (init) — plan créé en réponse au mandat Rémy "tout ce qui permet de refaire le papier doit rester + review composante par composante + intégrer MeltingPot/ACB/alignement hyperparams + respecter queue partagée + storage scratch". 82 sous-phases, séquentielles strict.
+- 2026-04-19 (B.1 correction) — B.1 Vérifier: `24 hyperparams` → `23 hyperparams`. Recomptage depuis paper Table 11 p. 30 = 23 data rows (19 SARL + 4 CL). Contenu extrait conforme verbatim.
