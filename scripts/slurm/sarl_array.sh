@@ -21,13 +21,30 @@
 
 #SBATCH --job-name=sarl-array
 #SBATCH --account=aip-gdumas85
-#SBATCH --array=0-299%10                # 300 cells, 10 concurrent — widen after Phase 2
-#SBATCH --time=06:00:00                 # per-task; calibrate = 1.1 × bench_wall_500k × 10
-#SBATCH --mem=8000M                     # calibrate from peak_rss_mb + margin
+#SBATCH --array=0-299%15                # 300 cells, 15 concurrent (Phase 2 calibration)
+#SBATCH --time=11:00:00                 # setting-1 CPU 5M ≈ 10 h + 10 % (bench 2026-04-19 rev ac5d2cc)
+#SBATCH --mem=4000M                     # peak RSS measured ~1.14 GB, 4× margin
 #SBATCH --cpus-per-task=4
-#SBATCH --requeue                       # survive pre-emption
+#SBATCH --requeue                       # survive pre-emption (no mid-run checkpoint yet — see WARNING)
 #SBATCH --output=logs/slurm/sarl-array-%A_%a.out
 #SBATCH --error=logs/slurm/sarl-array-%A_%a.err
+
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ ⚠  WARNING — Phase 2 benchmark shows settings 4-6 DO NOT FIT here.      │
+# │                                                                         │
+# │ Measured wall at 5M frames (breakout seed 42):                          │
+# │   setting 1 (vanilla DQN)     : CPU ~10 h   GPU ~16 h                   │
+# │   setting 6 (full MAPS, cascade both nets) : CPU ~221 h,  GPU ~105 h    │
+# │                                                                         │
+# │ Tamia max partition (`_b3`) is 24 h. Settings 5-6 (and likely 4) need   │
+# │ either (a) reduced horizon (violates paper), (b) mid-run checkpoint     │
+# │ + resume added to training_loop.py, or (c) deferred to a follow-up      │
+# │ sprint. See docs/reports/sprint-07-profile.md §Decision.                │
+# │                                                                         │
+# │ Running this array as-is will exhaust --time for most setting 4-6      │
+# │ cells, --requeue will loop, and metrics.json never lands. DO NOT        │
+# │ launch blindly. Filter to settings 1-3 only until the decision lands.   │
+# └─────────────────────────────────────────────────────────────────────────┘
 
 set -euo pipefail
 
