@@ -421,3 +421,167 @@ z-score passe de +0.40 à qqch de significatif avant d'aller jusqu'à N=500.
 **Next** : Phase B.10 audit AGL (section suivante).
 
 ---
+
+## AGL (B.10)
+
+**Sources comparées :**
+
+- Paper Table 10 (p. 29) + paper §A.2 p. 25 (dataset) + §Results AGL p. 13 (phases de training) +
+  Table 5b/5c cibles z-scores.
+- Student monolith `external/paper_reference/agl_tmlr.py` (2 785 lignes). Structure de fonctions :
+  - `pre_train()` L619 — phase 1 (random grammar).
+  - **`training()` L904** — **phase 2 (supervised on grammar A)**. ⬅ **CETTE PHASE N'EST PAS PORTÉE**.
+  - `testing()` L1150 — phase 3 (mix A+B).
+  - `train()` L1436 — orchestrateur des 3 phases ; `optimizer='RANGERVA'` default.
+  - `main()` L2506 avec grid `hidden_sizes=[40,50,80,100,150,160]`, `step_sizes=[1,2]`,
+    `gammas=[0.99,0.98,0.97]` — **grid définie mais pas utilisée** ; les appels réels à `train()`
+    L2144-2240 passent **`stepsize=1, gam=0.999`** (valeurs fixes, matching Table 10).
+- Our port : `src/maps/experiments/agl/` (~740 LOC — `trainer.py` 405 L, `data.py` 334 L,
+  `__init__.py` 40 L). **N'a que `pre_train()` + `evaluate()`**. Pas de `training()`. Pas
+  d'orchestrateur 3-phase.
+
+### 1. Hyperparameters — Table 10 vs student vs port
+
+| #  | Param                                       | Paper T.10   | Student (actual calls main())                                    | Our port + config                              | ∆    | Dev ID                          |
+|----|---------------------------------------------|-------------:|-----------------------------------------------------------------:|-----------------------------------------------:|:----:|:--------------------------------|
+| A1 | Input size                                  | 48           | 48 (8 letters × 6 bits, paper §A.2)                              | `first_order.input_dim = 48`                   | ✅   | —                               |
+| A2 | Output size                                 | 48           | 48                                                               | (implicit: same)                               | ✅   | —                               |
+| A3 | Hidden size                                 | **40**       | grid `[40, 50, 80, 100, 150, 160]` → `hidden_first_scaling=40` in calls | `first_order.hidden_dim = 40`          | ✅   | —                               |
+| A4 | lr first order                              | 0.4          | `learning_rate_1 = 0.4` in `prepare_pre_training`                | `optimizer.lr_first_order = 0.4`               | ✅   | —                               |
+| A5 | lr second order                             | 0.1          | `learning_rate_2 = 0.1`                                          | `optimizer.lr_second_order = 0.1`              | ✅   | —                               |
+| A6 | Temperature                                 | 1.0          | softmax default                                                   | config silent                                  | ⚠️   | D-agl-temperature               |
+| A7 | **Step size (scheduler)**                   | **1**        | calls pass `stepsize=1` (L2144+)                                 | **`scheduler.step_size = 25`** ❌              | ❌   | D-agl-sched-step                |
+| A8 | **Gamma (scheduler)**                       | **0.999**    | calls pass `gam=0.999` (L2144+)                                  | **`scheduler.gamma = 0.98`** ❌                | ❌   | D-agl-sched-gamma               |
+| A9 | **Epochs pre-training**                     | **60**       | `n_epochs_pre = 30` (L1659, comment says "default is 60")        | `train.n_epochs = 200`                         | ❌+🆘 | D-agl-epochs-pretrain           |
+| A10| **Epochs training (high awareness)**        | **12**       | `n_epochs_train` param, value to verify (main calls)              | **NO training() function**                     | ❌🚨 | D-agl-training-missing (RG-003) |
+| A11| **Epochs training (low awareness)**         | **3**        | `n_epochs_train` param (shorter runs)                            | **NO training() function**                     | ❌🚨 | D-agl-training-missing (RG-003) |
+| A12| **Optimizer**                               | **RangerVA** | `train()` default `'RANGERVA'` L1436 ; `optim2.RangerVA(...)` L581 | **`optimizer.name = "ADAMAX"`** ❌            | ❌   | D-agl-optimizer                 |
+| A13| Cascade iterations                          | 50           | `cascade_rate = 0.02` → `int(1.0/0.02) = 50`                     | (`maps.yaml` `cascade_iterations = 50`)        | ✅   | —                               |
+
+**13 hyperparam rows. Divergences majeures : 5 (step, gamma, epochs pre, optimizer, + RG-003 structural × 2 rows).**
+
+**Note config path (rows A7, A8, A12)** : notre `config/training/agl.yaml` semble avoir copié les
+valeurs Blindsight (step=25, gamma=0.98, ADAMAX) au lieu des valeurs AGL spécifiques
+(step=1, gamma=0.999, RangerVA). C'est une **erreur systématique** au port AGL Sprint-04b.
+
+**Note Student comment dead code (A9)** : student L1659 `n_epochs_pre = 30` avec commentaire
+`#default is 60`. **Le code student diverge de son propre commentaire** — encore une instance de
+student ≠ paper-table.
+
+### 2. Architectural choices
+
+| # | Item                               | Paper (§A.2 + eq.1-6)                     | Student code                                                         | Our port                                                   | ∆    | Dev ID                         |
+|---|------------------------------------|-------------------------------------------|----------------------------------------------------------------------|------------------------------------------------------------|:----:|:------------------------------|
+| X | Architecture                       | Autoencoder + comparator + 2-wager        | `FirstOrderNetwork` + `SecondOrderNetwork` (Blindsight-like)         | `FirstOrderMLP` + `SecondOrderNetwork`                     | ✅   | —                              |
+| Y | **Chunked sigmoid (6-bit letters)**| paper §A.2 : *"letter strings (3-8 letters)"* encoded as WTA per 6-bit chunk | Winner-takes-all decoding per 6-bit group (paper ref)      | `FirstOrderMLP(decoder_activation=make_chunked_sigmoid(6))` | ✅   | D-004 (already open, info)     |
+| Z | Cascade position                   | eq. 6 on hidden activations               | Same (inside `pre_train` + `training` loops)                         | `FirstOrderMLP.forward` cascade_update                     | ✅   | —                              |
+| α | Main-task loss                     | eq. 4 (contrastive SimCLR)                | `CAE_loss` (L89)                                                     | CAE                                                        | 🆘+❌ | D-002 (already open)           |
+| β | Wager head                         | eq. 3 : 2 raw logits                      | 2-unit                                                               | **1-unit sigmoid** (D-001 already open)                    | ❌   | D-001 (already open)           |
+| γ | **Training pipeline (3-phase)**    | p. 13 : pre_train → training → testing    | 3 functions (`pre_train` L619, `training` L904, `testing` L1150)     | **ONLY `pre_train` + `evaluate`** ❌                       | 🚨   | D-agl-training-missing (RG-003)|
+
+**6 architectural rows. Divergence structurelle unique : row γ — RG-003.**
+
+### 3. Seeds
+
+| Source                               | Seeds                      |
+|--------------------------------------|:--------------------------:|
+| Paper Table 10 preamble              | **500** (*"500 seeds ≈ 12 h"*) |
+| Student `main()`                      | `seeds_violin = 10` (stat plots), `seeds = 5` (basic) |
+| Our `experiment_matrix.md` (pre-B.13) | 10 ❌                       |
+
+Même pattern que Blindsight : student fait 5-10 seeds, le "500" est probablement une aggregation
+grid × seeds (6 hidden × 2 step × 3 gamma × ≈14 seeds = ~504). À fixer B.13 (correction) + F.2
+(runs N=500).
+
+### 4. 2 awareness conditions
+
+Paper Table 5b (high awareness, 12 epochs) + Table 5c (low awareness, 3 epochs) + §A.2 :
+
+- **High awareness (explicit)** : 12 epochs de phase 2 training → le modèle a le temps d'apprendre
+  la grammaire explicite.
+- **Low awareness (implicit)** : 3 epochs → le modèle ne peut que capter des patterns implicites.
+
+Les deux conditions testent la même phase 1 (pre_train) + même eval testing, mais diffèrent sur
+la **durée phase 2** training. **Puisque notre port n'a pas de phase 2**, on **ne peut reproduire
+ni high ni low awareness**. RG-003 impacte **les 2 z-scores** (8.20 et 15.7).
+
+### 5. RG-003 diagnostic (spécifique B.10)
+
+**Gap mesuré** (Sprint-06 N=10 seeds) :
+
+| Condition                | Paper (N=500) | Our measured (N=10) | Gap |
+|--------------------------|:-------------:|:-------------------:|:---:|
+| AGL High Awareness — Main Task Acc | 0.66 ± 0.05   | 0.073               | −89 % |
+| AGL High — Main Z        | **8.20**      | **+0.00**            | ~z=0 |
+| AGL Low Awareness — Main Task Acc  | 0.62 ± 0.07   | 0.093               | −85 % |
+| AGL Low — Main Z         | **15.7**      | **+0.00**            | ~z=0 |
+
+**Diagnostic — cause structurelle unique** :
+
+Paper §AGL Results p. 13 :
+> *"For AGL, we pre-train the model, save the weights of the second-order network, and disable
+> backpropagation through it during training for testing. Randomly generated strings are used for
+> pre-training, grammar A for training, and a mix of grammar A and grammar B for testing."*
+
+→ **3 phases** :
+1. **pre_train** sur random grammars — notre port le fait (`AGLTrainer.pre_train()`).
+2. **training** sur grammar A avec 2nd-order frozen — **NOTRE PORT NE FAIT PAS CETTE PHASE**.
+3. **testing** sur mix grammar A + B — notre `AGLTrainer.evaluate()` fait qqch de similaire, mais
+   teste les poids **post-pretrain**, pas **post-training**.
+
+**Conséquence** : notre eval mesure la capacité du modèle à distinguer A vs B après avoir été
+pré-entraîné sur des grammaires aléatoires (= pas d'info discriminante). D'où **classif ≈ chance**.
+
+**H1 — porter `training()`** (Phase D.28) :
+- Ajouter `AGLTrainer.train()` = nouvelle boucle post-`pre_train` qui :
+  - Garde le 2nd-order frozen (bprop désactivé).
+  - Optimise le first-order sur grammar A via BCE ou contrastive.
+  - Durée : 12 epochs (high) / 3 epochs (low) — configurable.
+- Adapter `scripts/run_agl.py` pour enchaîner pre_train → train → evaluate.
+- Parité : extract un slice de référence `agl_training` depuis `agl_tmlr.py:904` pour parity tests.
+
+**H2 — aligner hyperparams config** (Phase D.26 + D.20-like) :
+- `optimizer.name = "RANGERVA"` (au lieu de ADAMAX).
+- `scheduler.step_size = 1`, `scheduler.gamma = 0.999`.
+- `train.n_epochs_pretrain = 60`, `train.n_epochs_high = 12`, `train.n_epochs_low = 3`.
+
+**H1 est l'hypothèse principale** (si la phase 2 manque, aucun alignment config ne comblera le
+gap). H2 est nécessaire mais insuffisant.
+
+### 6. Summary of AGL divergences
+
+| # | Deviation ID                        | Paper T.10 / text    | Student                         | Port               | Verdict | Action                                  |
+|---|-------------------------------------|---------------------:|--------------------------------:|-------------------:|:-------:|:----------------------------------------|
+| 1 | **D-agl-training-missing (RG-003)** | 3-phase training     | `training()` L904 + `testing()` | **phase 2 absente** | 🚨+❌   | D.28 — port downstream training         |
+| 2 | **D-agl-optimizer**                 | RangerVA             | RangerVA (actual)               | ADAMAX ❌          | ❌      | D.26 — align to RangerVA                |
+| 3 | **D-agl-sched-step**                | 1                    | 1 (actual calls)                | 25 ❌              | ❌      | D.26 — align step_size=1                |
+| 4 | **D-agl-sched-gamma**               | 0.999                | 0.999 (actual calls)            | 0.98 ❌            | ❌      | D.26 — align gamma=0.999                |
+| 5 | **D-agl-epochs-pretrain**           | 60                   | 30 (student commented-out default) | 200 ❌          | ❌+🆘   | D.26 — n_epochs_pretrain=60             |
+| 6 | D-agl-seeds                         | 500                  | 5-10                            | 10 (matrix)        | ⚠️      | D.26 + B.13 + F.2                       |
+| 7 | D-agl-temperature                   | 1.0                  | implicit                        | config silent      | ⚠️      | D.26 — confirm softmax T                |
+| 8 | D-001 (wager 1-unit vs 2-unit)     | 2 raw logits         | 2-unit                          | 1-unit sigmoid     | ❌      | already open (shared D-001)             |
+| 9 | D-002 (contrastive vs CAE)          | eq. 4 SimCLR         | CAE                             | CAE                | 🆘+❌   | already open (shared D-002)             |
+|10 | D-004 (chunked sigmoid AGL)         | WTA per 6-bit chunk  | same                            | same               | ⚠️ (info)| already open, confirmed aligned         |
+
+**Findings critiques B.10** :
+
+- **D-agl-training-missing (RG-003)** : cause **structurelle** du gap. Aucune fix config ne pourra
+  fermer le gap ; il faut ajouter la phase 2 `training()` dans notre port (Phase D.28).
+- **Notre `config/training/agl.yaml` a copié les valeurs Blindsight** (step=25, gamma=0.98,
+  ADAMAX, 200 epochs) au lieu des valeurs AGL de Table 10 (1, 0.999, RangerVA, 60 epochs).
+  Erreur systématique au port Sprint-04b.
+- RangerVA n'est **pas** dans `torch.optim` standard ; il est dans `torch_optimizer as optim2`
+  (package PyPI). Notre config doit ajouter cette dépendance (à faire Phase D.26 avant de changer
+  le optimizer name).
+
+**Plan d'action (combiné D.26 + D.28)** :
+1. D.26 : aligner config (step, gamma, pretrain epochs, optimizer). ~30 min.
+2. D.28 : porter `training()` (la grosse pièce, ~4-6 h selon plan). Implémenter  `AGLTrainer.train_on_grammar_a(high_awareness=bool)` avec 12 ou 3 epochs, 2nd-order frozen.
+3. D.28 continued : adapter `run_agl.py` CLI pour le flow 3-phase.
+4. D.28 verify : smoke local Mac 10 seeds → classif passerait de 0.07 à >0.4 si la phase 2 est
+   effective.
+5. F.2 : re-runner N=500 pour confirmer z-score paper 8.20 / 15.7.
+
+**Next** : Phase B.11 audit MARL (section suivante).
+
+---
