@@ -156,7 +156,7 @@ def main(
         "peak_rss_mb": round(peak_rss_mb, 1),
     }
 
-    out_path = out_dir / f"bench-{mode}-{rev}.json"
+    out_path = out_dir / f"bench-{mode}-s{setting}-seed{seed}-{rev}.json"
     out_path.write_text(json.dumps(report, indent=2) + "\n")
     log.info("bench written: %s", out_path)
     log.info("summary: %s", json.dumps(report))
