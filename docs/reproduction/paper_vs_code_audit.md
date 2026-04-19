@@ -146,3 +146,124 @@ version du code qui n'est pas celle vendored ici. Conséquences pour Phase F :
 **Next** : Phase B.8 audit SARL+CL (section suivante de ce même doc).
 
 ---
+
+## SARL+CL — MinAtar DQN + continual learning (B.8)
+
+**Sources comparées :**
+
+- Paper Table 11 (p. 30) — mêmes 20 rows que SARL **plus** 4 rows CL-specific (max_input_channels,
+  weight task loss, weight weight regularization loss, weight feature loss). Paper eqs. 15-18
+  (p. 9) pour les 3 losses CL. Paper §CL Results p. 17 + §Discussion p. 21 mentionnent un "optimal
+  identified" `task=0.4, reg=0.4, feature=0.2` qui **diffère** de Table 11 — **paper disagrees
+  with itself**.
+- Student monolith `external/paper_reference/sarl_cl_maps.py` (2 580 lignes). CLI defaults
+  `--weight1 40 --weight2 40 --weight3 20` → /100 = **(0.4, 0.4, 0.2)** — student suit le **texte
+  paper**, pas Table 11.
+- Our port : `src/maps/experiments/sarl_cl/` (1 536 lignes, 4 fichiers : `model.py`, `trainer.py`,
+  `training_loop.py`, `loss_weighting.py`) + `config/training/sarl_cl.yaml`.
+
+### 1. Hyperparameters — delta-from-SARL
+
+Les 20 rows de la section SARL s'appliquent identiquement à SARL+CL (même monolith `BATCH_SIZE=128`,
+`step_size1=0.0003`, `GAMMA=0.99` hardcoded, `scheduler_step=0.999`, Adam sans betas, etc.) —
+**toutes les divergences SARL sont héritées par SARL+CL**. Les rows ci-dessous listent uniquement
+**ce qui diffère ou s'ajoute** par rapport à SARL.
+
+| #  | Param                                    | Paper T.11        | Paper text (p. 17,21) | Student `sarl_cl_maps.py`                       | Our port + config                   | ∆    | Dev ID                       |
+|----|------------------------------------------|------------------:|----------------------:|------------------------------------------------:|------------------------------------:|:----:|:-----------------------------|
+| 21 | **Target network update freq (CL)**      | 1,000 (same row as SARL) | —               | **500** (L1121, 1126, scoped inside `dqn()`)    | `training.target_update_freq = 500` | ⚠️   | D-sarl_cl-target-update      |
+| 22 | **Max input channels (CL)**              | **10**            | —                     | `MAX_INPUT_CHANNELS = 10` (L90)                 | `cl.max_input_channels = 7` ❌      | ❌   | D-sarl_cl-max-channels       |
+| 23 | **weight task loss** (λ_task)            | **0.3**           | 0.4 ("optimal identified") | CLI default `--weight1=40` → **0.4**        | `cl.weight_task = 1.0` ❌ ❌        | 🆘+❌ | D-cl-weights                 |
+| 24 | **weight reg loss** (λ_reg)              | **0.6**           | 0.4                   | CLI default `--weight2=40` → **0.4**            | `cl.weight_distillation = 1.0` ❌   | 🆘+❌ | D-cl-weights                 |
+| 25 | **weight feature loss** (λ_feature)      | **0.1**           | 0.2                   | CLI default `--weight3=20` → **0.2**            | `cl.weight_feature = 1.0` ❌        | 🆘+❌ | D-cl-weights                 |
+| 26 | num_frames (per env in curriculum)       | (inherits SARL row 5 — 500k / 1M) | p. 17: 100,000 | `args.steps` CLI                      | `training.num_frames = 5_000_000` ❌ | ❌   | D-sarl_cl-num-frames         |
+
+**Note poids CL (rows 23-25)** : **triple-inconsistency**.
+- Paper Table 11 : `(0.3, 0.6, 0.1)`.
+- Paper text p. 17 + p. 21 (discussion CL) : `(0.4, 0.4, 0.2)` décrit comme "optimal identified for
+  knowledge retention".
+- Student actual runs : `(0.4, 0.4, 0.2)` — suivent le texte, pas la table. Les z-scores de paper
+  §CL Results p. 17 ont donc probablement été obtenus avec ces poids, pas ceux de Table 11.
+- Our port : `(1.0, 1.0, 1.0)` — unnormalized, ne matche ni Table 11 ni le texte. Somme = 3,
+  pas 1 (eq. 18 exige `λ_task + λ_reg + λ_feature = 1`).
+
+**Policy Rémy (paper = source of truth)** : on aligne sur **Table 11** `(0.3, 0.6, 0.1)` par défaut,
+et on documente dans `deviations.md` que le texte paper p. 17 et le student ont utilisé
+`(0.4, 0.4, 0.2)`. Phase F peut ajouter un run alternatif avec les valeurs "text" pour comparaison.
+
+**Note max_input_channels (row 22)** : port dit 7, paper dit 10. Seaquest a 10 canaux → avec
+`max=7` on **tronque** Seaquest → perte d'info silencieuse. Très vraisemblablement un bug
+introduit en Sprint-04b CL port. À fix Phase D.20.
+
+**Note num_frames CL (row 26)** : paper §CL p. 17 "trained sequentially for 100,000 steps ... for
+each of the 4 environments". Notre config à 5M = tout faux côté CL (cellule unique devrait être
+100k × 4 envs = 400k total).
+
+### 2. Architectural choices — CL-specific
+
+| # | Item                                    | Paper                                           | Student code                                              | Our port                                        | ∆    | Dev ID                          |
+|---|-----------------------------------------|-------------------------------------------------|-----------------------------------------------------------|-------------------------------------------------|:----:|:-------------------------------|
+| K | Teacher network (frozen, prev task)     | §CL p. 9 : *"current task network (main task network) and the previous task network (teacher network)"* | `load_file_path` loads teacher weights ; frozen forward   | `SarlCLQNetwork` + teacher loaded from ckpt     | ✅   | —                                |
+| L | 3-loss hybrid                           | eq. 15-18 (L_reg, L_feature, L_task, L_continual) | `train()` computes 3 losses + combined                    | `trainer.sarl_cl_update_step` + `loss_weighting` | ✅   | —                                |
+| M | **Running-max normalization** (eq. 15-17 `1/max_t(L(t))`) | eq. 15-17 : chaque loss divisée par son `max_t(L(t))` | Inline in `train()` L ~1300 | `DynamicLossWeighter` class | ⚠️ | D-sarl_cl-lossweight-normalization (info) |
+| N | Variable-channel conv adapter           | p. 9 : *"1×1 convolution layer with ReLU to process inputs of different sizes"* | ? (to verify) | `SarlCLQNetwork` with `in_channels=max_input_channels` + zero-padding | ⚠️ | D-sarl_cl-channel-adapter (to verify) |
+| O | Backward order (meta + 3-loss branch)   | paper silent                                    | specific order (load-bearing per Sprint-04b docstring)    | Same (`trainer.py` mirrors student)             | ⚠️   | D-sarl_cl-backward-order (info)  |
+| P | Curriculum env order                    | p. 9 : *"Breakout, Space Invaders, Seaquest, and Freeway"* | ? (to verify)                        | `scripts/run_sarl_cl.py` + config               | ⚠️   | D-sarl_cl-curriculum-order       |
+
+**6 architectural rows. Divergences identifiées : 0 hard (tout ✅ ou ⚠️ à vérifier Phase D.16-D.19).**
+
+### 3. Seed count
+
+Même convention que SARL — **N = 3 seeds** (paper text p. 17 :
+*"we trained sequentially for 100,000 steps (due to computational limitations faced when using
+teacher networks) for each of the 4 environments defined in our curriculum. ... Each subplot
+represents a different MinAtar game ... N = 3 seeds per setting."*). **D-sarl-seeds** s'applique
+identiquement ici (matrix dit 10, paper dit 3, à fix Phase B.13).
+
+### 4. Setting factorial + curriculum
+
+Les 7 settings SARL (1-6 MAPS factorial + 7 ACB) sont **hérités**. CL ajoute un axe curriculum :
+
+| Curriculum stage | Paper (p. 9, 17)      | Our port                                     | ∆   |
+|------------------|-----------------------|----------------------------------------------|:---:|
+| Stage 1          | Breakout              | (to verify `config/training/sarl_cl.yaml` ou CLI) | ⚠️ |
+| Stage 2          | Space Invaders        | idem                                         | ⚠️ |
+| Stage 3          | Seaquest              | idem                                         | ⚠️ |
+| Stage 4          | Freeway               | idem                                         | ⚠️ |
+
+**Note ACB pour SARL+CL** : Table 11 papier ne mentionne pas ACB pour CL. Paper §CL Results p. 17
+ne compare pas à ACB — focus retention/forgetting, pas z-scores absolus. Donc Setting 7 peut
+légitimement être absent du port CL. À confirmer Phase D.19.
+
+### 5. Summary of SARL+CL divergences
+
+**Divergences propres à CL (en plus des 17 SARL héritées) :**
+
+| # | Deviation ID                      | Paper T.11    | Paper text     | Student CLI | Port             | Verdict | Action                                |
+|---|-----------------------------------|--------------:|---------------:|------------:|-----------------:|:-------:|:--------------------------------------|
+| A | D-cl-weights (×3 params)          | (0.3,0.6,0.1) | (0.4,0.4,0.2)  | (0.4,0.4,0.2) | (1.0,1.0,1.0) ❌ | 🆘+❌   | D.20 — align sur Table 11 (policy)    |
+| B | D-sarl_cl-max-channels            | 10            | —              | 10          | **7** ❌          | ❌      | D.20 — fix config to 10               |
+| C | D-sarl_cl-num-frames              | (inherits)    | 100,000/env    | CLI         | 5M ❌             | ❌      | D.20 — align to 100k per env          |
+| D | D-sarl_cl-target-update           | 1,000         | —              | **500**     | 500              | ⚠️      | port matches student ; paper silent   |
+| E | D-sarl_cl-lossweight-normalization| eq. 15-17 `1/max_t` | —         | inline      | `DynamicLossWeighter` | ⚠️ | keep, doc note                        |
+| F | D-sarl_cl-channel-adapter         | 1×1 conv ReLU | —              | —           | zero-padding + max | ⚠️   | D.16-D.17 — verify impl               |
+| G | D-sarl_cl-curriculum-order        | Br→SI→Sq→Fr   | —              | —           | to verify        | ⚠️      | D.19 — confirm                        |
+| H | D-sarl_cl-backward-order          | silent        | —              | specific    | same             | ⚠️      | keep, load-bearing                    |
+
+Plus **17 déviations SARL héritées** de B.7 qui s'appliquent toutes (alpha-ema, gamma, lr-2nd,
+adam-beta1/2, sched-step, num-frames, recon-bias, dropout-position, D-002 contrastive vs CAE,
+etc.).
+
+**Total SARL+CL : 8 CL-specific + 17 inherited from SARL = 25 deviation IDs.**
+
+**Finding critique CL-specific :**
+- **D-cl-weights** : seule divergence **🆘+❌** propre à CL. Triple-inconsistency (table paper /
+  text paper / student / port tous différents). Policy **paper Table 11** `(0.3, 0.6, 0.1)` par
+  défaut.
+- **D-sarl_cl-max-channels** : bug simple (config 7 vs paper 10). Seaquest tronqué.
+- Autres divergences CL-specific sont informationnelles ou dépendent de vérifications ultérieures
+  Phase D.16-D.22.
+
+**Next** : Phase B.9 audit Blindsight (section suivante).
+
+---
