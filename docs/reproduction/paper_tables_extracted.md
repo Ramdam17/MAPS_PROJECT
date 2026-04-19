@@ -163,3 +163,66 @@ Décodage minimal pour Phase B.9 (audit Blindsight) :
   donc WRONG.
 
 ---
+
+## Table 10 — AGL hyperparameters
+
+**Paper location :** Appendix B.2, p. 29.
+
+### Preamble (verbatim)
+
+> For the AGL task, we used a Nvidia RTX3070 gpu for training, with 8GB of RAM. The training time
+> was maximum for MAPS (2nd order network and cascade model in both 1st and 2nd order network).
+> For this setting, training over the 500 seeds took roughly 12 hours.
+
+### Table 10 (verbatim, 13 data rows)
+
+| Hyperparameter                                     | Value     |
+|----------------------------------------------------|----------:|
+| Input size                                         | 48        |
+| Output size                                        | 48        |
+| Hidden size                                        | 40        |
+| lr first order                                     | 0.4       |
+| lr second order                                    | 0.1       |
+| Temperature                                        | 1.0       |
+| Step size                                          | 1         |
+| Gamma                                              | 0.999     |
+| Epochs number for pre-training                     | 60        |
+| Epochs number for training (high consciousness)    | 12        |
+| Epochs number for training (low consciousness)     | 3         |
+| Optimizer                                          | RangerVA  |
+| Cascade iterations                                 | 50        |
+
+### Known ambiguities
+
+- **Optimizer "RangerVA"** n'est pas dans `torch.optim` standard. C'est un optimizer communautaire
+  (hybride RAdam + LookAhead + Gradient Centralization, implémentation Wright 2020 sous la PyPI
+  package `ranger-adabelief` ou `pytorch-ranger`). Le student `external/paper_reference/agl_tmlr.py`
+  l'importe via `torch_optimizer as optim2`. À confirmer Phase B.10 quel est le mapping exact.
+- **Step size = 1 + Gamma = 0.999** : contrairement à Blindsight (`step_size=25, gamma=0.98`), AGL
+  décroît son lr à **chaque epoch** (step_size=1) de 0.1% (gamma=0.999). Cela veut dire qu'après
+  60 epochs de pre-training le lr est multiplié par 0.999^60 ≈ 0.94 — décroissance douce.
+
+### Interpretation notes
+
+Décodage minimal pour Phase B.10 (audit AGL) + Phase D.28 (port RG-003) :
+
+- `Input size = Output size = 48` → AGL autoencoder sur vecteur 48-dim. Paper §A.2 p. 25 : chaînes
+  de 3 à 8 lettres, encodage winner-takes-all par chunks de 6 bits ; 8 letters × 6 bits = 48.
+- `Hidden size = 40` → correspond à la constante MAPS canonique `first_order_hidden_dim = 40` dans
+  `config/maps.yaml` (CLAUDE.md). **OK, aligné.**
+- `lr first order = 0.4` — large. L'optimizer **RangerVA** (RAdam + LookAhead + GradCentralization)
+  tolère des lr élevés grâce à ses corrections adaptatives.
+- **3-phase training** (c'est la clé de RG-003) :
+  1. **Pre-training 60 epochs** — entraîne le second-order sur random grammars (paper §Results AGL
+     p. 13 : *"we pre-train the model, save the weights of the second-order network, and disable
+     backpropagation through it during training for testing."*). Notre port fait cette phase.
+  2. **Training (high awareness) 12 epochs** — supervisé sur grammar A vs B **avec** second-order
+     frozen. Paper dit que c'est le régime "explicit" (learned rule awareness).
+  3. **Training (low awareness) 3 epochs** — idem mais plus court. Régime "implicit".
+  Notre port (`src/maps/experiments/agl/trainer.py`) **ne fait que la phase 1** → classification
+  accuracy reste ~chance (0.07–0.09 mesurée vs 0.66 / 0.62 papier). **C'est RG-003**, Phase D.28.
+- `Cascade iterations = 50` ⇒ α_cascade = 0.02, constante MAPS.
+- `Temperature = 1.0` — softmax temperature sur la sortie autoencoder (chunk-wise, WTA par 6 bits).
+- **N = 500 seeds** par le préambule — à propager dans `experiment_matrix.md` Phase B.13.
+
+---
