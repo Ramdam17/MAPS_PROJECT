@@ -38,14 +38,18 @@ class Paths:
     logs: Path
     figures: Path
     reports: Path
+    # HPC scratch / work area. On DRAC clusters this resolves to $SCRATCH
+    # (per-user fast storage); in dev it falls back to `outputs`.
+    scratch_root: Path
     # Internal: track which paths we actually own so ``ensure_dirs`` is safe.
+    # ``scratch_root`` is NOT owned — on HPC it pre-exists and is not ours to mkdir.
     _owned: tuple[str, ...] = field(
         default=("data", "outputs", "models", "logs", "figures", "reports"),
         repr=False,
     )
 
     def ensure_dirs(self) -> None:
-        """Create every output directory if missing. Never touches ``root``."""
+        """Create every output directory if missing. Never touches ``root`` or ``scratch_root``."""
         for name in self._owned:
             getattr(self, name).mkdir(parents=True, exist_ok=True)
 
@@ -92,5 +96,11 @@ def get_paths(*, root: Path | str | None = None) -> Paths:
             continue
         raw = cfg.get(f.name, f.name)  # fallback: use the field name as sub-dir
         kwargs[f.name] = _substitute(str(raw))
+
+    # $SCRATCH env var (DRAC/SLURM) wins over yaml for scratch_root so the
+    # same config works both on dev boxes and on compute nodes.
+    scratch_env = os.environ.get("SCRATCH")
+    if scratch_env:
+        kwargs["scratch_root"] = Path(scratch_env).resolve()
 
     return Paths(**kwargs)

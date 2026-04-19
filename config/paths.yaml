@@ -9,3 +9,6 @@ models: models
 logs: logs
 figures: outputs/figures
 reports: outputs/reports
+# HPC scratch / work area. $SCRATCH env var wins when set (DRAC, SLURM);
+# otherwise falls back to `outputs` so dev machines use project-local storage.
+scratch_root: outputs
