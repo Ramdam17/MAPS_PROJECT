@@ -40,3 +40,135 @@ under "Reproduction gaps".
 
 No hyperparameters were changed from `config/training/{blindsight,agl}.yaml` in
 Sprint 06. The gaps above are reproduction-depth, not protocol drift.
+
+---
+
+## Sprint-08 Phase B audit deviations (2026-04-19)
+
+**Full source :** `docs/reproduction/paper_vs_code_audit.md` — 5 sections (B.7 SARL, B.8 SARL+CL, B.9
+Blindsight, B.10 AGL, B.11 MARL). Le doc audit contient les diagnostics longs (eq. refs, code
+lines, 3-phase pipelines, module mappings) ; cette section `deviations.md` est la **checklist
+canonique** consolidée 1-ligne-par-ID pour Phase D/E/F/G.
+
+**Policy verrouillée 2026-04-19 (Rémy) :** **papier = source de vérité**. Quand student code et
+paper diverge → paper wins. Les 🆘 paper-vs-student sont documentés mais corrigés vers paper.
+
+**Conventions verdict** :
+- ✅ match (within float precision)
+- ⚠️ minor / paper silent / informational
+- ❌ port-vs-paper divergence — fix to paper in Phase D/E
+- 🆘 paper-vs-student divergence — student code doesn't reproduce paper's own Table
+- 🚨 structural / major
+- declared — paper itself admits the limitation
+
+**Convention IDs** : `D-<domain>-<slug>` (pas de numérotation séquentielle — slugs explicites).
+
+### B.7 — SARL deviations (16 new + D-002 existing)
+
+| ID                           | Location                                    | Paper T.11 / eq.            | Student `sarl_maps.py`          | Port + config                          | Verdict | Phase action         |
+|------------------------------|---------------------------------------------|----------------------------|---------------------------------|----------------------------------------|:-------:|:---------------------|
+| D-sarl-target-update         | `trainer.py:54` equivalent                  | 1000                       | 100 (L1188,1193 inside `dqn()`) | 1000                                   | 🆘      | port OK, doc         |
+| D-sarl-num-frames            | `config.training.num_frames`                | 500,000 (text: 1M)         | `args.steps` CLI                | 5,000,000                              | ❌      | D.12 — align paper   |
+| D-sarl-lr-2nd                | `config.optimizer.lr_second_order`          | 0.0002                     | 0.00005 (`step_size2 = 0.00005`)| 0.00005                                | 🆘+❌   | D.9                  |
+| D-sarl-adam-beta1            | Adam `betas[0]`                              | 0.95                       | 0.9 (default — `GRAD_MOMENTUM` unused const) | 0.9 (PyTorch default)      | 🆘+❌   | D.9                  |
+| D-sarl-adam-beta2            | Adam `betas[1]`                              | 0.95                       | 0.999 (default — `SQUARED_GRAD_MOMENTUM` unused) | 0.999 (PyTorch default) | 🆘+❌   | D.9                  |
+| D-sarl-gamma                 | `src/maps/experiments/sarl/trainer.py:54`    | 0.999                      | 0.99 (`GAMMA = 0.99`)           | 0.99 hardcoded                         | 🆘+❌   | D.7 — config-driven  |
+| D-sarl-sched-step            | `config.scheduler.step_size`                 | 1                          | 1000 (`StepLR(..., step_size=1000)`) | 1000                              | 🆘+❌   | D.9                  |
+| D-sarl-sched-gamma           | `config.scheduler.gamma`                     | (silent)                   | 0.999 (`scheduler_step = 0.999`)| 0.999                                  | ⚠️     | keep                 |
+| D-sarl-alpha-ema             | `data.target_wager()` + `config.alpha`       | 0.45                       | 0.25 (shell `-ema 25 /100`)     | 0.01 (`alpha=1.0 /100`)                | 🆘🆘    | D.2 — vectorize + align |
+| D-sarl-recon-bias            | `model.py:91` tied-weight reconstruction     | `+ b_recon` (eq. 12)       | no bias (L180)                  | no bias                                | 🆘+❌   | D.3 — add bias       |
+| D-sarl-dropout-position      | `model.py:144` SecondOrderNetwork            | before cascade (eq. 2)     | inside cascade loop             | inside cascade loop                    | 🆘+⚠️   | D.4 — move outside   |
+| D-sarl-setting-7             | factorial settings                           | ACB (Young & Tian 2019, λ=0.8) | `AC_lambda.py` in MinAtar examples | not in `setting_to_config`        | ❌      | E.1-E.5 — port ACB  |
+| D-sarl-seeds                 | `experiment_matrix.md` + sprint plan         | 3                          | N/A                             | 10 (matrix)                            | ❌      | B.13 — correct matrix|
+| D-sarl-bce-shape             | `trainer.py:194` `binary_cross_entropy_with_logits` | scalar `y` (eq. 5)  | `wager[B,2]` + `targets[B,2]`   | same                                   | ⚠️     | keep, doc note       |
+| D-sarl-dropout-rate          | `model.py:135` `Dropout(p=?)`                | paper silent               | 0.1                             | 0.1                                    | ⚠️     | keep                 |
+| D-sarl-backward-order        | `trainer.py:197-205` meta branch             | paper silent               | specific order, load-bearing    | same                                   | ⚠️     | keep, load-bearing   |
+| D-002 (existing, re-confirmed)| `sarl/losses.cae_loss`                      | SimCLR contrastive (eq. 4) | CAE (Rifai 2011)                | CAE                                    | 🆘+❌   | C.7-C.9 — policy     |
+
+### B.8 — SARL+CL deviations (8 CL-specific ; 17 SARL héritées)
+
+| ID                                  | Location                             | Paper                        | Student                        | Port                          | Verdict | Phase action        |
+|-------------------------------------|--------------------------------------|-----------------------------|--------------------------------|-------------------------------|:-------:|:--------------------|
+| D-cl-weights                        | `config.cl.{weight_task,weight_distillation,weight_feature}` | T.11 (0.3, 0.6, 0.1) ≠ text p.17 "optimal" (0.4, 0.4, 0.2) | CLI `--weight1=40 --weight2=40 --weight3=20` → (0.4, 0.4, 0.2) | (1.0, 1.0, 1.0) unnormalized | 🆘+❌ | D.20 — align T.11 (0.3, 0.6, 0.1) |
+| D-sarl_cl-max-channels              | `config.cl.max_input_channels`       | 10                          | 10                             | **7** (Seaquest truncated)    | ❌      | D.20 — fix to 10    |
+| D-sarl_cl-num-frames                | `config.training.num_frames` (CL)    | text p.17: 100k per env (×4 envs) | CLI               | 5,000,000                     | ❌      | D.20 — align 100k per env |
+| D-sarl_cl-target-update             | `config.training.target_update_freq` (CL) | 1000 (T.11, not distinguished) | 500 (L1121,1126)     | 500                           | ⚠️     | keep (student match)|
+| D-sarl_cl-lossweight-normalization  | `sarl_cl/loss_weighting.DynamicLossWeighter` | eq. 15-17 `1/max_t(L(t))` | inline running max    | `DynamicLossWeighter` class   | ⚠️     | keep (equivalent)   |
+| D-sarl_cl-channel-adapter           | `sarl_cl/model.py` variable-channel  | 1×1 conv + ReLU (paper p.9) | (to verify)                    | zero-padding + max            | ⚠️     | D.17 — verify impl  |
+| D-sarl_cl-curriculum-order          | `config` / `run_sarl_cl.py`          | Breakout → SpaceInvaders → Seaquest → Freeway (p.9) | (to verify) | (to verify)                   | ⚠️     | D.19 — confirm      |
+| D-sarl_cl-backward-order            | `sarl_cl/trainer.py`                  | paper silent                | specific                       | same                          | ⚠️     | keep, load-bearing  |
+
+*17 SARL deviations héritées (alpha-ema, gamma, lr-2nd, adam-betas, etc.) s'appliquent identiquement — voir section B.7 ci-dessus.*
+
+### B.9 — Blindsight deviations (6 new + D-001, D-002 cross-refs)
+
+| ID                             | Location                          | Paper T.9              | Student `blindsight_tmlr.py`                   | Port + config                      | Verdict | Phase action                     |
+|--------------------------------|-----------------------------------|------------------------|-------------------------------------------------|------------------------------------|:-------:|:---------------------------------|
+| **D-blindsight-hidden-dim**    | `config.first_order.hidden_dim`   | **60**                 | grid `[30,40,50,60,100]` → T.9 selects 60       | **100** (= input_dim)              | 🆘+❌   | D.25 — fix to 60 (RG-002 H1 cause) |
+| **D-blindsight-metric-mismatch**| `trainer.py:413` `evaluate()`    | "Main Task Acc" 0.97   | `testing()` L806                                | `discrimination_accuracy = recall-only on stimulus-present` | 🚨 | D.25 — align metric (RG-002 H2)  |
+| D-blindsight-seeds             | `experiment_matrix.md`            | 500                    | 5-10 (student `main()` `seeds=5`, `seeds_violin=10`) | 10 (matrix)                     | ⚠️      | B.13 + F.1                       |
+| D-blindsight-temperature       | `config` softmax T               | 1.0                    | softmax default                                 | config silent                      | ⚠️      | D.23 — confirm                   |
+| D-blindsight-epochs            | `config.train.n_epochs`           | 200                    | grid runs                                       | 200                                | ⚠️      | D.23 — verify                    |
+| D-blindsight-dropout-rate      | `maps.yaml` dropout               | silent                 | 0.1 (wager) / 0.5 (other L222)                  | per `maps.yaml`                    | ⚠️      | D.23 — confirm                   |
+| *D-001 (existing)*             | Wagering head                     | 2 raw logits           | 2-unit                                          | **1-unit sigmoid**                 | ❌      | already open                     |
+| *D-002 (existing)*             | Main-task loss                    | SimCLR eq. 4           | CAE                                             | CAE                                | 🆘+❌   | already open, C.7-C.9            |
+
+### B.10 — AGL deviations (7 new + D-001/D-002/D-004 cross-refs)
+
+| ID                               | Location                          | Paper T.10               | Student `agl_tmlr.py`                             | Port + config                  | Verdict | Phase action                                 |
+|----------------------------------|-----------------------------------|--------------------------|----------------------------------------------------|--------------------------------|:-------:|:---------------------------------------------|
+| **D-agl-training-missing**       | `src/maps/experiments/agl/trainer.py` | 3-phase (pretrain→train→test) p.13 | `pre_train` L619 + `training` L904 + `testing` L1150 | **only pre_train + evaluate** ❌ | 🚨+❌   | D.28 — port `training()` (RG-003 structural) |
+| D-agl-optimizer                  | `config.optimizer.name`           | RangerVA                 | RangerVA (default L1436)                           | **ADAMAX**                     | ❌      | D.26 — align RangerVA (add `torch_optimizer` dep) |
+| D-agl-sched-step                 | `config.scheduler.step_size`      | 1                        | 1 (actual calls L2144+)                            | **25** (Blindsight-style copy) | ❌      | D.26 — align to 1                            |
+| D-agl-sched-gamma                | `config.scheduler.gamma`          | 0.999                    | 0.999 (actual calls)                               | **0.98**                       | ❌      | D.26 — align to 0.999                        |
+| D-agl-epochs-pretrain            | `config.train.n_epochs`           | 60                       | 30 (L1659, self-contradicts `#default is 60`)      | 200                            | ❌+🆘   | D.26 — align to 60                           |
+| D-agl-seeds                      | `experiment_matrix.md`            | 500                      | 5-10                                                | 10 (matrix)                    | ⚠️      | B.13 + F.2                                   |
+| D-agl-temperature                | config                             | 1.0                      | implicit                                            | config silent                  | ⚠️      | D.26                                         |
+| *D-001 (existing)*                | Wagering head                    | 2 raw logits             | 2-unit                                              | 1-unit sigmoid                 | ❌      | already open                                 |
+| *D-002 (existing)*                | Main-task loss                   | SimCLR eq. 4             | CAE                                                 | CAE                            | 🆘+❌   | already open                                 |
+| *D-004 (existing)*                | AGL chunked sigmoid              | global sigmoid           | chunked per 6-bit WTA                               | chunked per 6-bit WTA          | ⚠️      | already open, confirmed aligned              |
+
+### B.11 — MARL deviations (8 new)
+
+| ID                                   | Location                                | Paper T.12            | Student (config+shell)                     | Future port target         | Verdict | Phase action                              |
+|--------------------------------------|-----------------------------------------|-----------------------|--------------------------------------------|----------------------------|:-------:|:------------------------------------------|
+| D-marl-hidden-size                   | `config.model.hidden_size`              | 100                   | 144 (config L221) / shell var              | **100** (paper)            | 🆘+❌   | E.17                                      |
+| D-marl-actor-lr                      | `config.optimizer.actor_lr`             | 7e-5                  | config 7e-5 BUT shell `--lr 0.00002` = 2e-5 | 7e-5 (paper)              | 🆘     | E.17                                      |
+| D-marl-critic-lr                     | `config.optimizer.critic_lr`            | **100** (typo)        | config 7e-5 (= actor_lr)                   | **7e-5** (student real)    | 🆘     | E.17 — document paper typo                |
+| D-marl-num-env-steps                 | `config.training.num_env_steps`         | 15e6                  | config 40e6 / text p.15 says 300k          | **300k** (paper text)      | 🆘     | E.17 — start 300k, adjust                 |
+| D-marl-entropy-coef                  | `config.ppo.entropy_coef`               | 0.01                  | config 0.01 BUT shell `--entropy_coef 0.004` | 0.01 (paper)              | 🆘     | E.17                                      |
+| D-marl-cascade-not-implemented       | paper Table 12 preamble                 | (implicit: cascade off) | cascade_iter=1 via code                  | cascade_iter=1 all settings | declared| doc only — paper-admitted limitation      |
+| D-marl-attention-extensions          | paper Fig. 4 vs student `modularity.py` | Fig. 4: simple linear+GRU | RIM + SCOFF + skill dynamics + bottom-up | **OMIT** for paper-faithful port | policy | E.11 — minimal port                 |
+| D-marl-seeds                         | `experiment_matrix.md`                  | 3                     | 3                                           | 3                          | ✅      | B.13 (matrix says 10)                     |
+
+### Totaux
+
+| Domaine    | Nouvelles entrées (distinctes)                           |
+|------------|---------------------------------------------------------:|
+| SARL (B.7) | **16** (+ D-002 already existing) |
+| SARL+CL (B.8) | **8** (+ 17 SARL inherited, tracked in B.7 rows) |
+| Blindsight (B.9) | **6** (+ D-001, D-002 cross-refs) |
+| AGL (B.10) | **7** (+ D-001, D-002, D-004 cross-refs) |
+| MARL (B.11) | **8** |
+| **Total new IDs** | **45 new Sprint-08 entries** (DoD plan: ≥ 15, largely exceeded) |
+
+Plus les **4 existantes** (D-001/D-002/D-003/D-004) et **3 G-0N** (G-01/G-02/G-03) héritées de
+Sprint-06 (non ré-dupliquées).
+
+**Total deviations trackées sur le repo : 49 D-IDs + 3 G-IDs = 52 issues documentées.**
+
+### Notes transverses
+
+- **Pattern "🆘 paper-vs-student"** : apparaît **7 fois en SARL** (dont lr-2nd, gamma, target-update,
+  sched-step, alpha-ema, adam-beta1/2), **3 fois en AGL** (epochs-pretrain, et les 4 config copiés
+  Blindsight), **5 fois en MARL** (hidden, actor-lr, entropy, num_env_steps implicite). Le code
+  `external/paper_reference/*` **ne peut pas** avoir produit les chiffres Tables 5/6/7 — les runs
+  originaux paper utilisaient une version de code différente de celle vendored.
+- **Pattern "config copié Blindsight vers AGL"** : D-agl-sched-step, D-agl-sched-gamma,
+  D-agl-optimizer, D-agl-epochs-pretrain — 4 valeurs config `agl.yaml` matchent `blindsight.yaml`
+  au lieu de Table 10 paper. Erreur introductive au port Sprint-04b.
+- **RG-002 (Blindsight) + RG-003 (AGL)** sont maintenant **tracés vers leurs deviations** :
+  RG-002 → D-blindsight-hidden-dim (H1) + D-blindsight-metric-mismatch (H2) ; RG-003 →
+  D-agl-training-missing (structural).
+- **Limitations paper-declared** : D-marl-cascade-not-implemented. À mentionner explicitement
+  dans le rapport Phase G comme "paper itself acknowledges this limitation".
