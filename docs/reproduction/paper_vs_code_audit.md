@@ -585,3 +585,204 @@ gap). H2 est nécessaire mais insuffisant.
 **Next** : Phase B.11 audit MARL (section suivante).
 
 ---
+
+## MARL (B.11)
+
+**Sources comparées :**
+
+- Paper Table 12 (p. 30) + paper §2.2 (SARL baseline) + paper Fig. 4 (MARL architecture) + paper
+  Table 7 cibles z-scores (p. 17). Paper preamble Table 12 : *"MAPS not implemented fully, only
+  with simple 2nd order network with no cascade model due to limitations with computational
+  resources."*
+- Student code : `MARL/MAPPO-ATTENTIOAN/` (188 fichiers, 1.5 MB) — forké de
+  `https://github.com/neuronphysics/MAPPO-ATTENTIOAN` (lui-même dérivé de MAPPO, Yu et al. 2022).
+  Entry point : `onpolicy/scripts/train/train_meltingpot.py` (lancé via `train_meltingpot.sh`).
+  Defaults dans `onpolicy/config.py`. MAPS-specific additions dans :
+  - `onpolicy/algorithms/r_mappo/algorithm/r_actor_critic_meta.py` (L20 : classe `SecondOrderNetwork`)
+  - `onpolicy/algorithms/utils/rnn_meta.py` (RNN/GRU avec cascade + meta)
+  - `onpolicy/runner/separated/meltingpot_runner.py` (training loop orchestrator)
+- Our port : **AUCUN**. `src/maps/experiments/marl/` n'existe pas. À créer Phase E.10-E.21.
+
+### 1. Hyperparameters — Table 12 vs student (config + shell) vs future port target
+
+| #  | Param                          | Paper T.12   | Student `config.py` default | Student shell `-lr 0.00002` override | Future port target      | ∆             | Dev ID                        |
+|----|--------------------------------|-------------:|----------------------------:|-------------------------------------:|------------------------:|:-------------:|:------------------------------|
+| M1 | Num agents (harvest_closed)    | 6            | via CLI `agents=`           | from shell per-substrate             | `marl.yaml` substrate block | ✅        | —                             |
+| M2 | Num agents (harvest_partnership)| 4           | idem                        | idem                                 | idem                     | ✅           | —                             |
+| M3 | Num agents (chemistry)         | 8            | idem                        | idem                                 | idem                     | ✅           | —                             |
+| M4 | Num agents (territory)         | 5            | idem                        | idem                                 | idem                     | ✅           | —                             |
+| M5 | **Hidden size**                | **100**      | **144** (config L221) ❌    | `--hidden_size ${hidden}` runtime var | **to set 100** (Phase E.17) | 🆘+❌       | D-marl-hidden-size            |
+| M6 | Actor lr                       | 7e-5         | 7e-5 (config L248)          | **2e-5** (`--lr 0.00002`) 🆘        | 7e-5 (paper)             | 🆘           | D-marl-actor-lr               |
+| M7 | **Critic lr**                  | **100** ⚠️   | 7e-5 (config L250)          | shell silent → config default 7e-5   | **7e-5** (student actual, paper typo) | 🆘  | D-marl-critic-lr              |
+| M8 | **Num env steps**              | **15e6**     | **40e6** (config L185) ❌   | shell silent                         | paper text p. 15 says 300k ; trancher Phase E.17 | 🆘 | D-marl-num-env-steps          |
+| M9 | Entropy coef                   | 0.01         | 0.01 (config L266)          | **0.004** (`--entropy_coef 0.004`) 🆘 | 0.01 (paper)             | 🆘           | D-marl-entropy-coef           |
+| M10| Clip param                     | 0.2          | 0.2 (config L262)           | shell silent → default               | 0.2                      | ✅           | —                             |
+| M11| Weight decay                   | 1e-5         | 1e-5 (config L254)          | shell silent → default               | 1e-5                     | ✅           | —                             |
+| M12| PPO epoch                      | 15           | 15 (config L257)            | shell silent → default               | 15                       | ✅           | —                             |
+| M13| Optimizer                      | Adam         | Adam                        | `--optimizer ${optimizer}` runtime    | Adam                     | ✅           | —                             |
+
+**13 hyperparam rows. Divergences paper↔student : 5 critiques.**
+
+**Findings hyperparams critiques** :
+
+- **M5 hidden_size** : config default **144**, **PAS 100** de paper Table 12. Shell override via `${hidden}` variable. Student a donc tourné avec 144 (ou variable selon shell context). Paper Table 12 est fausse ou simplifiée.
+- **M6 actor_lr** : config default 7e-5 matche paper, mais le **shell override est 2e-5** (`--lr 0.00002`). Student a donc tourné avec **2e-5, pas 7e-5**. Divergence paper-vs-student classique.
+- **M7 critic_lr = 100 dans paper** : typo confirmée — config default 7e-5 (actor_lr = critic_lr = 7e-5). Le "100" de Table 12 est un artifact (probablement "100" signifiait "×100 de l'actor" ou le suffixe "e-5" a été perdu). **Notre port cible 7e-5** (alignement sur code student = seule valeur réellement utilisée).
+- **M8 num_env_steps = 15e6** : paper Table 12 dit 15M. Main text p. 15 dit **300k**. Config default = **40e6** (!). Triple-inconsistency similaire à SARL alpha-ema. Paper lui-même mentionne "16 h per seed" dans le préambule Table 12 → 15M seraient semaines sur A100, donc **300k est plus plausible** (compatible avec 16h). Le student config 40e6 indique un entraînement plus long au besoin. **Phase E.17 décision** : commencer par 300k (paper text), ajuster si les rewards n'ont pas convergé.
+- **M9 entropy_coef** : config 0.01 matche paper, shell override 0.004. Pareil que M6 — student override.
+
+### 2. Architectural overview — paper Fig. 4 vs student code
+
+Paper Fig. 4 (p. 8) décrit :
+```
+Observation → Encoder Conv → Positional Encoding → Linear → GRU → { Value Network, comparison matrix → Second-order → Wager }
+```
+
+Student implementation (`r_actor_critic_meta.py`) :
+
+```python
+class SecondOrderNetwork(nn.Module):  # L20
+    comparison_layer = nn.Linear(num_linear_units, num_linear_units)  # + ReLU + Dropout(0.1)
+    wager = nn.Linear(num_linear_units, 2)
+    # Init: comparison_layer uniform(-1,1), wager uniform(0,0.1)
+
+    def forward(comparison_matrix, prev_comparison, cascade_rate):
+        comparison_out = Dropout(ReLU(comparison_layer(comparison_matrix)))
+        if prev_comparison is not None:
+            comparison_out = α·comparison_out + (1-α)·prev_comparison   # eq. 9 cascade
+        return wager(comparison_out), comparison_out
+```
+
+**Divergence architecture student ↔ SARL** : MARL `SecondOrderNetwork` a un **vrai `comparison_layer`
+linear+ReLU+Dropout** (pas tied-weights), alors que SARL utilise `F.linear(hidden, W^T)` (tied
+weights via transposée). Ce n'est pas décrit dans paper §2.2 qui présente SARL et MARL
+uniformément.
+
+Student ajoute aussi **RIM** (Recurrent Independent Mechanisms, Goyal et al. 2019), **SCOFF**
+(Structured Object-Oriented Forecasting), **skill discriminator**, **bottom-up form attention** —
+éléments d'attention bien au-delà du "linear + GRU" du paper Fig. 4. Les flags CLI
+`--rim_num_units`, `--scoff_num_units`, `--skill_dim`, `--bottom_up_form_num_of_objects`, etc.
+témoignent. **Paper Fig. 4 simplifie l'architecture réelle.** À documenter comme
+D-marl-attention-extensions (paper silent, student heavy).
+
+### 3. Functional module mapping (B.11 focus)
+
+**Cœur de B.11** : mapper les fichiers student vers la future structure `src/maps/experiments/marl/` (Phase E.10-E.21).
+
+| Student path                                                                          | Role                                                                                  | Paper Fig. 4 component             | Target port module (Phase E.11-E.21)                       |
+|---------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|-------------------------------------|------------------------------------------------------------|
+| `onpolicy/scripts/train/train_meltingpot.py`                                          | Entry point — parse args, init env, run                                               | —                                   | `scripts/run_marl.py` (E.18)                               |
+| `onpolicy/config.py`                                                                  | CLI args + defaults                                                                   | —                                   | `config/training/marl.yaml` (E.17)                         |
+| `onpolicy/envs/meltingpot/`                                                           | MeltingPot env wrapper                                                                | Observation input                   | Keep vendored or re-use `external/` (E.6-E.9)              |
+| `onpolicy/runner/separated/meltingpot_runner.py`                                      | **Training orchestrator** — loop rollout → update → second-order branch               | Overall flow                        | `src/maps/experiments/marl/training_loop.py` (E.16)        |
+| `onpolicy/algorithms/r_mappo/algorithm/r_actor_critic_meta.py`                        | **MAPS actor/critic** — encoder conv + GRU + second-order network                     | Encoder Conv + GRU + 2nd-order     | `src/maps/experiments/marl/model.py` (E.11)                |
+| `onpolicy/algorithms/r_mappo/algorithm/rMAPPOPolicy.py`                               | Policy wrapper + PopArt value normalization                                           | Value Network                       | `src/maps/experiments/marl/model.py` (E.11)                |
+| `onpolicy/algorithms/r_mappo/r_mappo.py` (to locate)                                  | **PPO update step** — clip loss + value loss + entropy                                | Optimizer update                    | `src/maps/experiments/marl/trainer.py` (E.15)              |
+| `onpolicy/utils/shared_buffer.py` (to locate)                                         | **On-policy rollout buffer**                                                          | Rollout storage                     | `src/maps/experiments/marl/buffer.py` (E.12)               |
+| `onpolicy/algorithms/utils/rnn_meta.py`                                               | GRU with cascade + meta                                                               | GRU + cascade                       | Into `model.py` cascade logic (E.11)                       |
+| `onpolicy/algorithms/utils/cnn.py` (Encoder class)                                    | Conv encoder                                                                          | Encoder Conv                        | Into `model.py` (E.11)                                     |
+| `onpolicy/algorithms/utils/positional_encoding.py` (to locate)                        | Sinusoïdal relative positional encoding                                               | Positional Encoding                 | Into `model.py` (E.11)                                     |
+| `r_actor_critic_meta.py:SecondOrderNetwork`                                           | comparison_layer + wager + cascade + dropout                                          | Second-order + wager                | `src/maps/experiments/marl/model.py` or reuse `components/second_order.py` (E.11)  |
+| `onpolicy/algorithms/utils/modularity.py` (SCOFF)                                     | SCOFF attention module (paper silent)                                                 | — (paper-silent extension)          | **Phase E decision** : porter ou simplifier selon décision policy paper-faithful |
+| `onpolicy/algorithms/utils/rim_cell.py` (RIM)                                         | RIM attention module (paper silent)                                                   | — (paper-silent extension)          | Idem                                                       |
+
+**Mapping gates Phase E** :
+- E.11 (`model.py`) : conv encoder + positional encoding + GRU + second-order + value head — le gros.
+- E.12 (`buffer.py`) : extraire `shared_buffer.py` → rollout storage pour on-policy.
+- E.13 (`rollout.py`) : multi-agent env step logic.
+- E.14 (`losses.py`) : PPO clip + value + entropy + wagering BCE.
+- E.15 (`trainer.py`) : `marl_update_step` orchestrateur.
+- E.16 (`training_loop.py`) : outer loop, setting_to_config.
+- E.17 (`marl.yaml`) : config paper Table 12 values.
+- E.18-E.19 (`scripts/run_marl.py`, `slurm/marl_array.sh`) : entry points.
+- E.20 (parity tests) : Tier 1/2/3 vs student.
+- E.21 (smoke).
+
+**Décision à prendre Phase E.11** : porter RIM/SCOFF attention ou pas ? Paper Fig. 4 ne les
+mentionne pas → policy "paper-faithful" dit de les **omettre** pour un port minimal matching
+paper. Les runs Phase F utiliseront le port paper-faithful (sans RIM/SCOFF), différent des runs
+student originaux. À documenter dans `deviations.md` comme `D-marl-attention-extensions`.
+
+### 4. 4 substrates + agent counts
+
+| Substrate                                                       | Paper T.12 agents | Student shell (paper §A.4)           | Matches ? |
+|-----------------------------------------------------------------|:-----------------:|:------------------------------------:|:---------:|
+| commons_harvest__closed                                         | 6                 | (shell dispatch, to verify per case) | ✅ (paper)|
+| commons_harvest__partnership                                    | 4                 | idem                                 | ✅        |
+| chemistry_three_metabolic_cycles_with_plentiful_distractors     | 8                 | idem                                 | ✅        |
+| territory_inside_out                                            | 5                 | idem                                 | ✅        |
+
+(Shell a plus de substrates possible — the 4 paper-specific ones sont un sous-ensemble.)
+
+### 5. MeltingPot install (cross-ref)
+
+Recipe déjà documentée dans `docs/install_tamia.md` section "install_meltingpot" (via Phase
+E.6-E.8) :
+- Python 3.10 venv dédié (dmlab2d wheel Python-3.10 only).
+- `pip install dmlab2d-1.0.0_dev.10-cp310-cp310-manylinux_2_31_x86_64.whl`.
+- `git clone https://github.com/deepmind/meltingpot` + pin commit < 2025-05-29.
+- `pip install --editable .[dev]`.
+
+### 6. Seeds
+
+| Source                                      | Seeds                                          |
+|---------------------------------------------|:----------------------------------------------:|
+| Paper Table 7 caption + text p. 15          | **N = 3** (*"trained for 300,000 steps on three seeds"*) |
+| Student shell                                | Per-run seed CLI arg, typically 1-3 runs       |
+| Our `experiment_matrix.md` (pre-B.13)        | 10 ❌ (same issue as SARL)                      |
+
+**D-marl-seeds** : correction à 3 dans Phase B.13.
+
+### 7. Paper-declared limitation — cascade non-implémenté MARL
+
+Paper Table 12 preamble (verbatim) :
+
+> *"MAPS not implemented fully, only with simple 2nd order network with no cascade model due to
+> limitations with computational resources."*
+
+**Implication** : les **z-scores MARL de paper Table 7** ne sont **pas obtenus avec cascade**.
+Settings 2/4/5/6 (qui activent cascade sur 1st / 2nd / both) **ne peuvent pas** être strictement
+paper-faithful pour MARL — le paper admet lui-même qu'il n'a pas tourné cascade.
+
+**Conséquence** pour Phase F.5 (MARL reproduction runs) :
+- Setting 1 (baseline, no cascade, no 2nd) : reproducible.
+- Setting 3 (2nd-order, no cascade) : reproducible, matche preamble.
+- Settings 2, 4, 5, 6 : paper les reporte en Table 7 **mais** sans cascade actif → résultats
+  "with cascade" notés dans Table 7 sont pour l'architecture "avec cascade" mais paper a forcé
+  cascade_iter=1 (équivalent cascade off). À confirmer.
+
+**Flagger comme `D-marl-cascade-not-implemented`** dans `deviations.md` — **limitation declared
+by paper itself**, cas spécial.
+
+### 8. Summary of MARL divergences + port-gaps
+
+**Divergences hyperparams (M rows)** :
+
+| # | Deviation ID                     | Paper T.12  | Student (real)          | Future port target                     | Verdict | Action                         |
+|---|----------------------------------|------------:|------------------------:|---------------------------------------:|:-------:|:-------------------------------|
+| 1 | D-marl-hidden-size              | 100         | 144 (config default)    | 100 (paper)                            | 🆘+❌   | E.17 — align to 100            |
+| 2 | D-marl-actor-lr                 | 7e-5        | **2e-5** (shell override) | 7e-5 (paper)                          | 🆘      | E.17 — align to 7e-5           |
+| 3 | D-marl-critic-lr                | **100** (typo) | 7e-5 (config default) | 7e-5 (student real, paper typo)        | 🆘      | E.17 — 7e-5, document paper typo |
+| 4 | D-marl-num-env-steps            | 15e6        | 40e6 (config) or 300k (text) | 300k (paper text, matches 16h A100) | 🆘      | E.17 — start 300k, adjust      |
+| 5 | D-marl-entropy-coef             | 0.01        | **0.004** (shell override) | 0.01 (paper)                         | 🆘      | E.17 — align to 0.01           |
+| 6 | D-marl-cascade-not-implemented  | (implicit)  | simple 2nd-order only   | cascade_iter=1 for all settings        | declared | doc only in deviations.md     |
+| 7 | D-marl-attention-extensions     | paper silent | RIM + SCOFF + skill dynamics | **OMIT** for paper-faithful port   | policy  | E.11 — minimal port            |
+| 8 | D-marl-seeds                    | 3           | 3                       | 3                                      | ✅      | B.13 correct matrix            |
+
+**Port-gaps (pour Phase E)** :
+
+- Port `src/maps/experiments/marl/` entièrement **à créer** (14 sub-phases E.10-E.21 dans le plan).
+- MeltingPot env **à installer** (3 sub-phases E.6-E.8).
+- Parity tests `tests/parity/marl/` **à créer** (E.20) — atol=1e-6 vs student Tier 1/2/3.
+- Scripts SLURM `marl_array.sh` **à créer** (E.19) — GPU obligatoire (MeltingPot compute-heavy).
+
+**Finding critique B.11** : **student code diverge de paper Table 12 sur 5 hyperparams** (hidden,
+actor_lr, critic_lr, num_env_steps, entropy_coef). Encore une occurrence du pattern "paper Table
+ne décrit pas ce qui a été réellement tourné". Pour le port paper-faithful, on aligne sur Table 12
+quand sensé (100, 7e-5 actor, 7e-5 critic student-correction, 0.01 entropy, 300k steps text) et
+on documente la divergence vs student. **La policy RIM/SCOFF off** est un choix d'ingé pour
+minimiser la surface du port (matche paper Fig. 4).
+
+**Next** : Phase B.12 consolidate all deviations into `docs/reproduction/deviations.md`.
+
+---
