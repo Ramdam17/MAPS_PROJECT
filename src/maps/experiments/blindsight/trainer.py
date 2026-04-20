@@ -178,6 +178,16 @@ class BlindsightTrainer:
 
     def build(self) -> None:
         """Construct networks, optimizers, and schedulers from config."""
+        # Sprint-08 D.22b — fail-fast on the D-002 first-order-loss toggle.
+        # Default `cae` is the paper-faithful-via-student-code path; `simclr`
+        # is a reservation guard-rail that raises NotImplementedError.
+        # See docs/reports/sprint-08-d22b-simclr-decision.md.
+        from maps.experiments.sarl.training_loop import _check_first_order_loss_kind
+
+        _check_first_order_loss_kind(
+            str(self.cfg.get("first_order_loss", {}).get("kind", "cae"))
+        )
+
         fo_cfg = self.cfg.first_order
         so_cfg = self.cfg.second_order
 

@@ -122,6 +122,12 @@ def _build_training_config(
     gamma_val = float(getattr(cfg.training, "gamma", 0.999))
     betas_cfg = getattr(cfg.optimizer, "betas", (0.95, 0.95))
     betas_val = (float(betas_cfg[0]), float(betas_cfg[1]))
+    # Sprint-08 D.22b: pick up the first-order-loss toggle from yaml if present.
+    fo_loss_kind = str(
+        getattr(getattr(cfg, "first_order_loss", {}), "kind", "cae")
+        if hasattr(cfg, "first_order_loss")
+        else "cae"
+    )
 
     base = SarlCLTrainingConfig(
         game=game,
@@ -151,6 +157,7 @@ def _build_training_config(
         scheduler_gamma=float(cfg.scheduler.gamma),
         gamma=gamma_val,
         alpha=float(cfg.alpha),
+        first_order_loss_kind=fo_loss_kind,
         validation_every_episodes=int(cfg.validation.every_episodes),
         validation_iterations=int(cfg.validation.n_episodes),
         device=str(cfg.device),

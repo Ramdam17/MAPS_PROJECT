@@ -57,6 +57,7 @@ from torch.optim.lr_scheduler import StepLR
 from maps.experiments.sarl.data import SarlReplayBuffer, Transition, get_state, target_wager
 from maps.experiments.sarl.evaluate import ValidationSummary, aggregate_validation
 from maps.experiments.sarl.rollout import epsilon_greedy_action
+from maps.experiments.sarl.training_loop import _check_first_order_loss_kind
 from maps.experiments.sarl_cl.loss_weighting import DynamicLossWeighter
 from maps.experiments.sarl_cl.model import (
     AdaptiveQNetwork,
@@ -156,6 +157,9 @@ class SarlCLTrainingConfig:
     # Paper Table 11 γ=0.999 (aligned 2026-04-20, D.7). See deviations.md
     # D-sarl-gamma. Override to 0.99 for student-baseline reproduction.
     gamma: float = 0.999
+    # Sprint-08 D.22b: first-order loss family ('cae' or 'simclr'). See
+    # sarl/training_loop.py + docs/reports/sprint-08-d22b-simclr-decision.md.
+    first_order_loss_kind: str = "cae"
 
     # Validation cadence.
     validation_every_episodes: int = 50
@@ -590,6 +594,9 @@ def run_training_cl(
     state_shape = env.state_shape()
     num_actions = env.num_actions()
     in_channels = state_shape[-1]
+
+    # Sprint-08 D.22b: fail-fast if the D-002 toggle isn't the implemented path.
+    _check_first_order_loss_kind(cfg.first_order_loss_kind)
 
     log.info(
         "SARL+CL training starting: game=%s seed=%d meta=%s cascade=(%d,%d) "

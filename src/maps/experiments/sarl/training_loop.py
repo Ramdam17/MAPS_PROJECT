@@ -159,6 +159,12 @@ class SarlTrainingConfig:
     # aligns dataclass default with config yaml). See D-sarl-alpha-ema.
     alpha: float = 45.0
 
+    # Sprint-08 D.22b: paper eq.4 first-order loss family. 'cae' (default,
+    # paper-faithful-via-student-code) or 'simclr' (paper-prose; not ported —
+    # raises NotImplementedError at setup if selected). See
+    # docs/reports/sprint-08-d22b-simclr-decision.md.
+    first_order_loss_kind: str = "cae"
+
     # Validation cadence.
     validation_every_episodes: int = 50
     validation_iterations: int = 3
@@ -271,6 +277,39 @@ def _build_optimizers(
 
 
 # ── Checkpoint / resume (Sprint-08 D.13) ────────────────────────────────────
+
+#: Sprint-08 D.22b — allowed values for the first-order-loss toggle.
+#: Only 'cae' is implemented; 'simclr' is a reservation guard-rail.
+_FIRST_ORDER_LOSS_KINDS: frozenset[str] = frozenset({"cae", "simclr"})
+
+
+def _check_first_order_loss_kind(kind: str) -> None:
+    """Validate the D.22b toggle before training starts.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``kind == "simclr"``. Paper §2.2 prose describes SimCLR but no
+        existing implementation (paper author code or our port) realises it;
+        D.22b decision is to keep CAE until Phase F results motivate a flip.
+        See docs/reports/sprint-08-d22b-simclr-decision.md.
+    ValueError
+        If ``kind`` is not one of ``_FIRST_ORDER_LOSS_KINDS``.
+    """
+    if kind == "simclr":
+        raise NotImplementedError(
+            "first_order_loss.kind='simclr' is a paper-prose-faithful variant "
+            "that has not been ported. The paper's own code and our port both "
+            "use 'cae'. See docs/reports/sprint-08-d22b-simclr-decision.md for "
+            "the decision log + revisit conditions, and flip this toggle back "
+            "to 'cae' or implement SimCLR before rerunning."
+        )
+    if kind not in _FIRST_ORDER_LOSS_KINDS:
+        raise ValueError(
+            f"first_order_loss.kind must be one of {sorted(_FIRST_ORDER_LOSS_KINDS)}, "
+            f"got {kind!r}."
+        )
+
 
 #: Format version for the checkpoint payload. Bump when the schema changes
 #: in a way the `_restore_from_checkpoint` loader cannot silently handle.
@@ -504,6 +543,9 @@ def run_training(
     state_shape = env.state_shape()
     num_actions = env.num_actions()
     in_channels = state_shape[-1]  # MinAtar is HWC → last axis is channels
+
+    # Sprint-08 D.22b: fail-fast if the D-002 toggle isn't the implemented path.
+    _check_first_order_loss_kind(cfg.first_order_loss_kind)
 
     log.info(
         "SARL training starting: game=%s seed=%d meta=%s cascade=(%d,%d) frames=%d",
