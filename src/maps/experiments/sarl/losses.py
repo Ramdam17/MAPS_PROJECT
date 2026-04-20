@@ -65,8 +65,15 @@ def cae_loss(
     Parameters
     ----------
     W : Tensor of shape (N_hidden, N_input)
-        Weight matrix of the hidden layer; passed live from ``state_dict()`` so
-        gradients flow back through it.
+        Weight matrix of the hidden layer. Typically passed via
+        ``policy_net.state_dict()['fc_hidden.weight']``, which PyTorch
+        **detaches by default** (``keep_vars=False``). The Jacobian term
+        therefore does NOT propagate gradient directly back to W — only
+        via ``h``'s own autograd graph through the encoder. See the module
+        docstring (L32-41) and `docs/reviews/losses.md §C.7 (d)` for the
+        full audit. (Corrected 2026-04-20, D.11-fix-1 — the earlier
+        wording "so gradients flow back through it" was a residual from
+        before the C.10 module-docstring correction.)
     x : Tensor of shape (N_batch, ...)
         "Target" signal. In the DQN context this is the bootstrapped TD
         target ``r + γ · max_a Q_target(s', a)``.

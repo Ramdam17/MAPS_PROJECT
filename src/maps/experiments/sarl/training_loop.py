@@ -71,18 +71,21 @@ log = logging.getLogger(__name__)
 
 # ── Paper constants (source: external/MinAtar/examples/maps.py:92-107) ──────
 
-# Sprint-08 D.9 (2026-04-20): 5 constants aligned paper-faithful. Overrides
-# via CLI (`-o training.batch_size=128 ...`) reproduce the student baseline.
-# See docs/reproduction/deviations.md D-sarl-{batch-size,step-size-1,lr-2nd,
-# adam-beta1/2,sched-step}.
-BATCH_SIZE = 32  # paper Table 11 (was 128 port-only divergence)
+# Sprint-08 D.9+D.12 (2026-04-20): 3 constants aligned paper-faithful
+# (STEP_SIZE_2, ADAM_BETAS, SCHEDULER_PERIOD). BATCH_SIZE and STEP_SIZE_1
+# were ALREADY paper-faithful pre-D.9; D.9 mistakenly changed them based
+# on misreading and D.12 restores the correct paper-Table-11 values.
+# Override via CLI (`-o training.num_frames=5000000 ...`) for student/legacy
+# reproduction. See docs/reproduction/deviations.md D-sarl-{num-frames,
+# lr-2nd,adam-beta1/2,sched-step}.
+BATCH_SIZE = 128  # paper Table 11 row 1 (student 128 too) — paper-faithful
 REPLAY_BUFFER_SIZE = 100_000
 REPLAY_START_SIZE = 5_000
 TRAINING_FREQ = 1  # update every N frames once warmup is done
 TARGET_NETWORK_UPDATE_FREQ = 1_000  # sync cadence, in policy-update steps
 MIN_SQUARED_GRAD = 0.01  # Adam eps
-STEP_SIZE_1 = 0.00025  # policy-net learning rate — paper Table 11 (was 0.0003)
-STEP_SIZE_2 = 0.0002  # second-order learning rate — paper Table 11 (was 0.00005)
+STEP_SIZE_1 = 0.0003  # policy-net learning rate — paper Table 11 row 9 (paper-faithful)
+STEP_SIZE_2 = 0.0002  # second-order learning rate — paper Table 11 (was 0.00005 — D-sarl-lr-2nd)
 ADAM_BETAS: tuple[float, float] = (0.95, 0.95)  # paper Table 11 (student omitted → PyTorch default 0.9/0.999)
 SCHEDULER_STEP = 0.999  # StepLR gamma (paper silent; student value kept)
 SCHEDULER_PERIOD = 1  # StepLR step_size — paper Table 11 (suspected typo, student used 1000); see _build_optimizers
@@ -130,7 +133,9 @@ class SarlTrainingConfig:
     cascade_iterations_2: int = 1
 
     # DQN hyperparameters.
-    num_frames: int = 5_000_000
+    # num_frames = 500_000 per paper Table 11 (D.12); override to 5_000_000
+    # for legacy / student-empirical reproduction. See D-sarl-num-frames.
+    num_frames: int = 500_000
     batch_size: int = BATCH_SIZE
     replay_buffer_size: int = REPLAY_BUFFER_SIZE
     replay_start_size: int = REPLAY_START_SIZE

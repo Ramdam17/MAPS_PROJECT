@@ -19,16 +19,20 @@ game: space_invaders          # one of {space_invaders, breakout, seaquest, aste
 setting: 6
 
 # ── DQN hyperparameters (paper Table 11) ───────────────────────────────────
-# Sprint-08 D.9 (2026-04-20): 5 hyperparameters aligned from student values
-# to paper-faithful ones. For student-baseline reproduction override with:
-#   -o training.batch_size=128 -o optimizer.lr_first_order=0.0003 \
-#   -o optimizer.lr_second_order=0.00005 -o optimizer.betas=[0.9,0.999] \
-#   -o scheduler.step_size=1000
-# See docs/reproduction/deviations.md D-sarl-batch-size / -step-size-1 /
-#   -lr-2nd / -adam-beta1/2 / -sched-step.
+# Sprint-08 D.9 (2026-04-20): 3 hyperparameters aligned to paper-faithful
+# values (lr_second_order, adam betas, scheduler.step_size).
+# Sprint-08 D.12 (2026-04-20): num_frames aligned to paper appendix Table 11
+# (500,000); main text mentions 1M — appendix wins per TMLR convention.
+# Also D.12 REVERTS 2 D.9 regressions (batch_size and lr_first_order were
+# already paper-faithful pre-D.9; see deviations.md note on D.8 misread).
+# For student-baseline reproduction override with:
+#   -o training.num_frames=5000000 -o optimizer.lr_second_order=0.00005 \
+#   -o optimizer.betas=[0.9,0.999] -o scheduler.step_size=1000
+# See docs/reproduction/deviations.md D-sarl-num-frames / -lr-2nd /
+#   -adam-beta1/2 / -sched-step.
 training:
-  num_frames: 5_000_000        # NUM_FRAMES (paper constant; D-sarl-num-frames debate pending D.12)
-  batch_size: 32               # BATCH_SIZE — paper Table 11 (student = 32 also; port was 128, fix D.9)
+  num_frames: 500_000          # paper Table 11 row 5 (text says 1M — appendix wins). D-sarl-num-frames resolved D.12
+  batch_size: 128              # paper Table 11 row 1 (student 128 too) — paper-faithful, unchanged
   replay_buffer_size: 100_000  # REPLAY_BUFFER_SIZE
   replay_start_size: 5_000     # REPLAY_START_SIZE
   training_freq: 1             # TRAINING_FREQ (update every frame once warmed up)
@@ -42,7 +46,7 @@ training:
 # ── Optimizer — paper uses Adam with custom betas (NOT Adamax like blindsight/agl) ──
 optimizer:
   name: Adam
-  lr_first_order: 0.00025      # step_size1 (paper Table 11; port was 0.0003 typo — D-sarl-step-size-1 resolved D.9)
+  lr_first_order: 0.0003       # step_size1 — paper Table 11 row 9 (student 0.0003 too) — paper-faithful, unchanged
   lr_second_order: 0.0002      # step_size2 (paper Table 11; port was 0.00005 — D-sarl-lr-2nd resolved D.9)
   eps: 0.01                    # MIN_SQUARED_GRAD (Adam numerical-stability eps)
   # Paper Table 11: betas=(0.95, 0.95). Student omits `betas=...` arg so Adam

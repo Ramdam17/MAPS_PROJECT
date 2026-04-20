@@ -39,36 +39,26 @@ SCHEDULER_PERIOD = 1_000
 
 | Const               | Paper Table 11 | Student `sarl_maps.py` | Port                    | Verdict |
 |:--------------------|:--------------:|:-----------------------|:------------------------|:------:|
-| `BATCH_SIZE`        | 32 (text)      | `BATCH_SIZE = 32` (L99) | **128**                 | 🆘 new — port diverges both |
+| `BATCH_SIZE`        | **128** (row 1) | 128 (L99)             | 128                     | ✅ paper-faithful (D.12 correction — earlier D.8 grep claim "32" was a misread of paper_tables_extracted.md) |
 | `REPLAY_BUFFER_SIZE`| 100,000        | 100,000                | 100,000                 | ✅    |
 | `REPLAY_START_SIZE` | 5,000          | 5,000                  | 5,000                   | ✅    |
 | `TRAINING_FREQ`     | implicit "every frame" | 1                | 1                       | ✅    |
 | `TARGET_NETWORK_UPDATE_FREQ` | 1,000 | **100** (L1188,1193)    | 1,000                   | 🆘 port=paper (student was wrong) — D-sarl-target-update resolved ✅ |
 | `MIN_SQUARED_GRAD`  | 0.01           | 0.01                   | 0.01                    | ✅    |
-| `STEP_SIZE_1`       | 0.00025        | 0.00025                | **0.0003**              | 🆘 port diverges; small but non-zero — investigate |
+| `STEP_SIZE_1`       | **0.0003** (row 9) | 0.0003 (L98)       | 0.0003                  | ✅ paper-faithful (D.12 correction — earlier D.8 claim "0.00025" was a misread) |
 | `STEP_SIZE_2`       | 0.0002         | **0.00005** (student wrong) | 0.00005            | 🆘+❌ D-sarl-lr-2nd (already tracked, queued D.9) |
 | `SCHEDULER_PERIOD`  | **1**          | 1,000 (student wrong)  | 1,000                   | 🆘+❌ D-sarl-sched-step (already tracked, queued D.9) |
 | `SCHEDULER_STEP`    | silent         | 0.999                  | 0.999                   | ⚠️ D-sarl-sched-gamma (info) |
 
-### 🚨 New finding D.8-F1 — `BATCH_SIZE = 128` diverges paper **and** student
+### D.8-F1 and D.8-F2 — **RETRACTED 2026-04-20 in D.12**
 
-Paper Table 11 dit `BATCH_SIZE = 32` (text p.??). Student `sarl_maps.py:99` confirme `BATCH_SIZE = 32`.
-Port L74 = **128** — **diverge des deux**.
-
-**Impact** : batch size 4× plus grand → gradient variance réduit, training converge différemment.
-Peut matérialement affecter les z-scores Tables 5/6/7.
-
-**Piste D8-fix-1** : aligner sur paper `BATCH_SIZE = 32`. Queued D.9 (batch with adam betas,
-lr_second_order, sched_step aligned en une fois). Ou créer nouveau D-sarl-batch-size entry.
-
-### 🚨 New finding D.8-F2 — `STEP_SIZE_1 = 0.0003` diverges paper (paper = 0.00025)
-
-Paper Table 11 prescrit `step_size_1 = 0.00025`. Student `sarl_maps.py` utilise `0.00025`. Port L80 =
-**0.0003** — diverge ~20%.
-
-**Origine probable** : typo ou "rounded" lors du port. À vérifier git blame.
-
-**Piste D8-fix-2** : aligner `STEP_SIZE_1 = 0.00025` (paper-faithful). Queued D.9.
+The D.8 review originally flagged `BATCH_SIZE=128` and `STEP_SIZE_1=0.0003` as port-only
+divergences from paper (claimed paper=32 / 0.00025). Both claims were wrong — a misreading of
+`paper_tables_extracted.md` that contradicts the source-of-truth `paper_vs_code_audit.md` rows 1
+and 9. Paper Table 11 actually specifies **128** and **0.0003**; student matches; port was
+always paper-faithful on these two parameters. D.9 unfortunately applied the proposed "fixes"
+and introduced regressions; D.12 reverts them. **No deviation exists for either parameter.**
+See commit log for the D.12 revert + the honest retraction of D8-F1/D8-F2 findings.
 
 ## (b) `SarlTrainingConfig` dataclass (L99-151)
 

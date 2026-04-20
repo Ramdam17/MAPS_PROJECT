@@ -37,11 +37,11 @@ cl:
   weight_feature: 1.0
 
 # ── DQN hyperparameters (paper Table 11) ───────────────────────────────────
-# Sprint-08 D.9 (2026-04-20): same paper-faithful alignment as config/training/
-# sarl.yaml. See that file + deviations.md for the full rationale / overrides.
+# Sprint-08 D.9+D.12 (2026-04-20): paper-faithful alignment, same as
+# config/training/sarl.yaml. See that file + deviations.md for rationale.
 training:
-  num_frames: 5_000_000
-  batch_size: 32               # paper Table 11 (D-sarl-batch-size resolved D.9)
+  num_frames: 500_000          # paper Table 11 (was 5M — D-sarl-num-frames resolved D.12)
+  batch_size: 128              # paper Table 11 (paper-faithful, unchanged)
   replay_buffer_size: 100_000
   replay_start_size: 5_000
   training_freq: 1
@@ -52,7 +52,7 @@ training:
 # ── Optimizer (Adam, same as standard SARL, paper-faithful post-D.9) ────────
 optimizer:
   name: Adam
-  lr_first_order: 0.00025      # paper Table 11 (was 0.0003 — D-sarl-step-size-1)
+  lr_first_order: 0.0003       # paper Table 11 (paper-faithful, unchanged)
   lr_second_order: 0.0002      # paper Table 11 (was 0.00005 — D-sarl-lr-2nd)
   eps: 0.01
   betas: [0.95, 0.95]          # paper Table 11 (D-sarl-adam-beta1/2)

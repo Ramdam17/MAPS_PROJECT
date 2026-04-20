@@ -73,15 +73,15 @@ log = logging.getLogger(__name__)
 # These match the standard SARL defaults — CL does not change optimization
 # hyperparameters, only the loss composition.
 
-# Sprint-08 D.9 (2026-04-20): aligned paper-faithful, same as standard SARL.
-# Overrides via CLI reproduce the student baseline. See sarl.yaml + deviations.md.
-BATCH_SIZE = 32  # paper Table 11 (was 128)
+# Sprint-08 D.9+D.12 (2026-04-20): aligned paper-faithful, same as standard
+# SARL. See sarl/training_loop.py + deviations.md for full rationale.
+BATCH_SIZE = 128  # paper Table 11 (paper-faithful, unchanged)
 REPLAY_BUFFER_SIZE = 100_000
 REPLAY_START_SIZE = 5_000
 TRAINING_FREQ = 1
 TARGET_NETWORK_UPDATE_FREQ = 500  # paper CL uses 500 (not 1000); line 1121
 MIN_SQUARED_GRAD = 0.01
-STEP_SIZE_1 = 0.00025  # paper Table 11 (was 0.0003)
+STEP_SIZE_1 = 0.0003  # paper Table 11 (paper-faithful, unchanged)
 STEP_SIZE_2 = 0.0002  # paper Table 11 (was 0.00005)
 ADAM_BETAS: tuple[float, float] = (0.95, 0.95)  # paper Table 11 (was PyTorch default)
 SCHEDULER_STEP = 0.999
@@ -131,7 +131,9 @@ class SarlCLTrainingConfig:
     weight_feature: float = 1.0
 
     # DQN hyperparameters.
-    num_frames: int = 5_000_000
+    # num_frames = 500_000 per paper Table 11 (D.12); override to 5_000_000
+    # for legacy reproduction. See D-sarl-num-frames.
+    num_frames: int = 500_000
     batch_size: int = BATCH_SIZE
     replay_buffer_size: int = REPLAY_BUFFER_SIZE
     replay_start_size: int = REPLAY_START_SIZE
