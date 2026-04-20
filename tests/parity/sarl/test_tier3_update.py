@@ -86,21 +86,37 @@ CASCADE_ON = 50
 # ─── Fixtures & helpers ──────────────────────────────────────────────────────
 
 
+#: Keys allowed in dst but not in src (paper-faithful parameters that the
+#: frozen student reference does not carry). D.7 adds `b_recon` to
+#: SarlQNetwork per paper eq.12; it is zero-initialised so numerical parity
+#: at init is preserved even though the key set diverges.
+_DST_ONLY_ALLOWED_KEYS: frozenset[str] = frozenset({"b_recon"})
+
+
 def _copy_state_dict(src: torch.nn.Module, dst: torch.nn.Module) -> None:
     """Copy every parameter from src into dst by name.
 
     Uses ``strict=False`` because ref vs ours may differ in buffer metadata
-    (e.g. dropout reports ``training`` state); but PARAMETER names
-    (``conv.weight``, ``fc_hidden.weight``, ``actions.weight``, ``wager.weight``)
-    MUST align — we assert that below.
+    (e.g. dropout reports ``training`` state); PARAMETER names must match
+    EXCEPT for paper-faithful extras on our side (see
+    ``_DST_ONLY_ALLOWED_KEYS``), which we tolerate and leave at their
+    zero-initialised value so numerical parity at init holds.
     """
     src_state = src.state_dict()
     dst_state = dst.state_dict()
-    # Guardrail: if names drift, tests would silently use stale weights.
-    assert set(src_state.keys()) == set(dst_state.keys()), (
-        f"state_dict keys differ: src={set(src_state.keys())} dst={set(dst_state.keys())}"
+    src_keys = set(src_state.keys())
+    dst_keys = set(dst_state.keys())
+    # Keys missing on the src side would mean we lost something critical.
+    missing_in_dst = src_keys - dst_keys
+    assert not missing_in_dst, (
+        f"dst is missing keys present in src: {missing_in_dst}"
     )
-    dst.load_state_dict(src_state)
+    # Keys extra on the dst side are only allowed if explicitly whitelisted.
+    extras = dst_keys - src_keys - _DST_ONLY_ALLOWED_KEYS
+    assert not extras, (
+        f"dst has unexpected extra keys not whitelisted: {extras}"
+    )
+    dst.load_state_dict(src_state, strict=False)
 
 
 def _build_networks_ref(seed: int) -> tuple[RefQNetwork, RefQNetwork, RefSecondOrderNetwork]:
@@ -410,13 +426,19 @@ def test_meta_update_changes_both_networks() -> None:
     )
 
     # Compare to the pre-update snapshot. Some parameter must have moved.
+    # Skip dst-only keys (paper-faithful extras like `b_recon`) that the
+    # reference snapshot does not carry — comparing them would KeyError.
+    ref_policy_keys = set(ref_policy_before.state_dict().keys())
+    ref_second_keys = set(ref_second_before.state_dict().keys())
     policy_moved = any(
         not torch.equal(ref_policy_before.state_dict()[k], our_policy.state_dict()[k])
         for k in our_policy.state_dict()
+        if k in ref_policy_keys
     )
     second_moved = any(
         not torch.equal(ref_second_before.state_dict()[k], our_second.state_dict()[k])
         for k in our_second.state_dict()
+        if k in ref_second_keys
     )
     assert policy_moved, "policy_net parameters did not change after update"
     assert second_moved, "second_order_net parameters did not change after update"

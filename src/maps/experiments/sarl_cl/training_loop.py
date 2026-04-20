@@ -139,6 +139,9 @@ class SarlCLTrainingConfig:
     scheduler_period: int = SCHEDULER_PERIOD
     scheduler_gamma: float = SCHEDULER_STEP
     alpha: float = 1.0
+    # Paper Table 11 γ=0.999 (aligned 2026-04-20, D.7). See deviations.md
+    # D-sarl-gamma. Override to 0.99 for student-baseline reproduction.
+    gamma: float = 0.999
 
     # Validation cadence.
     validation_every_episodes: int = 50
@@ -413,6 +416,7 @@ def run_training_cl(
                     mixing=mixing,
                     meta=cfg.meta,
                     alpha=cfg.alpha,
+                    gamma=cfg.gamma,
                     cascade_iterations_1=cfg.cascade_iterations_1,
                     cascade_iterations_2=cfg.cascade_iterations_2,
                     target_wager_fn=target_wager,

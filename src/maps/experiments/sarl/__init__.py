@@ -26,14 +26,12 @@ from maps.experiments.sarl.model import (
 )
 from maps.experiments.sarl.trainer import (
     CAE_LAMBDA,
-    GAMMA,
     SarlUpdateOutput,
     sarl_update_step,
 )
 
 __all__ = [
     "CAE_LAMBDA",
-    "GAMMA",
     "NUM_LINEAR_UNITS",
     "SarlQNetwork",
     "SarlReplayBuffer",

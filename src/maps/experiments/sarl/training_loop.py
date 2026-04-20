@@ -135,6 +135,9 @@ class SarlTrainingConfig:
     step_size_2: float = STEP_SIZE_2
     scheduler_period: int = SCHEDULER_PERIOD
     scheduler_gamma: float = SCHEDULER_STEP
+    # Paper Table 11 γ=0.999 (aligned 2026-04-20, D.7). Override to 0.99 for
+    # student-baseline reproduction. See deviations.md D-sarl-gamma.
+    gamma: float = 0.999
 
     # EMA coefficient for target_wager (paper passes percent then /100).
     alpha: float = 1.0
@@ -325,6 +328,7 @@ def run_training(
                     scheduler2=scheduler2,
                     meta=cfg.meta,
                     alpha=cfg.alpha,
+                    gamma=cfg.gamma,
                     cascade_iterations_1=cfg.cascade_iterations_1,
                     cascade_iterations_2=cfg.cascade_iterations_2,
                     target_wager_fn=target_wager,

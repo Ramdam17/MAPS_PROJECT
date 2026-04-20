@@ -64,10 +64,9 @@ from maps.experiments.sarl.data import Transition
 from maps.experiments.sarl.losses import cae_loss
 from maps.experiments.sarl_cl.loss_weighting import DynamicLossWeighter
 
-# Paper constant: DQN discount factor.
-GAMMA = 0.99
-
 # Paper constant: Jacobian regularizer weight inside CAE_loss (maps.py:704).
+# Paper silent on the value; student uses 1e-4 (= Rifai 2011 default). Hardcoded
+# since no caller varies it.
 CAE_LAMBDA = 1e-4
 
 
@@ -134,6 +133,8 @@ def sarl_cl_update_step(
     cascade_iterations_1: int,
     cascade_iterations_2: int,
     target_wager_fn: Any,
+    *,
+    gamma: float = 0.999,
     train: bool = True,
     device: torch.device | str = "cpu",
 ) -> SarlCLUpdateOutput:
@@ -185,6 +186,10 @@ def sarl_cl_update_step(
     alpha : float
         Percent EMA coefficient for ``target_wager`` (paper passes percent
         and divides by 100 internally).
+    gamma : float
+        DQN discount factor. Paper Table 11 = 0.999; student = 0.99. Aligned
+        to 0.999 via ``SarlCLTrainingConfig.gamma`` (D.7, 2026-04-20). See
+        deviations.md D-sarl-gamma.
     cascade_iterations_1, cascade_iterations_2 : int
         Paper uses 1 when cascade is off, 50 when on.
     target_wager_fn : callable
@@ -259,11 +264,8 @@ def sarl_cl_update_step(
                 ) = teacher_first_net(states, main_task_out_teacher, cascade_rate_1)
 
     # ── TD target ─────────────────────────────────────────────────────────
-    non_terminal_idx = torch.tensor(
-        [i for i, done in enumerate(is_terminal) if done == 0],
-        dtype=torch.int64,
-        device=device,
-    )
+    # Vectorised non-terminal index (D.7, bit-parity with prior list-comp).
+    non_terminal_idx = (is_terminal.view(-1) == 0).nonzero(as_tuple=True)[0]
     non_terminal_next = next_states.index_select(0, non_terminal_idx)
     q_s_prime = torch.zeros(len(sample), 1, device=device)
     if len(non_terminal_next) != 0:
@@ -272,7 +274,7 @@ def sarl_cl_update_step(
                 non_terminal_next, target_task_out, cascade_rate_1
             )
         q_s_prime[non_terminal_idx] = q_target.detach().max(1)[0].unsqueeze(1)
-    td_target = rewards + GAMMA * q_s_prime
+    td_target = rewards + gamma * q_s_prime
 
     # Live weight view — gradients flow back through W via the Jacobian term.
     W = policy_net.state_dict()["fc_hidden.weight"]

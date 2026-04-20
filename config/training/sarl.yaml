@@ -26,6 +26,12 @@ training:
   replay_start_size: 5_000     # REPLAY_START_SIZE
   training_freq: 1             # TRAINING_FREQ (update every frame once warmed up)
   target_update_freq: 1_000    # TARGET_NETWORK_UPDATE_FREQ (in update steps, not frames)
+  # Paper Table 11 prescribes γ=0.999 (effective horizon ~1000 steps). Student
+  # sarl_maps.py:104 uses 0.99 (horizon ~100) — a student-vs-paper divergence
+  # (D-sarl-gamma). Aligned to paper-faithful 2026-04-20 (Sprint-08 D.7,
+  # Option A per policy 2026-04-19). Override with `--override training.gamma=0.99`
+  # to reproduce the student baseline.
+  gamma: 0.999                 # GAMMA (DQN discount)
 
 # ── Optimizer — paper uses Adam (NOT Adamax like blindsight/agl) ────────────
 optimizer:

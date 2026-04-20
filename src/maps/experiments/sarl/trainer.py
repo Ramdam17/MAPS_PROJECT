@@ -50,10 +50,9 @@ import torch.nn.functional as F
 from maps.experiments.sarl.data import Transition
 from maps.experiments.sarl.losses import cae_loss
 
-# Paper constant: DQN discount factor.
-GAMMA = 0.99
-
-# Paper constant: Jacobian regularizer weight inside CAE_loss.
+# Paper constant: Jacobian regularizer weight inside CAE_loss. Paper silent on
+# the numeric value; student uses 1e-4 (= Rifai 2011 default). Kept hardcoded
+# since no caller varies it; promote to config if an ablation ever needs to.
 CAE_LAMBDA = 1e-4
 
 
@@ -85,6 +84,8 @@ def sarl_update_step(
     cascade_iterations_1: int,
     cascade_iterations_2: int,
     target_wager_fn: Any,
+    *,
+    gamma: float = 0.999,
     device: torch.device | str = "cpu",
 ) -> SarlUpdateOutput:
     """Run one DQN update on ``sample``; apply the two-loss cross-gradient
@@ -110,7 +111,11 @@ def sarl_update_step(
         ``meta=False``; 4/5/6 have ``meta=True``.
     alpha : float
         EMA coefficient for ``target_wager`` (in percent, per the paper:
-        the paper passes e.g. ``alpha=1`` and internally divides by 100).
+        the paper passes e.g. ``alpha=45`` and internally divides by 100).
+    gamma : float
+        DQN discount factor. Paper Table 11 specifies 0.999; student
+        ``sarl_maps.py:104`` used 0.99. Aligned to 0.999 by default via
+        ``SarlTrainingConfig.gamma`` (2026-04-20, D-sarl-gamma resolution).
     cascade_iterations_1, cascade_iterations_2 : int
         Paper uses 1 when cascade is off, 50 when on. Each iteration applies
         one ``cascade_update`` step on ``hidden`` (first-order) /
@@ -164,11 +169,11 @@ def sarl_update_step(
     q_s_a = q_policy.gather(1, actions)
 
     # ── TD target via target network (next-state max Q) ───────────────────
-    non_terminal_idx = torch.tensor(
-        [i for i, done in enumerate(is_terminal) if done == 0],
-        dtype=torch.int64,
-        device=device,
-    )
+    # Vectorised non-terminal index (D.7, bit-parity with prior list-comp):
+    # student enumerates `i, is_term in enumerate(is_terminal) if is_term == 0`
+    # — `is_terminal` is (B, 1) int64; `view(-1) == 0` gives a (B,) bool mask,
+    # and `.nonzero(as_tuple=True)[0]` returns the matching indices as int64.
+    non_terminal_idx = (is_terminal.view(-1) == 0).nonzero(as_tuple=True)[0]
     non_terminal_next = next_states.index_select(0, non_terminal_idx)
 
     q_s_prime = torch.zeros(len(sample), 1, device=device)
@@ -179,7 +184,7 @@ def sarl_update_step(
             )
         q_s_prime[non_terminal_idx] = q_target.detach().max(1)[0].unsqueeze(1)
 
-    td_target = rewards + GAMMA * q_s_prime
+    td_target = rewards + gamma * q_s_prime
 
     # Live weight view — gradients flow back through W via the Jacobian term.
     W = policy_net.state_dict()["fc_hidden.weight"]

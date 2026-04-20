@@ -73,6 +73,18 @@ class SarlQNetwork(nn.Module):
         self.conv = nn.Conv2d(in_channels, 16, kernel_size=3, stride=1)
         self.fc_hidden = nn.Linear(in_features=NUM_LINEAR_UNITS, out_features=128)
         self.actions = nn.Linear(in_features=128, out_features=num_actions)
+        # Paper eq.12: the tied-weight decoder has an additional bias term
+        # Ŷ^(1) = ReLU(fc_hidden.weight.T · hidden + b_recon). Student
+        # sarl_maps.py:176 omits b_recon (bias=False on the implicit
+        # F.linear call). Added 2026-04-20 (D-sarl-recon-bias resolution,
+        # Option A per policy 2026-04-19). Zero-initialised so forward is
+        # numerically identical to the bias-less student at init — the
+        # parameter then LEARNS via gradients through the comparison branch
+        # when meta=True. See deviations.md D-sarl-recon-bias.
+        # torch.zeros does NOT consume RNG, so adding this parameter does
+        # not shift the init-draw sequence for the other layers — parity
+        # tests (tier 1 / tier 3) remain numerically aligned at init.
+        self.b_recon = nn.Parameter(torch.zeros(NUM_LINEAR_UNITS))
 
     def forward(
         self,
@@ -94,8 +106,11 @@ class SarlQNetwork(nn.Module):
 
         q_values = self.actions(hidden)  # (B, num_actions)
 
-        # Tied-weight reconstruction: fc_hidden.weight.t() maps (B, 128) → (B, 1024).
-        reconstruction = F.relu(F.linear(hidden, self.fc_hidden.weight.t()))
+        # Tied-weight reconstruction with paper's eq.12 bias term (zero-init).
+        # fc_hidden.weight.t() maps (B, 128) → (B, 1024); b_recon is added
+        # pre-ReLU. At initialisation b_recon=0 so this is numerically
+        # identical to the bias-less student; after training it differs.
+        reconstruction = F.relu(F.linear(hidden, self.fc_hidden.weight.t(), self.b_recon))
         comparison = flat_input - reconstruction
 
         return q_values, hidden, comparison, hidden
