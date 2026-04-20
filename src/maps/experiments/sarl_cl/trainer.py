@@ -59,7 +59,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
-from maps.components.losses import weight_regularization
+from maps.components import weight_regularization
 from maps.experiments.sarl.data import Transition
 from maps.experiments.sarl.losses import cae_loss
 from maps.experiments.sarl_cl.loss_weighting import DynamicLossWeighter

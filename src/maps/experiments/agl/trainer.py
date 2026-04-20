@@ -57,8 +57,7 @@ from maps.experiments.agl.data import (
     generate_batch,
     target_second,
 )
-from maps.networks import FirstOrderMLP
-from maps.networks.first_order_mlp import make_chunked_sigmoid
+from maps.networks import FirstOrderMLP, make_chunked_sigmoid
 
 __all__ = ["AGLSetting", "AGLTrainer"]
 

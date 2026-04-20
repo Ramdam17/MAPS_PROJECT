@@ -352,9 +352,14 @@ Chaque sous-phase a : **titre · préambule court · ce qu'on fait · vérificat
 
 ---
 
-## Phase C — Review core MAPS components (3-5 j)
+## Phase C — Review core MAPS components (3-5 j) — ✅ **CLÔTURÉE 2026-04-20**
 
 **But :** relire les 5 composantes core `src/maps/` (cascade, second_order, losses, networks, utils) contre papier + monolithes restaurés. Un fichier = 1-3 sous-phases (review + fix + parité mise à jour).
+
+**Closeout :** `docs/reports/sprint-08-phase-c-summary.md`. 17 sub-phases exécutées en 2026-04-19 →
+2026-04-20 selon Orient→Do→Verify→Report→Commit→Wait discipline. 7 review docs produits
+(~1700 lignes), 25+ fixes appliqués à travers 5 batch commits (C.2, C.6, C.10, C.12, C.15, C.17).
+4 DETTEs ouverts + 1 nouvelle sub-phase D.22b (décision SimCLR vs CAE) blocante pour D.23/D.26.
 
 ### Méthode par composante
 
