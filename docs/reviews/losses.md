@@ -210,9 +210,274 @@ hétérogènes, et le type d'activation du hidden diffère. Unifier demanderait 
 
 ---
 
-## `wagering_bce_loss` + `distillation_loss` (C.8) — à remplir
+## `wagering_bce_loss` + `distillation_loss` (C.8)
 
-*(placeholder — sera rempli en sub-phase C.8)*
+### `wagering_bce_loss` (L90-123)
+
+Port ~34 lignes :
+
+```python
+def wagering_bce_loss(wager, target, reduction="mean", pos_weight=None):
+    return F.binary_cross_entropy(
+        wager, target.to(wager.dtype), weight=pos_weight, reduction=reduction,
+    )
+```
+
+#### (a) Conformité paper eq.5 + student
+
+**Paper eq.5** (verbatim, `paper_equations_extracted.md:101-103`) :
+
+$$\mathcal{L}_{\mathrm{BCE}} = -[y \cdot \log(\sigma(\mathrm{logits})) + (1-y) \cdot \log(1 - \sigma(\mathrm{logits}))]$$
+
+Paper attend donc `binary_cross_entropy_with_logits` (sigmoid INSIDE la loss).
+
+**Student** (`blindsight_tmlr.py:430, 573`) :
+```python
+criterion_2 = nn.BCELoss(size_average=False)
+...
+loss_2 = criterion_2(output_second_order.squeeze(), order_2_tensor[:, 0])
+```
+
+où `output_second_order = self.sigmoid(self.wager(...))` L250 — sigmoid déjà appliqué AVANT la
+loss. Donc student utilise **BCE-on-probs**, pas BCE-with-logits.
+
+**Port** : `F.binary_cross_entropy(wager, target, ...)` — même approche que student (prend des
+probs post-sigmoid).
+
+✅ **Port = student**, mais **≠ paper eq.5** (paper écrit σ(logits) dans la formule, student et port
+appliquent σ en amont).
+
+**Note** : mathématiquement équivalent (BCE(σ(x), y) = BCE-with-logits(x, y)), mais
+`binary_cross_entropy_with_logits` est **numériquement plus stable** (log-sum-exp trick). Pour
+training from scratch, la version logit-based est préférable. C'est **documenté dans le port
+docstring L99-101** comme piste "parity only, prefer logit variant for new training".
+
+#### (b) ⚠️ Compatibilité avec `WageringHead(n_wager_units=2)` post-C.6
+
+Post-C.6, `WageringHead(n_wager_units=2)` retourne **raw logits**. Si un caller appelle
+`wagering_bce_loss(wager_logits, target)`, la BCE sur logits **bruts** (non-clampés à [0,1]) va
+fail bruyamment :
+
+```python
+F.binary_cross_entropy(logits_raw_outside_[0,1], target, ...)
+# RuntimeError: all elements of input should be between 0 and 1
+```
+
+**Port L98** documente *"Takes probabilities (the sigmoid output of `WageringHead(n_wager_units=1)`)"*
+— explicite sur l'exigence probs. Mais **aucune guard runtime**.
+
+**Callers actuels** :
+- `blindsight/trainer.py:311` : `wagering_bce_loss(wager.squeeze(-1), ...)` où `wager =
+  self.second_order(...)[0]` avec `n_wager_units=1` → sigmoid → prob. OK.
+- `agl/trainer.py:282` : idem. OK.
+
+Aucun caller actuel n'utilise `n_wager_units=2`, donc pas de bug prod. Mais piège à documenter.
+
+**Piste C8-fix-1** : ajouter dans le docstring un paragraphe *"Incompatible with
+`WageringHead(n_wager_units=2)` raw logits post-C.6. Use `F.binary_cross_entropy_with_logits`
+instead for the 2-unit paper-faithful path."*
+
+#### (c) 🚨 `pos_weight` mal-nommé — bug API
+
+**Port L121** : `F.binary_cross_entropy(wager, target, weight=pos_weight, reduction=...)`.
+
+Le paramètre `pos_weight` est ici *passé comme* `weight=`. Mais :
+- `F.binary_cross_entropy` prend `weight` = poids **par sample** (shape batch).
+- `F.binary_cross_entropy_with_logits` prend `pos_weight` = poids **par classe positive** (scalaire).
+
+Le port utilise le **nom `pos_weight`** (qui suggère class imbalance, API
+`binary_cross_entropy_with_logits`) mais le **passe à `weight=`** de `binary_cross_entropy` qui
+attend per-sample. **Confusion API : le nom suggère une sémantique différente de l'impl.**
+
+Si un caller passe `pos_weight=torch.tensor(5.0)` en pensant "poids sur la classe positive", il
+obtient un broadcast sur tous les éléments → tous les samples sont pondérés ×5, pas seulement les
+positifs. **Silent bug.**
+
+**Callers actuels** : **aucun** n'utilise `pos_weight` (tous None). Pas de bug prod.
+
+**Piste C8-fix-2** : **renommer** le paramètre `pos_weight` → `weight` pour matcher
+l'API `F.binary_cross_entropy`. Ou **supprimer** le paramètre tant que personne ne s'en sert
+(YAGNI — minimalisme). Vérifier absence de callers externes avant retrait.
+
+#### (d) Signature et types
+
+- `target.to(wager.dtype)` : cast défensif, OK.
+- `reduction="mean"` default : student utilise `size_average=False` (= `reduction="sum"` en
+  modern API). **Default port diffère du student sur reduction.** Callers passent
+  explicitement `reduction="sum"` (blindsight/AGL) donc pas de bug prod — mais le default
+  est trompeur.
+
+**Piste C8-fix-3** (debate) : changer default `reduction="mean"` → `reduction="sum"` pour matcher
+student. **Mais** `"mean"` est le default PyTorch standard, et les 2 callers passent explicitement
+`"sum"`. Laisser `"mean"` et documenter.
+
+#### Résumé `wagering_bce_loss`
+
+- ✅ **Parity student** : BCE-on-probs, même comportement que `nn.BCELoss(size_average=False)`.
+- ✅ **Parity paper eq.5** : mathématiquement équivalent (σ pré-appliqué vs σ INSIDE la loss).
+- ⚠️ **Incompatible avec `n_wager_units=2`** raw logits — documenter (C8-fix-1).
+- 🚨 **Paramètre `pos_weight` mal nommé** — passé à `weight=`, API confuse (C8-fix-2).
+- ⚠️ **Default `reduction="mean"`** diffère de l'usage student `"sum"` (pas un bug, callers
+  passent explicitement).
+
+### `distillation_loss` (L126-170)
+
+Port ~45 lignes :
+
+```python
+def distillation_loss(student_logits, teacher_logits, hard_labels=None, alpha=0.5, temperature=2.0):
+    soft_targets = F.softmax(teacher_logits / temperature, dim=-1)
+    log_probs = F.log_softmax(student_logits / temperature, dim=-1)
+    soft_loss = torch.sum(
+        soft_targets * (soft_targets.clamp_min(1e-12).log() - log_probs), dim=-1
+    ).mean()
+    if hard_labels is None:
+        return alpha * soft_loss
+    hard_loss = F.cross_entropy(student_logits, hard_labels)
+    return alpha * soft_loss + (1.0 - alpha) * hard_loss
+```
+
+#### (a) Conformité student SARL+CL
+
+**Student** (`sarl_cl_maps.py:360-405`) :
+
+```python
+class DistillationLoss(nn.Module):
+    def __init__(self, temperature=2.0):
+        self.T = temperature
+        self.criterion = nn.CrossEntropyLoss()
+
+    def forward(self, student_outputs, teacher_outputs, hard_labels=None, alpha=0.5):
+        soft_targets = f.softmax(teacher_outputs / self.T, dim=-1)
+        log_probs = f.log_softmax(student_outputs / self.T, dim=-1)
+        # Comment: "Calculate KL divergence loss (scaled by T²)"  ← ⚠️ COMMENT LIE
+        soft_loss = torch.sum(soft_targets * (soft_targets.log() - log_probs), dim=-1).mean()
+        hard_loss = 0
+        if hard_labels is not None:
+            hard_loss = self.criterion(student_outputs, hard_labels)
+        return alpha * soft_loss + (1 - alpha) * hard_loss
+```
+
+**Mapping port ↔ student** :
+
+| Step              | Student                                  | Port                                      | Match |
+|-------------------|------------------------------------------|-------------------------------------------|:-----:|
+| Soft targets      | `softmax(teacher / T)`                   | `softmax(teacher / T)`                    | ✅    |
+| Log probs student | `log_softmax(student / T)`               | `log_softmax(student / T)`                | ✅    |
+| Soft loss formula | `Σ soft * (soft.log() - log_probs)).mean()` | `Σ soft * (soft.clamp_min(1e-12).log() - log_probs)).mean()` | ✅ (port add clamp, numerical safety) |
+| Hard loss         | `nn.CrossEntropyLoss()(student, labels)` | `F.cross_entropy(student, labels)`        | ✅    |
+| Combination       | `alpha * soft + (1-alpha) * hard`         | idem                                      | ✅    |
+
+✅ **Port = student + clamp stabilization**. La `clamp_min(1e-12)` est un **gain port** (pas une
+régression) — évite `-inf` si `soft_targets` contient des zéros après softmax (impossible en
+float32 en pratique, mais garde-fou).
+
+#### (b) ⚠️ D-003 confirmé — et le student ment dans son commentaire
+
+**Paper implicit / Hinton 2015** : `soft_loss *= T²` pour préserver les magnitudes de gradient à
+travers les températures.
+
+**Student commentaire L394** : *"Calculate KL divergence loss (scaled by T²)"* — **MENT** : le
+code L395 ne scale **PAS** par T². Le commentaire est faux.
+
+**Port** : ne scale pas non plus (matches student impl). D-003 existant confirmé : le port est
+fidèle au student, qui diverge du paper/Hinton.
+
+**Impact** : gradient magnitudes ~1/T² plus petites que Hinton-faithful. Dans SARL+CL, `T=2.0`
+→ gradient 4× plus petit qu'attendu. **Peut affecter convergence** mais pas documenté comme
+problème dans runs student → probablement absorbé par `alpha` weighting ou learning rate.
+
+**Pas de fix en C.8** : D-003 existant, status quo OK (matches student).
+
+**Piste C8-fix-4** : vérifier que le **docstring port** L159-161 documente correctement cette
+divergence :
+
+```python
+# KL(teacher || student) as written in the reference code, not scaled by T².
+# Kept as-is for parity with SARL+CL; if we later want Hinton-style
+# gradient preservation, multiply by T² here and document the deviation.
+```
+
+Cohérent avec findings. ✅ Docstring OK, rien à changer.
+
+#### (c) Numerical stability — `clamp_min(1e-12)`
+
+Port ajoute `soft_targets.clamp_min(1e-12).log()` vs student `soft_targets.log()` direct.
+
+**Justification port** : si un logit teacher est très négatif, `softmax` peut retourner `0.0` en
+float32 (underflow), et `log(0) = -inf` → NaN propagation.
+
+**Student** : aucun guard — mais en pratique les logits teacher sont rarement assez extrêmes pour
+underflow softmax en float32.
+
+**Divergence numérique port-student** : le clamp modifie **très légèrement** le gradient quand
+`soft_targets` est proche de zéro (~1e-12). Effet négligeable sur training trajectories.
+
+✅ **Gain port safe, divergence numérique négligeable.**
+
+#### (d) Empty dead-code path
+
+Port L166-167 :
+```python
+if hard_labels is None:
+    return alpha * soft_loss
+```
+
+**Student** : ne court-circuite pas, fait `alpha * soft + (1-alpha) * 0 = alpha * soft`. Résultat
+identique, juste différence de code style.
+
+✅ **Equivalent sémantiquement.**
+
+#### (e) Cross-reference `DynamicLossWeighter` (SARL+CL)
+
+Le student SARL+CL utilise `DistillationLoss` via une dictionnaire de poids (`'distillation':
+1.0` etc.). Le port refactore en callable direct. Les callers (`sarl_cl/trainer.py`) doivent donc
+wrap explicitement via `DynamicLossWeighter` s'ils veulent parity — à vérifier en C.9 ou
+Phase D SARL+CL.
+
+**Note pour C.9** : cross-ref les 2 concepts `distillation_loss` (ici) vs
+`weight_regularization` (L173-214) dans le même review. Le paper appelle les 2 "distillation"
+(🆘 terminologie paper confuse).
+
+#### Résumé `distillation_loss`
+
+- ✅ **Parity student** (SARL+CL) bit-exact sauf le clamp_min (amélioration port).
+- ⚠️ **D-003 existant** : pas de `T²` scaling (port = student, student = pas Hinton).
+  Docstring port OK.
+- ⚠️ **Student commentaire mensonger** (L394 SARL+CL) : dit "scaled by T²" mais ne l'est pas.
+  Non-actionable pour nous, juste à noter.
+- ✅ **Numerical safety** `clamp_min(1e-12)` : gain port safe.
+- ⚠️ **Cross-ref `weight_regularization`** : terminologie paper confuse, à clarifier C.9.
+
+### Fixes identifiées C.8
+
+| ID        | Fix                                                                     | Scope                                       | Effort |
+|:----------|-------------------------------------------------------------------------|---------------------------------------------|:------:|
+| C8-fix-1  | Docstring `wagering_bce_loss` : incompatibilité `n_wager_units=2` raw logits | `losses.py:96-116` docstring           | 3 min  |
+| C8-fix-2  | 🚨 Renommer `pos_weight` → `weight` (ou supprimer) pour matcher API `F.binary_cross_entropy` | `losses.py:90-123` + callers (none)   | 10 min |
+| C8-fix-3  | (debate, skip) Default `reduction` : garder "mean" (PyTorch standard), documenter que callers passent "sum" | — | skip |
+| C8-fix-4  | Docstring `distillation_loss` déjà OK (D-003 documenté) — rien à faire  | —                                           | skip |
+
+### Cross-reference deviations.md
+
+- **D-003 existant** : re-confirmé par cette review. Aucune mise à jour nécessaire.
+- **Nouveau (optionnel)** : ajouter une note dans D-001 (ou D-005 nouveau) pointant vers
+  C8-fix-1 — "`wagering_bce_loss` incompatible avec `n_wager_units=2`". Peut-être un D-005
+  "wagering loss API coupling with WageringHead n_wager_units".
+
+### Résumé — `wagering_bce_loss` + `distillation_loss`
+
+- ✅ **Parity student** des 2 fonctions.
+- ✅ **Math paper eq.5** respectée (BCE-on-probs ≡ BCE-with-logits).
+- 🚨 **`pos_weight` mal nommé** → C8-fix-2 (renommer/supprimer, pas de caller affecté).
+- ⚠️ **`wagering_bce_loss` + `n_wager_units=2`** incompatibles → C8-fix-1 (docstring warning).
+- ⚠️ **D-003 T² scaling** : port fidèle au student qui diverge de Hinton.
+- ✅ **Numerical safety** `clamp_min` : gain port.
+- **0 divergence paper structurelle, 2 bugs API mineurs, 0 risque prod actuel.**
+
+**C.8 clôturée. 2 fixes + 0 update deviations.md.**
+
+---
 
 ---
 
