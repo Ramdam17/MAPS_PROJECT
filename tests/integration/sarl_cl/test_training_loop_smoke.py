@@ -148,13 +148,22 @@ def test_output_dir_persists_cl_checkpoint(tmp_path):
     assert ckpt_path.exists()
     assert metrics_path.exists()
 
+    # Sprint-08 D.19b: checkpoint.pt now uses the unified D.13 schema.
+    # `_persist_outputs` no longer writes a teacher-only payload here (that
+    # caused a silent overwrite of the resume checkpoint). The canonical
+    # keys are `policy_state_dict` / `second_order_state_dict`; legacy
+    # `policy_net_state_dict` / `second_net_state_dict` are still accepted
+    # on teacher-load via fallback but no longer produced.
     checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    assert "policy_net_state_dict" in checkpoint
-    # meta=False so second_net_state_dict is None
-    assert checkpoint["second_net_state_dict"] is None
-    assert checkpoint["game"] == "space_invaders"
-    assert checkpoint["meta"] is False
-    assert checkpoint["cascade_iterations_1"] == 1
+    assert "policy_state_dict" in checkpoint
+    # meta=False so second_order_state_dict is None
+    assert checkpoint["second_order_state_dict"] is None
+    assert checkpoint["format_version"] == 1  # D.13 schema version sentinel
+    # The full resume payload rides in cfg_snapshot, not at top level.
+    snapshot = checkpoint["cfg_snapshot"]
+    assert snapshot["game"] == "space_invaders"
+    assert snapshot["meta"] is False
+    assert snapshot["cascade_iterations_1"] == 1
 
     payload = json.loads(metrics_path.read_text())
     assert payload["curriculum"] is False
