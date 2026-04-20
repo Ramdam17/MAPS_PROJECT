@@ -9,8 +9,8 @@ A/B them without forking.
 
 | # | Location | Paper says | Code does | Chosen default | Exposed as |
 |---|----------|-----------|-----------|---------------|-----------|
-| D-001 | Wagering head | 2 units with softmax over {bet, no-bet} (eq.2-3, Koch & Preuschoff 2007) | 1 unit with sigmoid → scalar confidence in [0, 1] | `n_wager_units=1` (parity) | `WageringHead(n_wager_units=...)` / `SecondOrderNetwork(n_wager_units=...)` |
-| D-002 | First-order loss | "Contrastive loss" (eq.4, Chen et al. 2020 SimCLR form) | Contractive AutoEncoder loss (Rifai et al. 2011) — both are sometimes called "contrastive" in older literature | `cae_loss` (parity) | `maps.components.losses.cae_loss` (SimCLR variant not yet implemented) |
+| D-001 | Wagering head | 2 units with **raw logits** (eq.3 `W = W·C' + b` no activation; eq.5 applies `binary_cross_entropy_with_logits` → per-unit sigmoid, **not** softmax over units) | Blindsight/AGL student: 1 unit with sigmoid → scalar confidence in [0, 1]. SARL student: 2-unit raw logits (paper-faithful, `SarlSecondOrderNetwork`) | `n_wager_units=1` (parity with Blindsight/AGL student) | `WageringHead(n_wager_units=...)` / `SecondOrderNetwork(n_wager_units=...)` (raw logits when n=2 after C.6) |
+| D-002 | First-order loss | "Contrastive loss" (eq.4, Chen et al. 2020 SimCLR form) | Contractive AutoEncoder loss (Rifai et al. 2011) — both are sometimes called "contrastive" in older literature | `cae_loss` (parity) | `maps.components.losses.cae_loss` (SimCLR variant not yet implemented). **Note cascade interaction (C.5):** the cascade integrates 50 iterations over the 2nd-order comparator; Blindsight/AGL + SARL 2nd-order have dropout-in-cascade → cascade averages 50 dropout masks (Monte-Carlo dropout-like regularization). SARL 1st-order has no dropout → cascade is mathematically a no-op on deterministic forward (see `docs/reviews/cascade.md §(d)` + `docs/reviews/second_order.md §C.5 (d)`). |
 | D-003 | Distillation KL scaling | Hinton (2015) recommends multiplying soft loss by T² | Reference code does **not** scale by T² | unscaled (parity) | doc note in `distillation_loss`; add `scale_by_t_squared=True` later if needed |
 | D-004 | AGL decoder activation | Global sigmoid on output vector | Sigmoid applied independently on each 6-bit letter chunk (AGL only, not Blindsight) | matches reference, AGL-specific | `FirstOrderMLP(decoder_activation=make_chunked_sigmoid(6))` |
 
@@ -172,3 +172,23 @@ Sprint-06 (non ré-dupliquées).
   D-agl-training-missing (structural).
 - **Limitations paper-declared** : D-marl-cascade-not-implemented. À mentionner explicitement
   dans le rapport Phase G comme "paper itself acknowledges this limitation".
+
+---
+
+## Dette technique (DETTE-N) — 2026-04-19
+
+Les DETTEs sont des **doublons / patterns sous-optimaux** qui ne bloquent pas la reproduction
+mais devront être résolus post-repro. Ne pas confondre avec les D-NNN (deviations paper vs code)
+ou G-NN (reproduction gaps).
+
+| # | Location | Problem | Justification (why not fix now) | Resolution path |
+|---|----------|---------|----------------------------------|------------------|
+| DETTE-1 | `src/maps/components/second_order.SecondOrderNetwork` + `src/maps/experiments/sarl/model.SarlSecondOrderNetwork` | Two classes with 80% overlap implementing the second-order network. Differ on: ComparatorMatrix usage (present / absent inline), dropout rate (0.5 vs 0.1), wager dims (`input_dim → n_wager_units` vs `NUM_LINEAR_UNITS → 2`), output activation (sigmoid-or-raw-logits vs raw-logits-only), forward signature (4 args vs 3 args). | SARL uses a tied-weight decoder (`fc_hidden.weight.t()`) internal to `SarlQNetwork`, so extracting the comparison via `ComparatorMatrix` breaks the tied-weight architecture. Dims + dropout differences are paper-faithful per-domain. Unification would require branching logic that hurts readability. Safer to keep 2 classes until paper reproduction is validated. | Post-reproduction (Phase H+): unify via composition (e.g. `SecondOrderCore(dropout, wager_layer, output_mode)` + two thin wrappers). Requires Tier-1 parity tests to stay green post-refacto. Blocked until Phase F runs pass. |
+
+### Notes sur DETTE-1
+- C.6 (2026-04-19) a homogénéisé le path `n_wager_units=2` pour retourner **raw logits** (paper
+  eq.3 faithful), enlevant un écart majeur avec `SarlSecondOrderNetwork`. Après cette fix, les 2
+  classes diffèrent surtout par la structure (tied-weight vs non) et les dims hardcodés.
+- L'unification est **possible techniquement** mais non prioritaire. Coût de la duplication ~50
+  lignes dupliquées ; coût d'une unification bâclée = régression silencieuse sur parity tests.
+- Ouverture prévue : post Phase F (reproduction paper validée).

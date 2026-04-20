@@ -24,12 +24,23 @@ def test_wagering_head_single_unit_shape_and_range():
     assert ((out >= 0) & (out <= 1)).all()
 
 
-def test_wagering_head_two_unit_softmax():
+def test_wagering_head_two_unit_raw_logits():
+    """Paper eq.3: 2-unit wager returns raw logits (no softmax, no sigmoid).
+
+    Eq.5 applies `binary_cross_entropy_with_logits` per unit → internal sigmoid
+    per unit, NOT a softmax over the 2 units. See docs/reviews/second_order.md
+    §C.4 + deviations.md D-001 for the rationale.
+    """
+    torch.manual_seed(0)
     head = WageringHead(input_dim=100, n_wager_units=2)
     x = torch.randn(4, 100)
     out = head(x)
     assert out.shape == (4, 2)
-    assert torch.allclose(out.sum(dim=-1), torch.ones(4))
+    # Raw logits are unconstrained — must NOT sum to 1 generically.
+    assert not torch.allclose(out.sum(dim=-1), torch.ones(4), atol=1e-3)
+    # And can be outside [0, 1] — at least one value should be < 0 or > 1
+    # across the batch (uniform init + random input makes this near-certain).
+    assert (out < 0).any() or (out > 1).any()
 
 
 def test_wagering_head_rejects_other_unit_counts():
