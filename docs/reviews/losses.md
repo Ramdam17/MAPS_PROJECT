@@ -481,6 +481,241 @@ Phase D SARL+CL.
 
 ---
 
-## `weight_regularization` + cross-ref callers (C.9) — à remplir
+## `weight_regularization` + audit callers losses.py (C.9)
 
-*(placeholder — sera rempli en sub-phase C.9)*
+### `weight_regularization` (L173-214) — paper's "distillation" L2 anchor
+
+Port ~42 lignes :
+
+```python
+def weight_regularization(model, teacher_model):
+    reg_loss = model.parameters().__next__().new_zeros(())  # scalar on the right device
+    for param, param_teacher in zip(model.parameters(), teacher_model.parameters(), strict=True):
+        reg_loss = reg_loss + torch.sum((param - param_teacher) ** 2)
+    return reg_loss
+```
+
+#### (a) Conformité student
+
+**Student** (`sarl_cl_maps.py:410-416`) :
+
+```python
+def compute_weight_regularization(model, teacher_model):
+    reg_loss = 0
+    for param, param_old in zip(model.parameters(), teacher_model.parameters()):
+        reg_loss += torch.sum((param - param_old) ** 2)
+    return reg_loss
+```
+
+**Mapping port ↔ student** :
+
+| Step                   | Student                                       | Port                                                          | Match |
+|------------------------|-----------------------------------------------|---------------------------------------------------------------|:-----:|
+| Scalar init            | `reg_loss = 0` (Python int)                   | `model.parameters().__next__().new_zeros(())` (tensor on device) | ✅ (port meilleur — device coherence) |
+| Param pairing          | `zip(model.params(), teacher.params())`       | `zip(..., strict=True)`                                       | ⚠️ port stricter (student silent on mismatch) |
+| Per-param L2 diff      | `torch.sum((param - param_old) ** 2)`         | `torch.sum((param - param_teacher) ** 2)`                     | ✅    |
+| Accumulate             | `reg_loss += ...`                              | `reg_loss = reg_loss + ...`                                   | ✅ (équivalent, in-place vs out-of-place)  |
+| Return                 | scalar tensor                                  | scalar tensor 0-d                                             | ✅    |
+
+✅ **Math identique**. 2 améliorations port (device init + strict zip) qui **durcissent** par
+rapport au student sans changer le résultat numérique.
+
+#### (b) ⚠️ `strict=True` — docstring incohérent
+
+**Port L187-192 docstring** :
+> ``teacher_model``. Must have the same parameter topology as ``model``; **we do not assert this**
+> so the caller can pass e.g. networks sharing only a prefix — mismatches surface as shape errors
+> from ``torch.sum``.
+
+**Port L212 code** :
+```python
+for param, param_teacher in zip(model.parameters(), teacher_model.parameters(), strict=True):
+```
+
+Le `strict=True` **ASSERT** (ValueError si les itérables diffèrent en longueur). Le docstring
+dit le contraire.
+
+**Finding C9-F1** : docstring et code se contredisent. Le code est plus sécurisé (strict=True
+raise immédiatement si topologies différentes) mais le docstring suggère que ça crash plus tard
+via `torch.sum` shape error. Le code est **plus protecteur** que ce que le docstring promet.
+
+**Impact caller** : `zip(..., strict=True)` raise sur différence de **longueur** d'itérable,
+pas sur différence de shape. Un modèle avec moins de params passera bien la comparaison sur les
+premiers params si même topo — donc la promesse du docstring ("caller peut passer prefix match")
+est **fausse** : strict=True empêche.
+
+**Piste C9-fix-1** : corriger le docstring — soit (a) aligner sur le code (strict length check,
+runtime ValueError), soit (b) enlever `strict=True` et vraiment laisser les shape errors apparaître
+en `torch.sum`. Recommandation : **garder `strict=True` et corriger docstring** (version (a),
+sécurité > flexibilité mal documentée).
+
+#### (c) Gradient flow — teacher doit être frozen
+
+Le port **n'assert pas** que `teacher_model.parameters()` sont `requires_grad=False`. Si un
+caller oublie de freeze teacher :
+
+```python
+# Caller wrong-pattern:
+teacher_first_net.load_state_dict(policy_net.state_dict())  # copy weights
+# forgot: teacher_first_net.requires_grad_(False)
+loss = weight_regularization(policy_net, teacher_first_net)
+loss.backward()  # gradient flows to teacher too → teacher drifts!
+```
+
+Le terme `(param - param_teacher)**2` dépend des 2 params, donc backward flow dans les 2 sans
+teacher frozen. Bug silencieux : teacher drift au lieu d'anchor statique.
+
+**Student** : même piège, pas d'assertion.
+
+**Callers actuels port** (`sarl_cl/trainer.py:284, 329`) : à vérifier que teachers sont
+correctement frozen.
+
+**Piste C9-fix-2** : (info) ajouter une mention explicite dans docstring "CALLER MUST call
+`teacher_model.requires_grad_(False)` before passing". Runtime assert possible mais coûteux à
+chaque appel → skip.
+
+#### (d) Naming divergence — "distillation" (paper) ≠ distillation_loss (port)
+
+Le docstring port L205-209 est **lucide** sur ce point :
+
+> The paper calls this "distillation" but strictly speaking it is an L2 regularization anchor,
+> not output-distillation. We keep the ``distillation`` key in ``DynamicLossWeighter`` for
+> faithful parity with the paper's dictionary keys, but code-level we use
+> ``weight_regularization`` to avoid confusion with :func:`distillation_loss` above.
+
+**Résolution terminologie paper-vs-port** :
+
+| Concept                     | Paper terme      | Port terme                                     | Utilisé où ?                              |
+|:----------------------------|:-----------------|:-----------------------------------------------|:------------------------------------------|
+| KL soft-target (Hinton)     | "distillation"   | `components.losses.distillation_loss`         | **Jamais appelé** en prod (voir audit C.9-e) |
+| L2 param anchor             | "distillation"   | `components.losses.weight_regularization`     | `sarl_cl/trainer.py:284, 329`              |
+| Dict key                    | `'distillation'` | `'distillation'` (via `DynamicLossWeighter`)   | weight dict (paper fidelity)              |
+
+✅ **Résolution port claire** : 2 noms code distincts pour 2 concepts, mais clé dict paper
+préservée. Faithful et lisible.
+
+### (e) Audit final — callers losses.py
+
+Grep exhaustif sur `src/` :
+
+| Symbol                                    | Callers                                          | Status |
+|:------------------------------------------|:-------------------------------------------------|:------:|
+| `components.losses.cae_loss`              | `blindsight/trainer.py:329`, `agl/trainer.py:300` | ✅    |
+| `sarl.losses.cae_loss`                    | `sarl/trainer.py:188`, `sarl_cl/trainer.py:283, 302` | ✅    |
+| `components.losses.wagering_bce_loss`     | `blindsight/trainer.py:311`, `agl/trainer.py:282` | ✅    |
+| `components.losses.distillation_loss`     | **0 callers** (exposé via `__init__.py` seulement) | ⚠️ dead code |
+| `components.losses.weight_regularization` | `sarl_cl/trainer.py:284, 329`                    | ✅    |
+
+**Finding C9-F2 — `distillation_loss` est du dead code** :
+
+- Exposé via `maps/components/__init__.py:6, 22` ("distillation_loss" public API).
+- **Aucun caller** en prod (SARL+CL utilise `weight_regularization`, pas KL distillation).
+- Le paper DEFINIT une `DistillationLoss` class (student `sarl_cl_maps.py:359-405`) mais **ne
+  l'appelle jamais** non plus dans le training loop.
+- Documenté dans `docs/reports/sprint-04b-report.md:37` :
+  > *"The paper defines a `DistillationLoss` class but never calls it; the actual anchor in
+  > `train()` is `compute_weight_regularization`."*
+
+**Conséquence** : `distillation_loss` est **un port fidèle d'un code mort**. Le garder :
+- ✅ préserve la parity avec student (qui a la même classe inutilisée).
+- ⚠️ peut induire en erreur (un lecteur pense que SARL+CL fait de la distillation KL).
+- ⚠️ coût maintenance : tests à garder verts, signature à maintenir.
+
+**Piste C9-fix-3** : ajouter un commentaire `"# ⚠️ Not used in production — see docs/reports/
+sprint-04b-report.md:37"` au-dessus de `def distillation_loss` L126. Garder l'import exposé pour
+éventuelle utilisation future. **Pas de suppression** (user policy "preserve everything that
+reproduces paper").
+
+**Finding C9-F3 — duplication `sarl.losses.cae_loss`** :
+
+Rappel C.7 : `components.cae_loss` (BCE/MSE) et `sarl.losses.cae_loss` (Huber) coexistent.
+Audit confirme **aucun cross-call** : Blindsight/AGL utilisent `components`, SARL/SARL+CL utilisent
+`sarl.losses`. Pas de crossover accidentel. DETTE-2 déjà tracé en C.7.
+
+### (f) Signature callers — vérification exhaustive args
+
+**`cae_loss`** (Blindsight/AGL version) :
+```python
+cae_loss(W=self.first_order.fc1.weight, x=..., recons_x=..., h=..., lam=..., recon="bce_sum")
+```
+✅ Tous les callers passent `recon="bce_sum"` explicitement. Pas de piège default.
+
+**`sarl.losses.cae_loss`** :
+```python
+cae_loss(W, td_target, q_s_a, h1, CAE_LAMBDA)  # positional
+```
+✅ 5 positional args correspondent à la signature. `CAE_LAMBDA` constante module-level.
+
+**`wagering_bce_loss`** :
+```python
+wagering_bce_loss(wager.squeeze(-1), target, reduction="sum")       # Blindsight
+wagering_bce_loss(wager, target, reduction="sum").requires_grad_()  # AGL
+```
+⚠️ AGL appelle `.requires_grad_()` post-loss — force gradient tracking explicite. Probablement
+legacy (PyTorch gère auto). Pas un bug mais noise.
+
+**Piste C9-fix-4** (cosmétique, optionnel) : vérifier si `.requires_grad_()` L282 AGL est
+nécessaire. Si non (probable), retirer pour clarté. Hors scope C.9, à faire en Phase D.
+
+**`weight_regularization`** :
+```python
+weight_regularization(policy_net, teacher_first_net)        # main
+weight_regularization(second_order_net, teacher_second_net) # meta
+```
+✅ Signature correcte. Teacher frozen ? À vérifier dans `sarl_cl/trainer.py` — **audit hors C.9
+scope**, on flagge.
+
+### Fixes identifiées C.9
+
+| ID        | Fix                                                                    | Scope                                  | Effort |
+|:----------|------------------------------------------------------------------------|----------------------------------------|:------:|
+| C9-fix-1  | Docstring `weight_regularization` : corriger incohérence `strict=True` vs "we do not assert" | `losses.py:190-195` docstring | 5 min  |
+| C9-fix-2  | Docstring `weight_regularization` : explicite "caller MUST freeze teacher via `requires_grad_(False)`" | `losses.py:200-202` docstring | 3 min  |
+| C9-fix-3  | Commentaire L126 `distillation_loss` : "dead code in prod, kept for future" | `losses.py:126` inline comment     | 2 min  |
+| C9-fix-4  | (skip C.9) vérifier `.requires_grad_()` AGL L282 — Phase D scope       | `agl/trainer.py:282`                   | hors  |
+
+### Cross-reference deviations.md
+
+- **Paper terminology "distillation"** : déjà documenté dans `docs/reports/sprint-04b-report.md:37`.
+  Pas besoin d'ajouter à `deviations.md`, c'est un **notre-choix-de-naming**, pas une divergence.
+- **`distillation_loss` dead code** : à mentionner comme `DETTE-3` candidate (code mort port
+  fidèle au student). Optionnel — C.10 decision.
+
+### Résumé `weight_regularization`
+
+- ✅ **Math parity student** bit-exact (L2 param diff, sum over params).
+- ✅ **Port améliorations safe** : tensor init + `strict=True`.
+- ⚠️ **Docstring incohérent** avec code (strict claim) → C9-fix-1.
+- ⚠️ **Teacher-frozen responsibility silencieuse** → C9-fix-2.
+- ✅ **Naming divergence paper resolved** (docstring L205-209 claire).
+
+### Résumé audit callers losses.py (C.9)
+
+- ✅ **6 callers au total** sur `components.losses` + `sarl.losses`, tous cohérents avec
+  signatures.
+- ⚠️ **`distillation_loss` dead code** → C9-fix-3 (commentaire) + DETTE-3 candidate.
+- ⚠️ **`.requires_grad_()` AGL L282** à investiguer Phase D.
+- ✅ **DETTE-2** (duplication `cae_loss`) : pas de crossover accidentel confirmé.
+- ✅ **Terminology paper "distillation"** : résolu côté port (2 noms code, 1 dict key préservé).
+
+**C.9 clôturée. 3 fixes + 1 DETTE candidate + 1 Phase D note. Review losses.py complète.**
+
+---
+
+## Résumé global C.7 + C.8 + C.9 — losses.py review
+
+| Sub-phase | Scope                                              | Findings clés                                       | Fixes C.10  |
+|:---------:|----------------------------------------------------|-----------------------------------------------------|:-----------:|
+| C.7       | `components.cae_loss` + D-002 deep dive           | 🚨 D-002 SimCLR vs CAE réelle ; DETTE-2 duplication ; docstring SARL erroné state_dict | 5           |
+| C.8       | `wagering_bce_loss` + `distillation_loss`          | 🚨 `pos_weight` mal nommé ; incompat `n_wager_units=2` ; D-003 re-confirmé ; student comment ment | 2 |
+| C.9       | `weight_regularization` + audit callers            | ⚠️ docstring strict inconsistency ; dead code `distillation_loss` ; naming paper-faithful | 3 (+1 DETTE) |
+
+**Total fixes pour C.10 batch** : 10 fixes + 2 DETTEs + 1 sub-phase D.17 à créer (décision
+SimCLR vs CAE).
+
+**État `losses.py`** : **entièrement reviewé, 0 bug critique bloquant, 2 bugs API mineurs
+(`pos_weight`, docstring strict), 1 divergence structurelle paper (D-002), 2 dettes (duplication +
+dead code).**
+
+**Next**: C.10 — apply fixes (similaire à C.6 pour C.3-C.5 batch).
+
