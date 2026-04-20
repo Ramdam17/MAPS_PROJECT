@@ -54,6 +54,11 @@ def _find_project_root(start: Path | None = None) -> Path:
     return Path.cwd()
 
 
+# NOTE: CONFIG_ROOT is resolved at **module-import time** by walking up from
+# the current working directory. If your process changes cwd *after* importing
+# this module (unusual but possible in some test/notebook patterns), this
+# constant will still point at the root discovered at import. In those cases,
+# pass an absolute YAML path to ``load_config`` instead of a bare name.
 CONFIG_ROOT: Path = _find_project_root() / "config"
 
 

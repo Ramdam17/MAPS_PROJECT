@@ -4,7 +4,9 @@ import subprocess
 import time
 from datetime import datetime
 
-import matplotlib.pyplot as plt
+# NOTE: ``matplotlib.pyplot`` is imported lazily inside ``_generate_plots``
+# to avoid a ~300 ms cold-import cost on processes that never actually plot.
+# The only site that uses ``plt`` is ``NvidiaEnergyTracker._generate_plots``.
 import numpy as np
 import pandas as pd
 import psutil
@@ -388,6 +390,10 @@ class NvidiaEnergyTracker:
 
     def _generate_plots(self, df, timestamp):
         """Generate plots of energy usage and system utilization."""
+        # Lazy import — avoids the ~300 ms matplotlib startup cost for
+        # processes that only want tracking metrics without plotting.
+        import matplotlib.pyplot as plt
+
         # Create figure with subplots
         _fig, axes = plt.subplots(3, 1, figsize=(12, 15))
 

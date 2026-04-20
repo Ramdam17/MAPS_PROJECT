@@ -174,6 +174,11 @@ def _build_networks(
 
     Init order matters for init-RNG reproducibility — keep policy→target→second.
     """
+    # Local re-seed to keep network init deterministic even if caller reused the
+    # RNG between calls. The *correct* entry-point seeding (Python/NumPy/CUDA)
+    # must be done upstream via ``maps.utils.seeding.set_all_seeds(cfg.seed)``
+    # — the CLI (``scripts/run_sarl.py``) does this; don't call
+    # ``_build_networks`` without that prelude.
     torch.manual_seed(cfg.seed)
     policy = SarlQNetwork(in_channels, num_actions).to(cfg.device)
     target = SarlQNetwork(in_channels, num_actions).to(cfg.device)

@@ -235,6 +235,10 @@ def _build_networks(
     SarlCLSecondOrderNetwork | None,
 ]:
     """Policy, target, SO (optional), FO-teacher (optional), SO-teacher (optional)."""
+    # Local re-seed for deterministic network init. Upstream callers MUST have
+    # already called ``maps.utils.seeding.set_all_seeds(cfg.seed)`` to cover
+    # Python random / NumPy / CUDA RNGs; this ``torch.manual_seed`` alone only
+    # re-seeds the PyTorch CPU generator.
     torch.manual_seed(cfg.seed)
     policy = _build_first_order(in_channels, num_actions, cfg)
     target = _build_first_order(in_channels, num_actions, cfg)
