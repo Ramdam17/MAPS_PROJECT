@@ -268,18 +268,36 @@ def _build_networks(
     teacher_second: SarlCLSecondOrderNetwork | None = None
     if cfg.curriculum and cfg.teacher_load_path is not None:
         ckpt = torch.load(cfg.teacher_load_path, map_location=cfg.device, weights_only=False)
+        # D.19b: backward-compatible teacher-state-dict key lookup.
+        # D.13 checkpoints use `policy_state_dict` / `second_order_state_dict`
+        # (canonical full-resume schema). Legacy `_persist_outputs` wrote
+        # `policy_net_state_dict` / `second_net_state_dict` (teacher-only
+        # schema). Accept both so teacher-load-path works with checkpoints
+        # produced by either writer.
+        if "policy_state_dict" in ckpt:
+            policy_state = ckpt["policy_state_dict"]
+        elif "policy_net_state_dict" in ckpt:
+            policy_state = ckpt["policy_net_state_dict"]
+        else:
+            raise ValueError(
+                f"teacher checkpoint {cfg.teacher_load_path} has neither "
+                "`policy_state_dict` (D.13 schema) nor `policy_net_state_dict` "
+                "(legacy schema); cannot load FO teacher."
+            )
         teacher_first = _build_first_order(in_channels, num_actions, cfg)
-        teacher_first = load_partial_state_dict(teacher_first, ckpt["policy_net_state_dict"])
+        teacher_first = load_partial_state_dict(teacher_first, policy_state)
         teacher_first.eval()
         for p in teacher_first.parameters():
             p.requires_grad_(False)
 
-        if cfg.meta and "second_net_state_dict" in ckpt:
-            teacher_second = SarlCLSecondOrderNetwork(in_channels).to(cfg.device)
-            teacher_second = load_partial_state_dict(teacher_second, ckpt["second_net_state_dict"])
-            teacher_second.eval()
-            for p in teacher_second.parameters():
-                p.requires_grad_(False)
+        if cfg.meta:
+            second_state = ckpt.get("second_order_state_dict") or ckpt.get("second_net_state_dict")
+            if second_state is not None:
+                teacher_second = SarlCLSecondOrderNetwork(in_channels).to(cfg.device)
+                teacher_second = load_partial_state_dict(teacher_second, second_state)
+                teacher_second.eval()
+                for p in teacher_second.parameters():
+                    p.requires_grad_(False)
 
     return policy, target, second, teacher_first, teacher_second
 
@@ -369,6 +387,17 @@ def _persist_checkpoint_cl(
     active) and both DynamicLossWeighter internal states. Teachers are never
     updated by the training loop — persisted here only so resumed runs start
     from the same frozen reference as the pre-pause run.
+
+    Dual role (D.19b)
+    -----------------
+    This file is BOTH:
+    1. The resume source for `--resume` / `--resume-from` (full state).
+    2. The teacher-checkpoint source for the NEXT curriculum stage's
+       `--teacher-load-path`. `_build_networks` reads `policy_state_dict` /
+       `second_order_state_dict` from here (canonical D.13 keys) with a
+       legacy-key fallback (`policy_net_state_dict` /
+       `second_net_state_dict`) for checkpoints produced by the
+       pre-D.19b `_persist_outputs` writer.
     """
     payload: dict[str, Any] = {
         "format_version": _CHECKPOINT_FORMAT_VERSION_CL,
@@ -869,26 +898,22 @@ def _persist_outputs(
     metrics: CLTrainingMetrics,
     cfg: SarlCLTrainingConfig,
 ) -> None:
-    """Dump final weights + metrics. Schema kept compatible with teacher loading.
+    """Dump the metrics.json summary. (Weights live in the D.13 checkpoint.)
 
-    Saves a subset of the paper's checkpoint keys — enough to serve as a
-    teacher for the next curriculum stage via ``cfg.teacher_load_path``.
+    Sprint-08 D.19b: this function used to also write a ``checkpoint.pt``
+    with a teacher-loading schema (``policy_net_state_dict`` /
+    ``second_net_state_dict`` keys). That file collided with — and
+    silently overwrote — the resume-schema ``checkpoint.pt`` written by
+    :func:`_persist_checkpoint_cl` moments earlier in the same call
+    site, which broke post-training resume. The teacher-state-dict
+    write is now removed; :func:`_build_networks` reads the teacher
+    from the D.13 checkpoint (with a legacy-key fallback for older
+    files). See ``docs/reviews/sarl-cl-training-loop.md §(d)`` for the
+    full audit.
     """
     assert cfg.output_dir is not None
     out = Path(cfg.output_dir)
     out.mkdir(parents=True, exist_ok=True)
-
-    checkpoint = {
-        "policy_net_state_dict": policy_net.state_dict(),
-        "second_net_state_dict": second_order_net.state_dict() if second_order_net else None,
-        "game": cfg.game,
-        "seed": cfg.seed,
-        "meta": cfg.meta,
-        "cascade_iterations_1": cfg.cascade_iterations_1,
-        "cascade_iterations_2": cfg.cascade_iterations_2,
-        "num_frames": cfg.num_frames,
-    }
-    torch.save(checkpoint, out / "checkpoint.pt")
 
     # Plain-JSON metrics for quick inspection.
     import json

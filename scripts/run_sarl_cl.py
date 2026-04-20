@@ -188,7 +188,13 @@ def main(
     teacher_load_path: Path | None = typer.Option(  # noqa: B008
         None,
         "--teacher-load-path",
-        help="Previous-task checkpoint.pt (required when --curriculum is set).",
+        help=(
+            "Previous-task checkpoint.pt (required when --curriculum is set). "
+            "Accepts D.13 canonical schema (policy_state_dict) or legacy schema "
+            "(policy_net_state_dict) — loader falls back automatically. "
+            "Typical source: the checkpoint.pt written at the end of a prior "
+            "stage in the same curriculum (D.19b dual-role checkpoint)."
+        ),
     ),
     output_dir: Path | None = typer.Option(  # noqa: B008
         None,
