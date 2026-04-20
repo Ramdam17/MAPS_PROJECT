@@ -271,6 +271,232 @@ L237 ne touche que `wager.weight`, pas `wager.bias` — idem. ✅
 
 ---
 
-## SecondOrderNetwork (C.5) — à remplir
+## SecondOrderNetwork (C.5)
 
-*(placeholder — sera rempli en sub-phase C.5)*
+Port `src/maps/components/second_order.py:93-150` (~58 lignes). Classe-chapeau qui compose
+`ComparatorMatrix → Dropout → cascade_update → WageringHead` en un seul module.
+
+```python
+class SecondOrderNetwork(nn.Module):
+    def __init__(self, input_dim, dropout=0.5, n_wager_units=1, weight_init_range=(0.0, 0.1)):
+        super().__init__()
+        self.comparator = ComparatorMatrix()
+        self.dropout = nn.Dropout(dropout)
+        self.wagering_head = WageringHead(input_dim, n_wager_units, weight_init_range)
+
+    def forward(self, first_order_input, first_order_output, prev_comparison, cascade_rate):
+        comparison_matrix = self.comparator(first_order_input, first_order_output)
+        comparison_out = self.dropout(comparison_matrix)
+        comparison_out = cascade_update(comparison_out, prev_comparison, cascade_rate)
+        wager = self.wagering_head(comparison_out)
+        return wager, comparison_out
+```
+
+### (a) Composition vs student (bit-exact)
+
+Student `blindsight_tmlr.py:239-252` (verbatim, reflow) :
+
+```python
+def forward(self, first_order_input, first_order_output, prev_comparison, cascade_rate):
+    comparison_matrix = first_order_input - first_order_output        # eq.1
+    comparison_out = self.dropout(comparison_matrix)                  # eq.2
+    if prev_comparison is not None:                                   # eq.6 cascade
+        comparison_out = cascade_rate * comparison_out + (1 - cascade_rate) * prev_comparison
+    wager = self.sigmoid(self.wager(comparison_out))                  # eq.3 + sigmoid
+    return wager, comparison_out
+```
+
+**Mapping port ↔ student** :
+
+| Étape | Student L241-252                                             | Port L146-149                                                 | Match |
+|:-----:|--------------------------------------------------------------|---------------------------------------------------------------|:-----:|
+| eq.1  | `first_order_input - first_order_output`                     | `self.comparator(fi, fo)` → même op                           | ✅    |
+| eq.2  | `self.dropout(comparison_matrix)` (p=0.5)                    | `self.dropout(comparison_matrix)` (p=0.5 default)             | ✅    |
+| eq.6  | `α·x + (1-α)·prev` inline (avec `if prev is not None`)       | `cascade_update(comparison_out, prev_comparison, cascade_rate)` | ✅    |
+| eq.3  | `self.sigmoid(self.wager(comparison_out))`                   | `self.wagering_head(comparison_out)` (sigmoid si `n_wager_units=1`) | ✅ (default)   |
+
+**Ordre des ops** : comparator → dropout → cascade → wager. Identique student.
+
+✅ **Composition bit-exact avec student Blindsight.** AGL `agl_tmlr.py` utilise le même template.
+
+### (b) Forward signature
+
+Port : `(first_order_input, first_order_output, prev_comparison, cascade_rate) → (wager, comparison_out)`.
+Student : **identique**.
+
+Caller (Blindsight trainer L299-306) :
+```python
+comparison: torch.Tensor | None = None
+for _ in range(self.cascade_iters):
+    wager, comparison = self.second_order(batch.patterns, h2, comparison, self.cascade_rate)
+```
+
+Le caller initialise `comparison = None` (bootstrap step 1), threade `comparison` en retour
+comme `prev_comparison` de l'itération suivante. Pattern correct ; `cascade_update(x, None, α) = x`
+via C.1 (`prev_activation is None → return new_activation`).
+
+✅ **Signature + threading correct.**
+
+### (c) Retourne comparison_out **post-cascade**
+
+Port L147-149 :
+```python
+comparison_out = self.dropout(comparison_matrix)          # post-dropout, pre-cascade
+comparison_out = cascade_update(comparison_out, ...)       # post-cascade
+wager = self.wagering_head(comparison_out)                 # feed to wager
+return wager, comparison_out                               # ← post-cascade
+```
+
+Le caller thread la version **post-cascade** comme `prev_comparison` au step suivant. Student pareil
+(L247-252). C'est ce qui fait converger `comparison_out → stationary` asymptotiquement — sans ça,
+le cascade ne peut pas accumuler.
+
+✅ **Threading asymptote correct.**
+
+### (d) Dropout placement : eq.2 **avant** cascade (eq.6)
+
+Paper eq.2 : `C'_t = Dropout(C_t)`. Paper eq.6 applique le cascade. L'ordre paper n'est pas
+explicitement commenté ; student applique **dropout → cascade** (pas l'inverse). Port match.
+
+**Impact du choix dropout→cascade vs cascade→dropout** :
+
+- **Dropout → cascade** (port actuel, student) : chaque itération a un **mask dropout différent**.
+  Le cascade accumule donc `α · Dropout₁(C) + α(1-α) · Dropout₂(C) + ...`. Sur 50 itérations avec
+  α=0.02, ça **moyenne** 50 masks différents → le résultat steady-state approche
+  `E[Dropout(C)] = (1-p) · C` (si p=0.5 → ≈ 0.5·C). **Reduction de variance** sur le signal
+  comparator — rôle non-trivial du cascade.
+- **Cascade → dropout** : appliquerait un seul mask sur le steady-state. Variance plus élevée,
+  pas de moyennage. Différent.
+
+→ **L'ordre port = student = effet utile du cascade sur path stochastique**. Ceci **résout
+partiellement** le paradoxe flaggé en `docs/reviews/cascade.md §(d)` (cascade = no-op sur
+deterministic forward) : sur le path 2nd-order Blindsight/AGL **le forward est stochastique via
+dropout**, donc cascade ≠ no-op. Le cascade AVERAGE des dropout masks.
+
+⚠️ **MAIS** : path 1st-order SARL (`SarlQNetwork.forward`) **n'a pas de dropout** (L85-86 :
+`hidden = F.relu(self.fc_hidden(flat_input)); hidden = cascade_update(hidden, prev_h2, α)`). Sur
+ce path, `prev_h2=None` au bootstrap puis `hidden` constant → cascade **reste no-op** à
+l'itération ≥ 2. Finding C.1 confirmé pour SARL 1st-order ; résolu pour Blindsight/AGL 2nd-order.
+
+✅ **Ordre dropout→cascade paper-faithful (via student).**
+
+### (e) Dropout passe en eval → passif
+
+Le port utilise `nn.Dropout` (pas un mask custom), donc respecte `self.training`. Le caller
+Blindsight L378 (`self.second_order.eval()`) désactive automatiquement dropout en eval. À
+l'inférence, `Dropout(C) = C` → cascade voit input **constant** → cascade redevient no-op.
+
+**Conséquence en eval** : le SecondOrderNetwork boucle 50 fois pour produire **le même wager**
+qu'après 1 itération. 50× overhead inutile en eval.
+
+⚠️ **C5-fix-1** (optim non-paper-faithful, skip par défaut) : en `eval()` mode, shortcut à
+`cascade_iters=1`. Non appliqué car :
+1. Pas paper-faithful (paper `cascade_iters=50` même en eval implicitement).
+2. Bench confirme overhead ~50× mais reste négligeable dans le budget Blindsight/AGL (~secondes).
+3. Doit être discuté avant changement — flagge pour future optim si training bottlenecké.
+
+### (f) cascade_rate propagation — positional
+
+Le port propage `cascade_rate` positionnellement :
+```python
+cascade_update(comparison_out, prev_comparison, cascade_rate)  # 3e arg positionnel
+```
+
+OK post-C.2 (renaming `alpha → cascade_rate` complet). Pas de piège résiduel.
+
+✅ **Propagation post-C.2 correcte.**
+
+### (g) Doublon avec `SarlSecondOrderNetwork` (src/maps/experiments/sarl/model.py:97-147)
+
+SARL a sa **propre classe** `SarlSecondOrderNetwork` (50 lignes). Comparatif :
+
+| Aspect                 | `components.SecondOrderNetwork`                | `sarl.SarlSecondOrderNetwork`                    |
+|:-----------------------|:-----------------------------------------------|:-------------------------------------------------|
+| ComparatorMatrix       | `self.comparator = ComparatorMatrix()` (L131) | Absent (comparison inline dans `SarlQNetwork`)    |
+| Dropout                | `p=0.5` (default)                              | `p=0.1` (paper SARL)                              |
+| Wager dims             | `input_dim → n_wager_units` (1 ou 2)          | `NUM_LINEAR_UNITS=1024 → 2` (hardcoded)          |
+| Wager activation       | `sigmoid` (n=1) ou `softmax` (n=2, 🚨 C4-fix-1) | **Raw logits** (pas d'activation)                 |
+| Forward signature      | `(fi, fo, prev_comp, α) → (wager, comp_out)`   | `(comparison_matrix, prev_comp, α) → (wager, comp_out)` |
+| Weight init            | `uniform(0, 0.1)`                              | `uniform(0, 0.1)`                                 |
+
+**Raison de la duplication** :
+1. `ComparatorMatrix` inutilisable en SARL (tied-weight decoder interne à `SarlQNetwork`).
+2. `NUM_LINEAR_UNITS` est un constant dépendant de l'archi MinAtar (10×10 grid, 16 filters),
+   pas un `input_dim` paramétrable.
+3. Raw logits requis pour BCE-with-logits (eq.5 paper) — `SecondOrderNetwork` applique sigmoid
+   ou softmax, incompatible.
+4. Dropout rate différent (paper SARL = 0.1 vs Blindsight/AGL = 0.5).
+
+**Unification possible ?** Oui, mais coût-bénéfice négatif :
+- Il faudrait rendre `SecondOrderNetwork` accepter soit `(fi, fo)` soit `(comparison_matrix,)`
+  comme input → branche conditionnelle → perte de clarté.
+- Il faudrait ajouter un mode "raw logits" à `WageringHead` (déjà envisagé dans C4-fix-1 ; après
+  ce fix, `n_wager_units=2` = raw logits par défaut, donc **possible après C.6**).
+
+**Recommandation** : ne pas unifier maintenant. Documenter dans `docs/reproduction/deviations.md`
+comme dette technique (DETTE-1 : "SecondOrderNetwork + SarlSecondOrderNetwork doublon") pour
+future refacto après que la reproduction paper soit validée. Risque nul en l'état.
+
+⚠️ **C5-fix-2** : ajouter DETTE-1 dans `deviations.md` (tracking de la duplication,
+pas un bug).
+
+### (h) Gradient flow à travers 50 cascade steps
+
+Le caller Blindsight L314 `loss_2.backward(retain_graph=True)` fait backprop à travers **toute**
+la boucle de 50 itérations cascade. Chaque itération crée un nouveau noeud graph via le
+`cascade_update` qui produit `α·new + (1-α)·prev_comparison`.
+
+**Implications** :
+1. **Memory** : graph garde 50 copies intermédiaires → mémoire ×50 pour la 2nd-order loss.
+2. **Backward depth** : 50 multiplications-chaînées + 50 additions + 50 dropouts + 50 linear.
+3. **Gradient via dropout mask** : chaque mask est tiré indépendamment → gradient reçoit la
+   moyenne sur 50 masks → **régularisation implicite** du gradient (proche de Monte-Carlo
+   dropout dans Gal & Ghahramani 2016).
+
+✅ Comportement paper-faithful (matches student qui a le même unroll).
+
+⚠️ **Non-fix** : le `retain_graph=True` est nécessaire car le graph est réutilisé pour la loss
+1st-order après. Si on veut optimiser la mémoire un jour, détacher `prev_comparison` (pas dans
+ce review).
+
+### Fixes identifiées C.5
+
+| ID       | Fix                                                                 | Scope                                  | Effort |
+|----------|---------------------------------------------------------------------|----------------------------------------|:------:|
+| C5-fix-1 | (skip) eval-mode shortcut `cascade_iters=1` — **non appliqué** (pas paper-faithful) | `SecondOrderNetwork.forward` + caller | — |
+| C5-fix-2 | Ajouter DETTE-1 "SecondOrderNetwork + SarlSecondOrderNetwork doublon" dans `deviations.md` | `docs/reproduction/deviations.md`  | 5 min  |
+| C5-fix-3 | Docstring `forward` : noter explicitement "returns comparison_out POST-cascade, caller threads it as prev_comparison" | `second_order.py:139-145` docstring | 5 min  |
+
+### Cross-reference avec C.1 (cascade) — paradoxe résolu partiellement
+
+Le finding 🚨 de `docs/reviews/cascade.md §(d)` — "cascade = no-op sur deterministic forward" —
+est **résolu pour Blindsight/AGL 2nd-order path** via le dropout inside-cascade qui rend le
+forward stochastique. Le cascade y fait un **averaging de 50 dropout masks** → réduit la variance
+du signal comparator.
+
+Le finding **reste ouvert** pour :
+- **SARL 1st-order path** (`SarlQNetwork.forward`) : pas de dropout dans le forward → cascade
+  reste no-op → à investiguer en Phase D (sub-phase D.15 ou équivalent) si la parité SARL diverge.
+- **SarlSecondOrderNetwork** : a du dropout p=0.1 donc **pareil que Blindsight 2nd-order**,
+  cascade averaging → OK.
+
+**À noter dans deviations.md** : mettre à jour D-002 (cascade impact) avec ce refinement :
+`cascade = averaging mask sur 2nd-order (path dropout) ; no-op sur SARL 1st-order (pas de dropout)`.
+
+### Résumé — SecondOrderNetwork
+
+- ✅ **Composition bit-exact** avec student Blindsight/AGL (mapping 4 étapes).
+- ✅ **Forward signature + threading** identiques student ; caller initialise `comparison=None`
+  et boucle correctement.
+- ✅ **Retour post-cascade** correct pour threading asymptote.
+- ✅ **Dropout→cascade paper-faithful** ; resout partiellement le paradoxe C.1 (averaging de masks).
+- ⚠️ **Eval mode = 50× overhead** (cascade no-op sans dropout actif) — pas fix (paper-faithful).
+- ✅ **cascade_rate propagation** positional, post-C.2 OK.
+- ⚠️ **Doublon SarlSecondOrderNetwork** intentionnel (tied-weight, raw logits, dims différents) —
+  dette à tracker (DETTE-1), pas à unifier avant reproduction paper validée.
+- ✅ **Gradient flow 50-deep** via `retain_graph=True` dans caller, paper-faithful.
+- **0 divergence paper, 1 dette documentable, 2 notes docstring.**
+
+**C.5 clôturée. 2 fixes mineurs (C5-fix-2 = deviations.md, C5-fix-3 = docstring) + 1 update D-002
+pour C.6.**
+
