@@ -36,31 +36,38 @@ cl:
   weight_distillation: 1.0
   weight_feature: 1.0
 
-# ── DQN hyperparameters ─────────────────────────────────────────────────────
+# ── DQN hyperparameters (paper Table 11) ───────────────────────────────────
+# Sprint-08 D.9 (2026-04-20): same paper-faithful alignment as config/training/
+# sarl.yaml. See that file + deviations.md for the full rationale / overrides.
 training:
   num_frames: 5_000_000
-  batch_size: 128
+  batch_size: 32               # paper Table 11 (D-sarl-batch-size resolved D.9)
   replay_buffer_size: 100_000
   replay_start_size: 5_000
   training_freq: 1
   # CL branch uses 500 (not 1000) per SARL_CL/examples_cl/maps.py:1121.
   target_update_freq: 500
+  gamma: 0.999                 # paper Table 11 (D-sarl-gamma resolved D.7)
 
-# ── Optimizer (Adam, same as standard SARL) ─────────────────────────────────
+# ── Optimizer (Adam, same as standard SARL, paper-faithful post-D.9) ────────
 optimizer:
   name: Adam
-  lr_first_order: 0.0003
-  lr_second_order: 0.00005
+  lr_first_order: 0.00025      # paper Table 11 (was 0.0003 — D-sarl-step-size-1)
+  lr_second_order: 0.0002      # paper Table 11 (was 0.00005 — D-sarl-lr-2nd)
   eps: 0.01
+  betas: [0.95, 0.95]          # paper Table 11 (D-sarl-adam-beta1/2)
 
 # ── Scheduler (StepLR, same as standard SARL) ───────────────────────────────
+# Paper Table 11 step_size=1; suspected paper typo (lr → 0 fast). See sarl.yaml
+# comment. Override with `-o scheduler.step_size=1000` for student-baseline.
 scheduler:
   name: StepLR
-  step_size: 1_000
+  step_size: 1                 # paper Table 11 (D-sarl-sched-step resolved D.9)
   gamma: 0.999
 
 # ── EMA for target_wager (paper passes alpha in percent, /100 internally) ───
-alpha: 1.0
+# Paper Table 11 α=0.45 → alpha=45. See sarl.yaml + D-sarl-alpha-ema (D.2).
+alpha: 45
 
 # ── Validation cadence ──────────────────────────────────────────────────────
 validation:

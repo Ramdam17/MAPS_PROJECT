@@ -73,16 +73,19 @@ log = logging.getLogger(__name__)
 # These match the standard SARL defaults — CL does not change optimization
 # hyperparameters, only the loss composition.
 
-BATCH_SIZE = 128
+# Sprint-08 D.9 (2026-04-20): aligned paper-faithful, same as standard SARL.
+# Overrides via CLI reproduce the student baseline. See sarl.yaml + deviations.md.
+BATCH_SIZE = 32  # paper Table 11 (was 128)
 REPLAY_BUFFER_SIZE = 100_000
 REPLAY_START_SIZE = 5_000
 TRAINING_FREQ = 1
 TARGET_NETWORK_UPDATE_FREQ = 500  # paper CL uses 500 (not 1000); line 1121
 MIN_SQUARED_GRAD = 0.01
-STEP_SIZE_1 = 0.0003
-STEP_SIZE_2 = 0.00005
+STEP_SIZE_1 = 0.00025  # paper Table 11 (was 0.0003)
+STEP_SIZE_2 = 0.0002  # paper Table 11 (was 0.00005)
+ADAM_BETAS: tuple[float, float] = (0.95, 0.95)  # paper Table 11 (was PyTorch default)
 SCHEDULER_STEP = 0.999
-SCHEDULER_PERIOD = 1_000
+SCHEDULER_PERIOD = 1  # paper Table 11 (was 1000); see _build_optimizers warning
 
 
 class MinAtarLike(Protocol):
@@ -138,7 +141,9 @@ class SarlCLTrainingConfig:
     step_size_2: float = STEP_SIZE_2
     scheduler_period: int = SCHEDULER_PERIOD
     scheduler_gamma: float = SCHEDULER_STEP
-    alpha: float = 1.0
+    adam_betas: tuple[float, float] = ADAM_BETAS
+    # Paper Table 11 α=45 (→ 0.45). Aligned 2026-04-20 (D.9).
+    alpha: float = 45.0
     # Paper Table 11 γ=0.999 (aligned 2026-04-20, D.7). See deviations.md
     # D-sarl-gamma. Override to 0.99 for student-baseline reproduction.
     gamma: float = 0.999
@@ -274,13 +279,34 @@ def _build_optimizers(
     second: torch.nn.Module | None,
     cfg: SarlCLTrainingConfig,
 ) -> tuple[optim.Optimizer, optim.Optimizer | None, Any, Any | None]:
-    opt1 = optim.Adam(policy.parameters(), lr=cfg.step_size_1, eps=MIN_SQUARED_GRAD)
+    # Sprint-08 D.9: same paper-faithful-but-suspect step_size=1 warning as
+    # standard SARL. See sarl/training_loop._build_optimizers for rationale.
+    if cfg.scheduler_period == 1:
+        log.warning(
+            "scheduler_period=1 (paper Table 11 as-written): LR decays every "
+            "update; with γ=%.3f, effective LR ≈ 0 after ~%d updates. May be "
+            "a paper typo — override with `-o scheduler.step_size=1000` to "
+            "reproduce student. See deviations.md D-sarl-sched-step.",
+            cfg.scheduler_gamma,
+            int(-5.0 / (cfg.scheduler_gamma - 1.0)) if cfg.scheduler_gamma < 1 else 0,
+        )
+    opt1 = optim.Adam(
+        policy.parameters(),
+        lr=cfg.step_size_1,
+        eps=MIN_SQUARED_GRAD,
+        betas=cfg.adam_betas,
+    )
     sch1 = StepLR(opt1, step_size=cfg.scheduler_period, gamma=cfg.scheduler_gamma)
     opt2: optim.Optimizer | None = None
     sch2: Any | None = None
     if cfg.meta:
         assert second is not None
-        opt2 = optim.Adam(second.parameters(), lr=cfg.step_size_2, eps=MIN_SQUARED_GRAD)
+        opt2 = optim.Adam(
+            second.parameters(),
+            lr=cfg.step_size_2,
+            eps=MIN_SQUARED_GRAD,
+            betas=cfg.adam_betas,
+        )
         sch2 = StepLR(opt2, step_size=cfg.scheduler_period, gamma=cfg.scheduler_gamma)
     return opt1, opt2, sch1, sch2
 

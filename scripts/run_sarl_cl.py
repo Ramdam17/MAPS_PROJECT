@@ -111,6 +111,11 @@ def _build_training_config(
     buried in a config file. Setting (1-6) is applied LAST so it overrides
     any meta/cascade_* values that slipped into the YAML.
     """
+    # D.7/D.9 additions: plumb paper-faithful gamma + Adam betas from yaml.
+    gamma_val = float(getattr(cfg.training, "gamma", 0.999))
+    betas_cfg = getattr(cfg.optimizer, "betas", (0.95, 0.95))
+    betas_val = (float(betas_cfg[0]), float(betas_cfg[1]))
+
     base = SarlCLTrainingConfig(
         game=game,
         seed=seed,
@@ -134,8 +139,10 @@ def _build_training_config(
         target_update_freq=int(cfg.training.target_update_freq),
         step_size_1=float(cfg.optimizer.lr_first_order),
         step_size_2=float(cfg.optimizer.lr_second_order),
+        adam_betas=betas_val,
         scheduler_period=int(cfg.scheduler.step_size),
         scheduler_gamma=float(cfg.scheduler.gamma),
+        gamma=gamma_val,
         alpha=float(cfg.alpha),
         validation_every_episodes=int(cfg.validation.every_episodes),
         validation_iterations=int(cfg.validation.n_episodes),

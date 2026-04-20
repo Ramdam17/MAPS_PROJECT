@@ -71,16 +71,21 @@ log = logging.getLogger(__name__)
 
 # ── Paper constants (source: external/MinAtar/examples/maps.py:92-107) ──────
 
-BATCH_SIZE = 128
+# Sprint-08 D.9 (2026-04-20): 5 constants aligned paper-faithful. Overrides
+# via CLI (`-o training.batch_size=128 ...`) reproduce the student baseline.
+# See docs/reproduction/deviations.md D-sarl-{batch-size,step-size-1,lr-2nd,
+# adam-beta1/2,sched-step}.
+BATCH_SIZE = 32  # paper Table 11 (was 128 port-only divergence)
 REPLAY_BUFFER_SIZE = 100_000
 REPLAY_START_SIZE = 5_000
 TRAINING_FREQ = 1  # update every N frames once warmup is done
 TARGET_NETWORK_UPDATE_FREQ = 1_000  # sync cadence, in policy-update steps
 MIN_SQUARED_GRAD = 0.01  # Adam eps
-STEP_SIZE_1 = 0.0003  # policy-net learning rate
-STEP_SIZE_2 = 0.00005  # second-order learning rate
-SCHEDULER_STEP = 0.999  # StepLR gamma
-SCHEDULER_PERIOD = 1_000  # StepLR step_size
+STEP_SIZE_1 = 0.00025  # policy-net learning rate — paper Table 11 (was 0.0003)
+STEP_SIZE_2 = 0.0002  # second-order learning rate — paper Table 11 (was 0.00005)
+ADAM_BETAS: tuple[float, float] = (0.95, 0.95)  # paper Table 11 (student omitted → PyTorch default 0.9/0.999)
+SCHEDULER_STEP = 0.999  # StepLR gamma (paper silent; student value kept)
+SCHEDULER_PERIOD = 1  # StepLR step_size — paper Table 11 (suspected typo, student used 1000); see _build_optimizers
 
 
 class MinAtarLike(Protocol):
@@ -135,12 +140,17 @@ class SarlTrainingConfig:
     step_size_2: float = STEP_SIZE_2
     scheduler_period: int = SCHEDULER_PERIOD
     scheduler_gamma: float = SCHEDULER_STEP
+    # Paper Table 11 betas=(0.95, 0.95); student omits → PyTorch default
+    # (0.9, 0.999). Aligned paper-faithful 2026-04-20 (D.9). See D-sarl-adam-beta1/2.
+    adam_betas: tuple[float, float] = ADAM_BETAS
     # Paper Table 11 γ=0.999 (aligned 2026-04-20, D.7). Override to 0.99 for
     # student-baseline reproduction. See deviations.md D-sarl-gamma.
     gamma: float = 0.999
 
     # EMA coefficient for target_wager (paper passes percent then /100).
-    alpha: float = 1.0
+    # Paper Table 11 α=45 (→ 0.45 post-div). Aligned 2026-04-20 (D.2; D.9
+    # aligns dataclass default with config yaml). See D-sarl-alpha-ema.
+    alpha: float = 45.0
 
     # Validation cadence.
     validation_every_episodes: int = 50
@@ -204,13 +214,39 @@ def _build_optimizers(
     cfg: SarlTrainingConfig,
 ) -> tuple[optim.Optimizer, optim.Optimizer | None, Any, Any | None]:
     """Adam + StepLR per paper convention."""
-    opt1 = optim.Adam(policy.parameters(), lr=cfg.step_size_1, eps=MIN_SQUARED_GRAD)
+    # Sprint-08 D.9: the paper-faithful scheduler step_size=1 decays the LR at
+    # every update → on a 5M-frame run with γ=0.999 the LR collapses to ~0
+    # after ~5k updates. This is what the paper prescribes literally, but the
+    # behaviour is suspicious enough to warrant a loud warning so the
+    # reviewer can verify / override. Student used step_size=1000 which is
+    # far more moderate; see sarl.yaml scheduler block for overrides.
+    if cfg.scheduler_period == 1:
+        log.warning(
+            "scheduler_period=1 (paper Table 11 as-written): LR decays every "
+            "update; with γ=%.3f, effective LR ≈ 0 after ~%d updates. This "
+            "may be a paper typo — override with `-o scheduler.step_size=1000` "
+            "to reproduce the student baseline. See deviations.md D-sarl-sched-step.",
+            cfg.scheduler_gamma,
+            # Estimate of when LR drops below 1% of initial.
+            int(-5.0 / (cfg.scheduler_gamma - 1.0)) if cfg.scheduler_gamma < 1 else 0,
+        )
+    opt1 = optim.Adam(
+        policy.parameters(),
+        lr=cfg.step_size_1,
+        eps=MIN_SQUARED_GRAD,
+        betas=cfg.adam_betas,
+    )
     sch1 = StepLR(opt1, step_size=cfg.scheduler_period, gamma=cfg.scheduler_gamma)
     opt2: optim.Optimizer | None = None
     sch2: Any | None = None
     if cfg.meta:
         assert second is not None
-        opt2 = optim.Adam(second.parameters(), lr=cfg.step_size_2, eps=MIN_SQUARED_GRAD)
+        opt2 = optim.Adam(
+            second.parameters(),
+            lr=cfg.step_size_2,
+            eps=MIN_SQUARED_GRAD,
+            betas=cfg.adam_betas,
+        )
         sch2 = StepLR(opt2, step_size=cfg.scheduler_period, gamma=cfg.scheduler_gamma)
     return opt1, opt2, sch1, sch2
 
