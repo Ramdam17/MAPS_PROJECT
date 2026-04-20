@@ -40,18 +40,41 @@ def cae_loss(
     of the encoder Jacobian is computed analytically under the assumption that
     the encoder is a single Linear → Sigmoid layer with weight matrix W.
 
+    D-002 note
+    ----------
+    The paper (eq.4) describes a **SimCLR / NT-Xent contrastive loss** (Chen
+    et al. 2020), not a CAE. The reference student code implements CAE
+    (Rifai 2011) despite using "contrastive" phraseology in comments.
+    We faithfully port the student's CAE. See `docs/reproduction/deviations.md`
+    D-002 and `docs/reviews/losses.md` §C.7 for the full analysis; the decision
+    of whether to add a paper-faithful SimCLR variant is tracked as sub-phase
+    D.17 in the Sprint-08 plan.
+
+    Assumptions on inputs
+    ---------------------
+    * ``recons_x`` **must lie in [0, 1]** (post-sigmoid) when ``recon="bce_sum"``
+      because `F.binary_cross_entropy` rejects values outside that range.
+    * ``h`` **must be post-sigmoid** (i.e. in [0, 1]) for the sigmoid-derivative
+      formula `h(1-h)` to be mathematically valid. The SARL sibling
+      (:func:`maps.experiments.sarl.losses.cae_loss`) preserves this formula
+      even with ReLU hidden — a paper-faithful quirk documented there.
+
     Parameters
     ----------
     W : torch.Tensor
         Encoder weight matrix, shape (n_hidden, n_input). Same orientation as
-        `nn.Linear(in, hidden).weight`.
+        `nn.Linear(in, hidden).weight`. We detach W inside to match the
+        student's `state_dict()['fc1.weight']` access pattern (PyTorch
+        `state_dict(keep_vars=False)` returns detached tensors by default —
+        gradient does NOT flow directly to W through the contractive term,
+        only via `h`'s backward path through the encoder).
     x : torch.Tensor
         Input batch, shape (batch, n_input).
     recons_x : torch.Tensor
-        Decoder output, shape (batch, n_input).
+        Decoder output, shape (batch, n_input). See "Assumptions on inputs".
     h : torch.Tensor
         Hidden activations after the encoder sigmoid, shape (batch, n_hidden).
-        Used to compute the sigmoid derivative `h(1-h)`.
+        Used to compute the sigmoid derivative `h(1-h)`. See "Assumptions on inputs".
     lam : float
         Weight on the contractive penalty term.
     recon : {"bce_sum", "mse_mean", "mse_sum"}, default "bce_sum"
@@ -91,7 +114,6 @@ def wagering_bce_loss(
     wager: torch.Tensor,
     target: torch.Tensor,
     reduction: str = "mean",
-    pos_weight: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Binary cross-entropy for the 1-unit wager head.
 
@@ -100,6 +122,13 @@ def wagering_bce_loss(
     post-sigmoid values. For numerical stability when training from scratch,
     prefer a logit-based variant — this one exists for parity.
 
+    Incompatible with ``WageringHead(n_wager_units=2)`` post-C.6
+    --------------------------------------------------------
+    After Phase C.6, `n_wager_units=2` returns **raw logits** (paper eq.3
+    faithful). Passing those logits here will make `F.binary_cross_entropy`
+    raise because it requires inputs in [0, 1]. For the 2-unit path, use
+    `F.binary_cross_entropy_with_logits` directly.
+
     Parameters
     ----------
     wager : torch.Tensor
@@ -107,9 +136,9 @@ def wagering_bce_loss(
     target : torch.Tensor
         Binary label (0 or 1), same shape as `wager`.
     reduction : {"mean", "sum", "none"}
-    pos_weight : torch.Tensor | None
-        Class-imbalance weight on the positive class, passed through to
-        `F.binary_cross_entropy`.
+        Reduction applied to the per-element BCE. Reference callers pass
+        ``"sum"`` explicitly (matching student `nn.BCELoss(size_average=False)`);
+        default is the PyTorch-standard ``"mean"``.
 
     Returns
     -------
@@ -118,11 +147,18 @@ def wagering_bce_loss(
     return F.binary_cross_entropy(
         wager,
         target.to(wager.dtype),
-        weight=pos_weight,
         reduction=reduction,
     )
 
 
+# ⚠️ `distillation_loss` is NOT called by any production training code (grep
+# confirmed: 0 callers in src/ other than re-exports). The paper's SARL+CL
+# protocol uses `weight_regularization` (L2 param anchor) as the "distillation"
+# signal, not this KL soft-target loss. We port it faithfully because the
+# student code does the same (`DistillationLoss` class defined but never
+# invoked). Kept exposed via __init__ in case future work wants Hinton-style
+# distillation. See `docs/reports/sprint-04b-report.md:37` and
+# `docs/reviews/losses.md` §C.9 (e) / DETTE-3.
 def distillation_loss(
     student_logits: torch.Tensor,
     teacher_logits: torch.Tensor,
@@ -189,16 +225,23 @@ def weight_regularization(model: torch.nn.Module, teacher_model: torch.nn.Module
     model : nn.Module
         Student network currently being trained.
     teacher_model : nn.Module
-        Frozen teacher checkpoint. Must have the same parameter topology
-        as ``model``; we do not assert this so the caller can pass e.g.
-        networks sharing only a prefix — mismatches surface as shape errors
-        from ``torch.sum``.
+        Frozen teacher checkpoint. Must have the same parameter **count** as
+        ``model``; we enforce this via ``zip(..., strict=True)`` so length
+        mismatches raise ``ValueError`` immediately instead of producing a
+        silently-truncated loss. Per-parameter shape mismatches still surface
+        as ``RuntimeError`` from ``torch.sum((p - p_teacher)**2)``.
+
+        **Caller contract:** ``teacher_model`` MUST be frozen
+        (``teacher_model.requires_grad_(False)``) before calling. Otherwise
+        the L2 term has non-zero gradient w.r.t. teacher parameters and the
+        anchor drifts — a silent correctness bug. We do not assert this at
+        runtime because iterating all params every call is wasteful.
 
     Returns
     -------
     torch.Tensor
-        Scalar L2 drift. Requires grad through ``model`` but not through
-        ``teacher_model`` (caller is responsible for freezing the teacher).
+        Scalar L2 drift. Requires grad through ``model`` only (provided the
+        teacher has been correctly frozen by the caller).
 
     Notes
     -----

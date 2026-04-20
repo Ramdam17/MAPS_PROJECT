@@ -29,15 +29,22 @@ References
 
 Notes on parity with the paper
 ------------------------------
-- ``W`` is taken live from ``policy_net.state_dict()['fc_hidden.weight']``.
-  state_dict returns the actual parameter tensor (no detach), so gradients
-  from the Jacobian term DO propagate back to ``fc_hidden.weight``. Preserving
-  this coupling is important; swapping to ``.data`` or ``.detach()`` would
-  silently drop that contribution.
+- ``W`` is passed in by the caller — typically as ``policy_net.fc_hidden.weight``
+  (a live `nn.Parameter`) or equivalently via
+  ``policy_net.state_dict()['fc_hidden.weight']``. **Important:** PyTorch's
+  ``state_dict(keep_vars=False)`` (the default) returns **detached** tensors,
+  so accessing W through state_dict already strips gradient tracking. The
+  student and this port are therefore equivalent on this point: the Jacobian
+  term does **not** propagate gradient directly back to ``fc_hidden.weight``;
+  only ``h`` carries the contractive backward signal (through its own
+  autograd graph back to the encoder weights). See
+  `docs/reviews/losses.md` §C.7 (d) for the full audit.
 - ``dh = h * (1 - h)`` uses Hadamard product and assumes ``h`` is post-ReLU
   (the paper applies this after ``f.relu(self.fc_hidden(...))``). The
-  derivative treatment is the same as in the original CAE paper though the
-  activation here is ReLU, not sigmoid — another quirk we preserve for parity.
+  derivative formula is mathematically valid for **sigmoid** activations
+  (Rifai 2011), not ReLU — so here it is a paper-faithful **quirk**, not a
+  correct Jacobian. We preserve it byte-for-byte for parity; do NOT "fix" it
+  to ``(h > 0).float()`` without discussion.
 """
 
 from __future__ import annotations

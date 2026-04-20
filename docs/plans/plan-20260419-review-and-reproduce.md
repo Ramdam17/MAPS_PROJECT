@@ -643,6 +643,25 @@ Chaque composante suit ce pattern :
 - **DoD :** commit.
 - **Effort :** 1 h.
 
+### D.22b Décision D-002 — SimCLR (paper eq.4) vs CAE (student) — blocking D.23-D.28
+- **Faire :** trancher avec Rémy si on implémente une variante paper-faithful de la loss 1st-order
+  (`components.losses.contrastive_simclr`) ou si on reste sur `cae_loss`. Produire :
+  1. Récap C.7 (`docs/reviews/losses.md §C.7` (a)(b)) — les 2 losses sont mathématiquement
+     distinctes, paper eq.4 = SimCLR/NT-Xent (Chen 2020).
+  2. Coût/bénéfice :
+     - **Option 1 (SimCLR)** : ~1-2j impl (module + pipeline augmentation
+       paires positives) + zéro parity possible avec student (losses différentes).
+     - **Option 2 (CAE statu quo)** : 0 coût, mais paper Tables 5/6/7 non-reproductibles sur ce
+       point (déjà le cas du student).
+  3. Recommandation rédigée dans `docs/reports/sprint-08-d22b-simclr-decision.md`.
+- **Vérifier :** décision signée par Rémy (ADR-style) dans le doc. Si Option 1 → créer
+  sub-phase D.22c d'implémentation. Si Option 2 → mettre à jour D-002 dans `deviations.md`
+  pour statuer "resolved — keep CAE as documented divergence".
+- **DoD :** doc décision + `deviations.md` D-002 mis à jour + (si impl) sub-phase D.22c créée.
+- **Effort :** 1-2 h (analyse + doc seulement ; impl Option 1 = sub-phase séparée).
+- **Blocking :** D.23 (Blindsight trainer), D.26 (AGL trainer) dépendent de cette décision pour
+  savoir quel chemin porter.
+
 ### Blindsight (2 fichiers)
 
 ### D.23 Review `src/maps/experiments/blindsight/trainer.py` (442 L)
