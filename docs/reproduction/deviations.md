@@ -83,6 +83,7 @@ paper diverge → paper wins. Les 🆘 paper-vs-student sont documentés mais co
 | D-sarl-bce-shape             | `trainer.py:194` `binary_cross_entropy_with_logits` | scalar `y` (eq. 5)  | `wager[B,2]` + `targets[B,2]`   | same                                   | ⚠️     | keep, doc note       |
 | D-sarl-dropout-rate          | `model.py:135` `Dropout(p=?)`                | paper silent               | 0.1                             | 0.1                                    | ⚠️     | keep                 |
 | D-sarl-backward-order        | `trainer.py:197-205` meta branch             | paper silent               | specific order, load-bearing    | same                                   | ⚠️     | keep, load-bearing   |
+| D-sarl-cascade-noop          | `sarl/model.py:SarlQNetwork.forward`         | 50 iters (eq. 6, setting 2/4/6) | no dropout → 50-iter loop = 1 iter (mathematical no-op) | same (Option A, 2026-04-20): keep 50 config value, `log.warning` at training_loop init, record `cascade_effective_iters_1=1` in metrics.json | ⚠️ info | D.4 ✅ resolved (Option A: paper-faithful keep, no runtime change). Post-repro: Phase H can add a dropout layer or shortcut. See `docs/reviews/cascade.md §(d)` + `docs/reviews/sarl-model.md §(b2)`. |
 | D-002 (existing, re-confirmed)| `sarl/losses.cae_loss`                      | SimCLR contrastive (eq. 4) | CAE (Rifai 2011)                | CAE                                    | 🆘+❌   | C.7-C.9 — policy     |
 
 ### B.8 — SARL+CL deviations (8 CL-specific ; 17 SARL héritées)

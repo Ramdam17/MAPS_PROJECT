@@ -162,6 +162,13 @@ class TrainingMetrics:
     total_updates: int = 0
     total_frames: int = 0
     wall_time_seconds: float = 0.0
+    # Sprint-08 D.4: cascade_effective_iters_1 is always 1 because
+    # SarlQNetwork.forward has no dropout → cascade is no-op on that path.
+    # cascade_effective_iters_2 matches the config value when meta=True (2nd-order
+    # path has dropout, cascade averages 50 masks) else None (2nd-order disabled).
+    # See deviations.md D-sarl-cascade-noop + docs/reviews/cascade.md §(d).
+    cascade_effective_iters_1: int = 1
+    cascade_effective_iters_2: int | None = None
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -232,12 +239,32 @@ def run_training(
         cfg.num_frames,
     )
 
+    # Sprint-08 D.4 (Option A, paper-faithful): the SARL 1st-order forward
+    # (SarlQNetwork) has no dropout → cascade is a mathematical no-op on that
+    # path regardless of cascade_iterations_1. We keep the paper-prescribed
+    # value (50 for settings 2/4/6) for parity; post-reproduction we may add
+    # dropout or a shortcut. Warn once so the behaviour is discoverable from
+    # run logs. See docs/reviews/cascade.md §(d) + deviations.md
+    # D-sarl-cascade-noop. Effective iters are also written to metrics.json.
+    if cfg.cascade_iterations_1 > 1:
+        log.warning(
+            "cascade_iterations_1=%d but SarlQNetwork.forward is deterministic "
+            "(no dropout): cascade is a no-op on the 1st-order path — kept for "
+            "paper parity (effective=1). See deviations.md D-sarl-cascade-noop.",
+            cfg.cascade_iterations_1,
+        )
+
     policy_net, target_net, second_order_net = _build_networks(in_channels, num_actions, cfg)
     optimizer, optimizer2, scheduler1, scheduler2 = _build_optimizers(
         policy_net, second_order_net, cfg
     )
     buffer = SarlReplayBuffer(cfg.replay_buffer_size)
     metrics = TrainingMetrics()
+    # Record the effective cascade iteration counts (D.4). 1st-order forward has
+    # no dropout → effective=1 regardless of config. 2nd-order has dropout p=0.1
+    # → config value is the true effective count when meta is enabled.
+    metrics.cascade_effective_iters_1 = 1
+    metrics.cascade_effective_iters_2 = cfg.cascade_iterations_2 if cfg.meta else None
 
     t = 0
     episode_idx = 0
@@ -424,6 +451,8 @@ def _persist_outputs(
         "meta": cfg.meta,
         "cascade_iterations_1": cfg.cascade_iterations_1,
         "cascade_iterations_2": cfg.cascade_iterations_2,
+        "cascade_effective_iters_1": metrics.cascade_effective_iters_1,
+        "cascade_effective_iters_2": metrics.cascade_effective_iters_2,
         "num_frames": cfg.num_frames,
         "episode_returns": metrics.episode_returns,
         "episode_lengths": metrics.episode_lengths,

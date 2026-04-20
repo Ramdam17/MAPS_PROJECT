@@ -83,6 +83,13 @@ class SarlQNetwork(nn.Module):
         conv_out = F.relu(self.conv(x))  # (B, 16, 8, 8)
         flat_input = conv_out.view(conv_out.size(0), -1)  # (B, 1024)
         hidden = F.relu(self.fc_hidden(flat_input))  # (B, 128)
+        # NOTE (Sprint-08 D.4, Option A): this forward has NO dropout, so it is
+        # deterministic. Calling it `cascade_iterations_1` times with the same
+        # input produces identical `hidden` every iteration → the cascade is a
+        # mathematical no-op here (50 iters ≡ 1 iter). We KEEP the 50-iter
+        # paper value for parity; post-reproduction we can add dropout or a
+        # shortcut. See docs/reviews/cascade.md §(d), sarl-model.md §(b2),
+        # deviations.md D-sarl-cascade-noop.
         hidden = cascade_update(hidden, prev_h2, cascade_rate)
 
         q_values = self.actions(hidden)  # (B, num_actions)
