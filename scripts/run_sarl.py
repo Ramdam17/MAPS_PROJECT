@@ -12,6 +12,8 @@ Usage
     uv run python scripts/run_sarl.py --game breakout --setting 4
     uv run python scripts/run_sarl.py --game seaquest --seed 43 --num-frames 500000
     uv run python scripts/run_sarl.py --setting 6 -o training.batch_size=64
+    uv run python scripts/run_sarl.py --resume                              # auto-detect ckpt in output_dir
+    uv run python scripts/run_sarl.py --resume-from /path/to/checkpoint.pt  # explicit path
 
 Paper settings reminder
 -----------------------
@@ -83,6 +85,7 @@ def _build_training_config(
     seed: int,
     num_frames: int | None,
     output_dir: Path,
+    resume_from: Path | None = None,
 ) -> SarlTrainingConfig:
     """Translate the OmegaConf YAML into a ``SarlTrainingConfig`` dataclass.
 
@@ -122,6 +125,7 @@ def _build_training_config(
         validation_iterations=int(cfg.validation.n_episodes),
         device=str(cfg.device),
         output_dir=output_dir,
+        resume_from=resume_from,
     )
     return setting_to_config(setting, base)
 
@@ -152,6 +156,25 @@ def main(
         "-o",
         help="OmegaConf override, e.g. `-o training.batch_size=64`. Repeatable.",
     ),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        "-r",
+        help=(
+            "Auto-detect a checkpoint at `<output_dir>/checkpoint.pt` and resume "
+            "from it. If the file is missing we log a warning and start fresh. "
+            "Mutually coexists with --resume-from (explicit path wins)."
+        ),
+    ),
+    resume_from: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--resume-from",
+        help=(
+            "Explicit path to a checkpoint file. If set, overrides --resume "
+            "auto-detection. The path must exist — we raise if not, because "
+            "an explicit request should not silently fall back to a fresh run."
+        ),
+    ),
     log_level: str = typer.Option("INFO", help="Python logging level"),
 ) -> None:
     configure_logging(level=log_level)
@@ -173,6 +196,27 @@ def main(
         / f"seed-{effective_seed}"
     )
 
+    # Resolve resume path (Sprint-08 D.14). Explicit --resume-from wins; then
+    # --resume auto-detect; then None (fresh start).
+    resolved_resume: Path | None = None
+    if resume_from is not None:
+        if not resume_from.is_file():
+            raise typer.BadParameter(
+                f"--resume-from path does not exist: {resume_from}",
+                param_hint="--resume-from",
+            )
+        resolved_resume = resume_from
+        log.info("resuming from explicit --resume-from=%s", resolved_resume)
+    elif resume:
+        candidate = out_dir / "checkpoint.pt"
+        if candidate.is_file():
+            resolved_resume = candidate
+            log.info("--resume auto-detected checkpoint: %s", resolved_resume)
+        else:
+            log.warning(
+                "--resume requested but no checkpoint at %s; starting fresh", candidate
+            )
+
     training_cfg = _build_training_config(
         cfg,
         game=game,
@@ -180,6 +224,7 @@ def main(
         seed=effective_seed,
         num_frames=num_frames,
         output_dir=out_dir,
+        resume_from=resolved_resume,
     )
 
     log.info(

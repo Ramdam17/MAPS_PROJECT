@@ -29,6 +29,12 @@ Usage
     # Smoke test:
     uv run python scripts/run_sarl_cl.py --num-frames 20000 -o validation.every_episodes=10
 
+    # Resume from a pre-empted run (auto-detect output_dir/checkpoint.pt):
+    uv run python scripts/run_sarl_cl.py --game breakout --setting 6 --resume
+
+    # Resume from an explicit checkpoint path:
+    uv run python scripts/run_sarl_cl.py --resume-from /path/to/checkpoint.pt
+
 Paper settings reminder
 -----------------------
     1: vanilla DQN (no cascade, no meta)
@@ -103,6 +109,7 @@ def _build_training_config(
     curriculum: bool,
     adaptive: bool,
     teacher_load_path: Path | None,
+    resume_from: Path | None = None,
 ) -> SarlCLTrainingConfig:
     """Translate the OmegaConf YAML + CLI flags into a :class:`SarlCLTrainingConfig`.
 
@@ -148,6 +155,7 @@ def _build_training_config(
         validation_iterations=int(cfg.validation.n_episodes),
         device=str(cfg.device),
         output_dir=output_dir,
+        resume_from=resume_from,
     )
     return setting_to_config_cl(setting, base)
 
@@ -193,6 +201,26 @@ def main(
         "-o",
         help="OmegaConf override, e.g. `-o training.batch_size=64`. Repeatable.",
     ),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        "-r",
+        help=(
+            "Auto-detect a checkpoint at `<output_dir>/checkpoint.pt` and resume. "
+            "Missing file → warn + fresh start. Coexists with --resume-from "
+            "(explicit path wins). NOTE: --resume-from is the training-loop "
+            "checkpoint, distinct from --teacher-load-path which is a "
+            "previous-task reference for the CL distillation anchor."
+        ),
+    ),
+    resume_from: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--resume-from",
+        help=(
+            "Explicit checkpoint file to resume training from. Must exist "
+            "(raises if not). Distinct from --teacher-load-path."
+        ),
+    ),
     log_level: str = typer.Option("INFO", help="Python logging level"),
 ) -> None:
     configure_logging(level=log_level)
@@ -214,6 +242,27 @@ def main(
         / f"seed-{effective_seed}"
     )
 
+    # Resolve resume path (Sprint-08 D.14). Explicit --resume-from wins; then
+    # --resume auto-detect; then None (fresh start).
+    resolved_resume: Path | None = None
+    if resume_from is not None:
+        if not resume_from.is_file():
+            raise typer.BadParameter(
+                f"--resume-from path does not exist: {resume_from}",
+                param_hint="--resume-from",
+            )
+        resolved_resume = resume_from
+        log.info("resuming from explicit --resume-from=%s", resolved_resume)
+    elif resume:
+        candidate = out_dir / "checkpoint.pt"
+        if candidate.is_file():
+            resolved_resume = candidate
+            log.info("--resume auto-detected checkpoint: %s", resolved_resume)
+        else:
+            log.warning(
+                "--resume requested but no checkpoint at %s; starting fresh", candidate
+            )
+
     training_cfg = _build_training_config(
         cfg,
         game=game,
@@ -224,6 +273,7 @@ def main(
         curriculum=curriculum,
         adaptive=adaptive,
         teacher_load_path=teacher_load_path,
+        resume_from=resolved_resume,
     )
 
     # Sanity check: curriculum mode without a teacher path is a config error.
