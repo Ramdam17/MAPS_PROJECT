@@ -13,6 +13,9 @@ game: space_invaders          # one of {space_invaders, breakout, seaquest, aste
 setting: 6
 
 # ── Continual-learning controls ─────────────────────────────────────────────
+# Sprint-08 D.20 (2026-04-20): max_input_channels and weight_* aligned to
+# paper Table 11 CL rows 20-23. Overrides for student baseline:
+#   -o cl.max_input_channels=7 -o cl.weight_task=1.0 -o cl.weight_distillation=1.0 -o cl.weight_feature=1.0
 cl:
   # When true, the run expects a previous-task checkpoint at `teacher_load_path`
   # and trains with task + distillation + feature losses.
@@ -21,26 +24,35 @@ cl:
   # Variable-channel backbone for cross-game transfer. Needed when the
   # curriculum spans games with different in_channels (SpaceInvaders=6,
   # Breakout=4, Seaquest=10, Freeway=7, Asterix=4). Zero-pads inputs to
-  # max_input_channels. Paper default: max_input_channels=7 (but Seaquest
-  # has 10 — set accordingly when including it).
+  # max_input_channels. Paper Table 11 CL row 20: max_input_channels=10
+  # (must cover Seaquest=10). Port was 7 → Seaquest truncation bug.
+  # D-sarl_cl-max-channels resolved D.20.
   adaptive_backbone: false
-  max_input_channels: 7
+  max_input_channels: 10
 
   # Path to previous-task checkpoint (required when curriculum=true).
   # Accepts a relative path resolved against the project root.
   teacher_load_path: null
 
   # Loss mixing — applied AFTER DynamicLossWeighter running-max normalization.
-  # Paper default (1.0, 1.0, 1.0). See trainer.LossMixingWeights for details.
-  weight_task: 1.0
-  weight_distillation: 1.0
-  weight_feature: 1.0
+  # Paper Table 11 CL rows 21-23: (0.3, 0.6, 0.1). Paper text p.17 says
+  # "optimal weights (0.4, 0.4, 0.2)" — 3-way disagreement with student
+  # (1.0, 1.0, 1.0). Appendix Table 11 wins per TMLR convention. See
+  # D-cl-weights for the full history.
+  weight_task: 0.3
+  weight_distillation: 0.6
+  weight_feature: 0.1
 
 # ── DQN hyperparameters (paper Table 11) ───────────────────────────────────
-# Sprint-08 D.9+D.12 (2026-04-20): paper-faithful alignment, same as
-# config/training/sarl.yaml. See that file + deviations.md for rationale.
+# Sprint-08 D.9+D.12+D.20 (2026-04-20): paper-faithful alignment, same as
+# config/training/sarl.yaml for shared rows, with CL-specific num_frames.
+# See that file + deviations.md for rationale.
 training:
-  num_frames: 500_000          # paper Table 11 (was 5M — D-sarl-num-frames resolved D.12)
+  # Paper text p.17 CL spec: "100k per env × 4 envs". The port trains one
+  # env per invocation (curriculum is chained externally via --teacher-load-path),
+  # so this is the per-stage frame count. D-sarl_cl-num-frames resolved D.20.
+  # Override -o training.num_frames=500000 for legacy pre-D.20 behaviour.
+  num_frames: 100_000
   batch_size: 128              # paper Table 11 (paper-faithful, unchanged)
   replay_buffer_size: 100_000
   replay_start_size: 5_000

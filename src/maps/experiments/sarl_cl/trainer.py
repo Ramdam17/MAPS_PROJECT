@@ -19,8 +19,19 @@ advances to task ≥ 2, we need THREE additional loss terms per network:
 
 These are normalized by a :class:`DynamicLossWeighter` (one per network)
 via running-max division, then mixed with fixed scalar weights
-(``task_weight``, ``distillation_weight``, ``feature_weight``). The paper
-uses (1.0, 1.0, 1.0) — captured here via the ``LossMixingWeights`` dataclass.
+(``task_weight``, ``distillation_weight``, ``feature_weight``). Three
+3-way-disagreeing sources on these weights:
+
+* **Paper Table 11** CL rows 21-23: (0.3, 0.6, 0.1) — appendix canonical.
+* **Paper text p.17**: "optimal weights (0.4, 0.4, 0.2)" — prose claim.
+* **Student `sarl_cl_maps.py:708-710`**: `WEIGHT1=WEIGHT2=WEIGHT3=1.0` —
+  actual code uses (1.0, 1.0, 1.0).
+
+Port adopts the Table 11 default ((0.3, 0.6, 0.1)) per the Sprint-08
+policy "paper = source of truth, appendix wins". Student-baseline
+reproduction remains a CLI override: ``-o cl.weight_task=1.0 -o
+cl.weight_distillation=1.0 -o cl.weight_feature=1.0``. See
+``docs/reproduction/deviations.md D-cl-weights``.
 
 Parity with the paper
 ---------------------
@@ -74,19 +85,22 @@ CAE_LAMBDA = 1e-4
 class LossMixingWeights:
     """Fixed scalar weights applied AFTER the DynamicLossWeighter.
 
-    The paper keeps these at (1, 1, 1) but exposes them as WEIGHT1/2/3 —
-    we surface them as a dataclass so ablations can vary them without
-    touching the function signature. Paper refs:
-    ``WEIGHT1`` = task mixing weight (``ce_loss_weight``), line 708.
-    ``WEIGHT2`` = distillation mixing weight (``soft_target_loss_weight``),
-    line 709.
-    ``WEIGHT3`` = feature preservation mixing weight (``feature_weight``),
-    line 710.
+    Defaults are the **paper Table 11 CL rows 21-23** values, not the
+    student values: appendix wins per Sprint-08 policy 2026-04-19. See
+    module docstring for the 3-way divergence (Table 11 vs text vs
+    student) and ``deviations.md D-cl-weights``.
+
+    Paper WEIGHT1/2/3 → task/distillation/feature mapping:
+    * ``WEIGHT1`` = task mixing weight (``ce_loss_weight``), student L708.
+    * ``WEIGHT2`` = distillation mixing weight (``soft_target_loss_weight``),
+      student L709.
+    * ``WEIGHT3`` = feature preservation mixing weight (``feature_weight``),
+      student L710.
     """
 
-    task: float = 1.0
-    distillation: float = 1.0
-    feature: float = 1.0
+    task: float = 0.3
+    distillation: float = 0.6
+    feature: float = 0.1
 
 
 @dataclass

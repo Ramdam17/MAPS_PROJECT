@@ -124,18 +124,23 @@ class SarlCLTrainingConfig:
     # CL-specific toggles.
     curriculum: bool = False  # if True, expects a teacher checkpoint via teacher_load_path
     adaptive_backbone: bool = False  # use AdaptiveQNetwork (variable in_channels)
-    max_input_channels: int = 7  # upper bound across curriculum games (Freeway=7)
+    # Paper Table 11 CL row 20: max_input_channels=10 (Seaquest). Port was 7
+    # (truncated Seaquest). D-sarl_cl-max-channels resolved D.20.
+    max_input_channels: int = 10
     teacher_load_path: Path | None = None  # path to a previous-task checkpoint
 
-    # Loss mixing (paper uses 1,1,1 — see trainer.LossMixingWeights).
-    weight_task: float = 1.0
-    weight_distillation: float = 1.0
-    weight_feature: float = 1.0
+    # Loss mixing — paper Table 11 CL rows 21-23: (0.3, 0.6, 0.1).
+    # D-cl-weights resolved D.20 (was 1.0/1.0/1.0 student default).
+    weight_task: float = 0.3
+    weight_distillation: float = 0.6
+    weight_feature: float = 0.1
 
     # DQN hyperparameters.
-    # num_frames = 500_000 per paper Table 11 (D.12); override to 5_000_000
-    # for legacy reproduction. See D-sarl-num-frames.
-    num_frames: int = 500_000
+    # Paper text p.17 CL spec: "100k per env × 4 envs" — one stage per
+    # run_sarl_cl.py invocation, so this is the per-stage count. D.20
+    # resolved from 500_000 (D.12 SARL standard) to 100_000 (CL-specific).
+    # D-sarl_cl-num-frames resolved D.20.
+    num_frames: int = 100_000
     batch_size: int = BATCH_SIZE
     replay_buffer_size: int = REPLAY_BUFFER_SIZE
     replay_start_size: int = REPLAY_START_SIZE
@@ -194,6 +199,12 @@ class CLTrainingMetrics:
     total_updates: int = 0
     total_frames: int = 0
     wall_time_seconds: float = 0.0
+    # Sprint-08 D.20 (D19-F2): mirror the SARL D.4 cascade-no-op audit
+    # artifact on the CL side. 1st-order forward (SarlCLQNetwork /
+    # AdaptiveQNetwork) has no dropout → cascade is no-op regardless of
+    # config. 2nd-order forward has dropout p=0.1 → cascade averages masks.
+    cascade_effective_iters_1: int = 1
+    cascade_effective_iters_2: int | None = None
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -594,6 +605,17 @@ def run_training_cl(
         cfg.teacher_load_path,
     )
 
+    # D.20 (D19-F3): mirror the SARL D.4 cascade-no-op warning on the CL
+    # side. SarlCLQNetwork / AdaptiveQNetwork forward has no dropout → the
+    # 1st-order cascade loop collapses to 1 effective iteration.
+    if cfg.cascade_iterations_1 > 1:
+        log.warning(
+            "cascade_iterations_1=%d but CL 1st-order forward is deterministic "
+            "(no dropout): cascade is a no-op on that path — kept for paper "
+            "parity (effective=1). See deviations.md D-sarl-cascade-noop.",
+            cfg.cascade_iterations_1,
+        )
+
     policy_net, target_net, second_order_net, teacher_first, teacher_second = _build_networks(
         in_channels, num_actions, cfg
     )
@@ -643,6 +665,12 @@ def run_training_cl(
     else:
         buffer = SarlReplayBuffer(cfg.replay_buffer_size)
         metrics = CLTrainingMetrics()
+        # D.20 (D19-F2): record effective cascade iteration counts for audit.
+        # 1st-order forward has no dropout → always effective=1 regardless of
+        # config. 2nd-order has dropout p=0.1 → config value is effective when
+        # meta is enabled. Same semantic as SARL D.4.
+        metrics.cascade_effective_iters_1 = 1
+        metrics.cascade_effective_iters_2 = cfg.cascade_iterations_2 if cfg.meta else None
         t = 0
         episode_idx = 0
         policy_update_counter = 0
@@ -934,6 +962,8 @@ def _persist_outputs(
         "meta": cfg.meta,
         "cascade_iterations_1": cfg.cascade_iterations_1,
         "cascade_iterations_2": cfg.cascade_iterations_2,
+        "cascade_effective_iters_1": metrics.cascade_effective_iters_1,
+        "cascade_effective_iters_2": metrics.cascade_effective_iters_2,
         "num_frames": cfg.num_frames,
         "curriculum": cfg.curriculum,
         "adaptive_backbone": cfg.adaptive_backbone,
