@@ -144,11 +144,14 @@ Le port ne valide pas :
 1. **`recons_x ∈ [0, 1]`** requis par `binary_cross_entropy`. Fail bruyant si decoder sort des
    logits. Blindsight decoder (`first_order_mlp.py`) utilise sigmoid → OK. AGL decoder aussi (via
    chunked sigmoid D-004) → OK. Mais fragile à un refacto.
-2. **`h ∈ [0, 1]`** requis pour que `h(1-h)` représente la dérivée sigmoid. Blindsight/AGL student
-   utilise sigmoid → OK. **SARL utilise ReLU** (student `sarl_maps.py`) → formule `h(1-h)` est
-   **mathématiquement fausse** pour ReLU (la dérivée de ReLU est `1[h > 0]`, pas `h(1-h)`).
-   Student le fait quand même → port le préserve pour parity. Documenté dans
-   `sarl/losses.py:37-40`. ⚠️ **Quirk à garder, pas un bug.**
+2. **`h ∈ [0, 1]`** requis pour que `h(1-h)` représente la dérivée sigmoid.
+   **🚨 ERRATUM C.11 (2026-04-20)** : j'ai écrit initialement que Blindsight/AGL étaient sigmoid
+   → c'est **faux**. Les 3 domaines (Blindsight, AGL, SARL) utilisent **ReLU encoder** (student
+   `blindsight_tmlr.py:177`, `agl_tmlr.py:171`, `sarl_maps.py:F.relu(fc_hidden)`). La formule
+   `h(1-h)` est **mathématiquement fausse** pour ReLU (dérivée de ReLU = `1[h > 0]`, pas
+   `h(1-h)`) dans **les 3 domaines**, pas seulement SARL. Student le fait partout → port
+   préserve pour parity. ⚠️ **Quirk universel à garder**, pas un bug. Voir
+   `docs/reviews/first_order_mlp.md §C.11 (b)`.
 3. **`h.shape == (B, N_hidden)`** requis pour `torch.mm(dh**2, w_sq_rowsum)` — pas vérifié.
 
 **Piste C7-fix-1** : ajouter une mention dans le docstring `components.losses.cae_loss` que

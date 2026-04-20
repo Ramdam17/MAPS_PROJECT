@@ -37,8 +37,14 @@ def cae_loss(
     """Contractive AutoEncoder loss (Rifai et al., 2011).
 
     CAE = recon(x, recons_x) + λ · ||J_h(x)||²_F, where the Frobenius norm
-    of the encoder Jacobian is computed analytically under the assumption that
-    the encoder is a single Linear → Sigmoid layer with weight matrix W.
+    of the encoder Jacobian uses the analytical sigmoid-derivative form
+    `h(1-h)`. **Important: this form is mathematically valid only for sigmoid
+    encoders** — a quirk of the original CAE paper (Rifai 2011). All three
+    reference domains (Blindsight, AGL, SARL) use **ReLU** encoders and apply
+    `h(1-h)` regardless. We preserve that quirk byte-for-byte for parity with
+    the student code; do NOT "fix" to `(h > 0).float()` without discussion.
+    See `docs/reviews/first_order_mlp.md §C.11 (b)` and `docs/reviews/losses.md
+    §C.7` for the full audit.
 
     D-002 note
     ----------
@@ -46,18 +52,22 @@ def cae_loss(
     et al. 2020), not a CAE. The reference student code implements CAE
     (Rifai 2011) despite using "contrastive" phraseology in comments.
     We faithfully port the student's CAE. See `docs/reproduction/deviations.md`
-    D-002 and `docs/reviews/losses.md` §C.7 for the full analysis; the decision
+    D-002 and `docs/reviews/losses.md §C.7` for the full analysis; the decision
     of whether to add a paper-faithful SimCLR variant is tracked as sub-phase
-    D.17 in the Sprint-08 plan.
+    D.22b in the Sprint-08 plan.
 
     Assumptions on inputs
     ---------------------
-    * ``recons_x`` **must lie in [0, 1]** (post-sigmoid) when ``recon="bce_sum"``
-      because `F.binary_cross_entropy` rejects values outside that range.
-    * ``h`` **must be post-sigmoid** (i.e. in [0, 1]) for the sigmoid-derivative
-      formula `h(1-h)` to be mathematically valid. The SARL sibling
-      (:func:`maps.experiments.sarl.losses.cae_loss`) preserves this formula
-      even with ReLU hidden — a paper-faithful quirk documented there.
+    * ``recons_x`` **must lie in [0, 1]** (typically post-sigmoid decoder) when
+      ``recon="bce_sum"`` because `F.binary_cross_entropy` rejects values
+      outside that range. Blindsight uses a global sigmoid decoder; AGL uses
+      `make_chunked_sigmoid(6)` per-letter.
+    * ``h`` is passed as the **post-encoder** activations — in this codebase
+      that means **post-ReLU** (Blindsight/AGL via `FirstOrderMLP`, SARL via
+      `SarlQNetwork.fc_hidden`). The `h*(1-h)` formula is therefore applied
+      on ReLU output rather than a sigmoid — paper-faithful quirk, not a
+      correct Jacobian. This has been the behaviour across all three domains
+      since the original student code.
 
     Parameters
     ----------
@@ -73,8 +83,9 @@ def cae_loss(
     recons_x : torch.Tensor
         Decoder output, shape (batch, n_input). See "Assumptions on inputs".
     h : torch.Tensor
-        Hidden activations after the encoder sigmoid, shape (batch, n_hidden).
-        Used to compute the sigmoid derivative `h(1-h)`. See "Assumptions on inputs".
+        Post-encoder activations (post-ReLU in current callers), shape
+        (batch, n_hidden). Used to compute the sigmoid-derivative-shaped
+        term `h(1-h)` — see "Assumptions on inputs" for the ReLU quirk.
     lam : float
         Weight on the contractive penalty term.
     recon : {"bce_sum", "mse_mean", "mse_sum"}, default "bce_sum"
