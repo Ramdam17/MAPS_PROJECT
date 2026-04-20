@@ -198,7 +198,13 @@ def main(
     out_dir = (
         output_dir
         if output_dir is not None
-        else paths.scratch_root / "maps" / "outputs" / "sarl_cl" / game / f"setting-{setting}" / f"seed-{effective_seed}"
+        else paths.scratch_root
+        / "maps"
+        / "outputs"
+        / "sarl_cl"
+        / game
+        / f"setting-{setting}"
+        / f"seed-{effective_seed}"
     )
 
     training_cfg = _build_training_config(
