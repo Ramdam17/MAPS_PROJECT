@@ -51,8 +51,10 @@ References
 from __future__ import annotations
 
 import logging
+import os
+import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -161,6 +163,18 @@ class SarlTrainingConfig:
     validation_every_episodes: int = 50
     validation_iterations: int = 3
 
+    # Checkpoint cadence (Sprint-08 D.13). Checkpoint every N policy updates
+    # to `output_dir / checkpoint.pt`. Set to 0 to disable intra-training
+    # checkpoints (the final one at end-of-training is still written if
+    # output_dir is set). Resume semantics: see `resume_from` + run_training.
+    checkpoint_every_updates: int = 10_000
+
+    # When set, run_training loads the checkpoint at this path before the
+    # training loop (instead of starting fresh). The cfg at this point MUST
+    # be compatible with the cfg snapshot inside the checkpoint; mismatches
+    # on game/seed/meta/cascade/num_frames raise ValueError.
+    resume_from: Path | None = None
+
     # Runtime.
     device: str = "cpu"
     output_dir: Path | None = None  # if set, dump metrics JSON + final weights
@@ -256,6 +270,224 @@ def _build_optimizers(
     return opt1, opt2, sch1, sch2
 
 
+# ── Checkpoint / resume (Sprint-08 D.13) ────────────────────────────────────
+
+#: Format version for the checkpoint payload. Bump when the schema changes
+#: in a way the `_restore_from_checkpoint` loader cannot silently handle.
+_CHECKPOINT_FORMAT_VERSION = 1
+
+#: Fields from `SarlTrainingConfig` that must match between the checkpoint
+#: snapshot and the caller's cfg at resume time. Other fields (e.g.
+#: `output_dir`, `device`, `validation_every_episodes`) may legitimately
+#: differ and are not compared.
+_CHECKPOINT_CFG_GUARDS: tuple[str, ...] = (
+    "game",
+    "seed",
+    "meta",
+    "cascade_iterations_1",
+    "cascade_iterations_2",
+    "num_frames",
+)
+
+
+def _persist_checkpoint(
+    checkpoint_path: Path,
+    *,
+    t: int,
+    episode_idx: int,
+    policy_update_counter: int,
+    policy_net: torch.nn.Module,
+    target_net: torch.nn.Module,
+    second_order_net: torch.nn.Module | None,
+    optimizer: optim.Optimizer,
+    optimizer2: optim.Optimizer | None,
+    scheduler1: Any,
+    scheduler2: Any | None,
+    buffer: SarlReplayBuffer,
+    metrics: TrainingMetrics,
+    cfg: SarlTrainingConfig,
+) -> None:
+    """Atomically persist the full SARL training state to ``checkpoint_path``.
+
+    Writes first to ``checkpoint_path.with_suffix('.pt.tmp')`` then performs
+    ``os.replace`` (POSIX-atomic rename) so an interrupted write cannot leave
+    a half-valid file at the target path.
+
+    The payload captures every piece of state needed for bit-exact resume:
+    step counters, all model weights, both optimizers' state, both schedulers'
+    state, the replay buffer contents, the metrics collected so far, and the
+    RNG states of ``torch`` / Python ``random`` / ``numpy.random`` (legacy
+    singleton — matches `maps.utils.seeding.set_all_seeds`).
+
+    Buffer serialisation uses the list of `Transition` namedtuples directly;
+    it is picklable because each `Transition` field is a CPU tensor or scalar.
+    For a 100k-buffer of (10×10×C) MinAtar transitions this adds ~300-500 MB
+    to the file size — acceptable for the resume cadence (every 10k updates).
+    """
+    payload: dict[str, Any] = {
+        "format_version": _CHECKPOINT_FORMAT_VERSION,
+        "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        # Counters.
+        "t": t,
+        "episode_idx": episode_idx,
+        "policy_update_counter": policy_update_counter,
+        # Models.
+        "policy_state_dict": policy_net.state_dict(),
+        "target_state_dict": target_net.state_dict(),
+        "second_order_state_dict": (
+            second_order_net.state_dict() if second_order_net is not None else None
+        ),
+        # Optim + sched.
+        "optimizer_state_dict": optimizer.state_dict(),
+        "optimizer2_state_dict": optimizer2.state_dict() if optimizer2 is not None else None,
+        "scheduler1_state_dict": scheduler1.state_dict(),
+        "scheduler2_state_dict": scheduler2.state_dict() if scheduler2 is not None else None,
+        # Buffer (list of Transitions + cyclic write head).
+        "buffer_buffer": buffer.buffer,
+        "buffer_location": buffer.location,
+        "buffer_size": buffer.buffer_size,
+        # Metrics — convert dataclass to dict so load doesn't require the class
+        # to be identical across versions (ValidationSummary is nested; torch
+        # saves the tuple of them without issue).
+        "metrics": metrics,
+        # Cfg snapshot (for compatibility checks at resume time).
+        "cfg_snapshot": asdict(cfg),
+        # RNG states.
+        "rng_torch": torch.get_rng_state(),
+        "rng_torch_cuda": (
+            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+        ),
+        "rng_python": random.getstate(),
+        "rng_numpy_legacy": np.random.get_state(),
+    }
+
+    # Atomic write: tmp → rename. Parent dir must exist; caller ensures via
+    # `paths.ensure_dirs()` typically, but we mkdir defensively as a fallback.
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = checkpoint_path.with_suffix(checkpoint_path.suffix + ".tmp")
+    torch.save(payload, tmp_path)
+    os.replace(tmp_path, checkpoint_path)
+    log.info(
+        "checkpoint persisted: %s (t=%d, episode=%d, updates=%d)",
+        checkpoint_path,
+        t,
+        episode_idx,
+        policy_update_counter,
+    )
+
+
+def _restore_from_checkpoint(
+    checkpoint_path: Path,
+    cfg: SarlTrainingConfig,
+    policy_net: torch.nn.Module,
+    target_net: torch.nn.Module,
+    second_order_net: torch.nn.Module | None,
+    optimizer: optim.Optimizer,
+    optimizer2: optim.Optimizer | None,
+    scheduler1: Any,
+    scheduler2: Any | None,
+) -> tuple[int, int, int, SarlReplayBuffer, TrainingMetrics]:
+    """Load a checkpoint and restore all state in place.
+
+    Returns ``(t, episode_idx, policy_update_counter, buffer, metrics)``.
+    The caller's ``policy_net`` / ``target_net`` / ``second_order_net`` /
+    ``optimizer`` / ``optimizer2`` / ``scheduler1`` / ``scheduler2`` are all
+    mutated in place via their respective ``load_state_dict`` methods.
+
+    Validates that the checkpoint's ``cfg_snapshot`` agrees with the caller's
+    ``cfg`` on the fields listed in ``_CHECKPOINT_CFG_GUARDS``. A mismatch
+    raises ``ValueError`` with the offending fields listed — the caller should
+    not silently resume a run with different paper settings / seed.
+
+    Also restores the three RNG streams (torch, Python random, numpy legacy).
+    CUDA RNG is restored when both the checkpoint has it AND CUDA is available
+    (if not available the cached state is ignored with a debug log).
+    """
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"checkpoint not found: {checkpoint_path}")
+    payload = torch.load(checkpoint_path, map_location=cfg.device, weights_only=False)
+
+    version = payload.get("format_version")
+    if version != _CHECKPOINT_FORMAT_VERSION:
+        raise ValueError(
+            f"checkpoint format_version={version!r} is incompatible with this "
+            f"runtime's expected {_CHECKPOINT_FORMAT_VERSION}. Refusing to resume."
+        )
+
+    # Cfg compatibility guardrail.
+    snapshot = payload["cfg_snapshot"]
+    current = asdict(cfg)
+    mismatches = {
+        k: (snapshot.get(k), current.get(k))
+        for k in _CHECKPOINT_CFG_GUARDS
+        if snapshot.get(k) != current.get(k)
+    }
+    if mismatches:
+        raise ValueError(
+            "checkpoint cfg mismatch on guarded fields — refusing to resume. "
+            f"Differences (checkpoint → caller): {mismatches}"
+        )
+
+    # Models.
+    policy_net.load_state_dict(payload["policy_state_dict"])
+    target_net.load_state_dict(payload["target_state_dict"])
+    if second_order_net is not None:
+        so_state = payload["second_order_state_dict"]
+        if so_state is None:
+            raise ValueError(
+                "checkpoint has no second-order state but caller expects meta=True"
+            )
+        second_order_net.load_state_dict(so_state)
+    elif payload["second_order_state_dict"] is not None:
+        log.warning(
+            "checkpoint has second-order state but caller is meta=False; discarded"
+        )
+
+    # Optim + sched.
+    optimizer.load_state_dict(payload["optimizer_state_dict"])
+    scheduler1.load_state_dict(payload["scheduler1_state_dict"])
+    if optimizer2 is not None:
+        opt2_state = payload["optimizer2_state_dict"]
+        if opt2_state is None:
+            raise ValueError("checkpoint has no optimizer2 but caller expects meta=True")
+        optimizer2.load_state_dict(opt2_state)
+    if scheduler2 is not None:
+        sch2_state = payload["scheduler2_state_dict"]
+        if sch2_state is None:
+            raise ValueError("checkpoint has no scheduler2 but caller expects meta=True")
+        scheduler2.load_state_dict(sch2_state)
+
+    # Buffer.
+    buffer = SarlReplayBuffer(payload["buffer_size"])
+    buffer.buffer = payload["buffer_buffer"]
+    buffer.location = payload["buffer_location"]
+
+    # RNG.
+    torch.set_rng_state(payload["rng_torch"])
+    if payload.get("rng_torch_cuda") is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(payload["rng_torch_cuda"])
+    elif payload.get("rng_torch_cuda") is not None:
+        log.debug("checkpoint has CUDA RNG state but CUDA unavailable here; ignored")
+    random.setstate(payload["rng_python"])
+    np.random.set_state(payload["rng_numpy_legacy"])
+
+    metrics = payload["metrics"]
+    log.info(
+        "checkpoint restored: %s (resuming at t=%d, episode=%d, updates=%d)",
+        checkpoint_path,
+        payload["t"],
+        payload["episode_idx"],
+        payload["policy_update_counter"],
+    )
+    return (
+        int(payload["t"]),
+        int(payload["episode_idx"]),
+        int(payload["policy_update_counter"]),
+        buffer,
+        metrics,
+    )
+
+
 # ── Main entry point ────────────────────────────────────────────────────────
 
 
@@ -302,18 +534,41 @@ def run_training(
     optimizer, optimizer2, scheduler1, scheduler2 = _build_optimizers(
         policy_net, second_order_net, cfg
     )
-    buffer = SarlReplayBuffer(cfg.replay_buffer_size)
-    metrics = TrainingMetrics()
-    # Record the effective cascade iteration counts (D.4). 1st-order forward has
-    # no dropout → effective=1 regardless of config. 2nd-order has dropout p=0.1
-    # → config value is the true effective count when meta is enabled.
-    metrics.cascade_effective_iters_1 = 1
-    metrics.cascade_effective_iters_2 = cfg.cascade_iterations_2 if cfg.meta else None
 
-    t = 0
-    episode_idx = 0
-    policy_update_counter = 0
+    # Resume from checkpoint if requested (Sprint-08 D.13). The restore runs
+    # AFTER network + optimizer construction because we need their objects to
+    # call `.load_state_dict` on them in place. Buffer + metrics are
+    # reconstructed from the checkpoint payload.
+    if cfg.resume_from is not None:
+        t, episode_idx, policy_update_counter, buffer, metrics = _restore_from_checkpoint(
+            cfg.resume_from,
+            cfg,
+            policy_net,
+            target_net,
+            second_order_net,
+            optimizer,
+            optimizer2,
+            scheduler1,
+            scheduler2,
+        )
+        log.info("resumed from %s at t=%d", cfg.resume_from, t)
+    else:
+        buffer = SarlReplayBuffer(cfg.replay_buffer_size)
+        metrics = TrainingMetrics()
+        # Record the effective cascade iteration counts (D.4). 1st-order forward
+        # has no dropout → effective=1 regardless of config. 2nd-order has
+        # dropout p=0.1 → config value is the true effective count when meta
+        # is enabled.
+        metrics.cascade_effective_iters_1 = 1
+        metrics.cascade_effective_iters_2 = cfg.cascade_iterations_2 if cfg.meta else None
+        t = 0
+        episode_idx = 0
+        policy_update_counter = 0
+
     wall_start = time.time()
+    checkpoint_path: Path | None = (
+        cfg.output_dir / "checkpoint.pt" if cfg.output_dir is not None else None
+    )
 
     while t < cfg.num_frames:
         # ── Episode setup ──────────────────────────────────────────────────
@@ -391,6 +646,31 @@ def run_training(
                         t,
                     )
 
+                # Intra-training checkpoint (Sprint-08 D.13). Fires only when
+                # output_dir is set AND the user enabled it with
+                # checkpoint_every_updates > 0.
+                if (
+                    checkpoint_path is not None
+                    and cfg.checkpoint_every_updates > 0
+                    and policy_update_counter % cfg.checkpoint_every_updates == 0
+                ):
+                    _persist_checkpoint(
+                        checkpoint_path,
+                        t=t,
+                        episode_idx=episode_idx,
+                        policy_update_counter=policy_update_counter,
+                        policy_net=policy_net,
+                        target_net=target_net,
+                        second_order_net=second_order_net,
+                        optimizer=optimizer,
+                        optimizer2=optimizer2,
+                        scheduler1=scheduler1,
+                        scheduler2=scheduler2,
+                        buffer=buffer,
+                        metrics=metrics,
+                        cfg=cfg,
+                    )
+
             t += 1
 
         # ── Episode bookkeeping ────────────────────────────────────────────
@@ -452,6 +732,27 @@ def run_training(
         metrics.total_updates,
         metrics.wall_time_seconds,
     )
+
+    # Final checkpoint — always write when output_dir is set, regardless of
+    # checkpoint_every_updates (so the user gets a resume-able end-of-training
+    # state even if intra-training checkpoints were disabled).
+    if checkpoint_path is not None:
+        _persist_checkpoint(
+            checkpoint_path,
+            t=t,
+            episode_idx=episode_idx,
+            policy_update_counter=policy_update_counter,
+            policy_net=policy_net,
+            target_net=target_net,
+            second_order_net=second_order_net,
+            optimizer=optimizer,
+            optimizer2=optimizer2,
+            scheduler1=scheduler1,
+            scheduler2=scheduler2,
+            buffer=buffer,
+            metrics=metrics,
+            cfg=cfg,
+        )
 
     if cfg.output_dir is not None:
         _persist_outputs(policy_net, second_order_net, metrics, cfg)

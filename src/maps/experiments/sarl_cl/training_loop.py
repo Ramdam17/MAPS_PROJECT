@@ -42,8 +42,10 @@ from __future__ import annotations
 
 import copy
 import logging
+import os
+import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -153,6 +155,12 @@ class SarlCLTrainingConfig:
     # Validation cadence.
     validation_every_episodes: int = 50
     validation_iterations: int = 3
+
+    # Checkpoint cadence (Sprint-08 D.13). Same semantics as
+    # SarlTrainingConfig: every N policy updates → output_dir / checkpoint.pt.
+    # Set to 0 to disable intra-training checkpoints (final is still written).
+    checkpoint_every_updates: int = 10_000
+    resume_from: Path | None = None
 
     # Runtime.
     device: str = "cpu"
@@ -313,6 +321,211 @@ def _build_optimizers(
     return opt1, opt2, sch1, sch2
 
 
+# ── Checkpoint / resume (Sprint-08 D.13) — CL variant ──────────────────────
+# Same structure as sarl/training_loop.py but adds the CL-specific state:
+# teacher_first_net, teacher_second_net, loss_weighter, loss_weighter_second.
+# Format version is an independent counter — bumping the SARL version does
+# not invalidate CL checkpoints and vice versa.
+
+_CHECKPOINT_FORMAT_VERSION_CL = 1
+
+_CHECKPOINT_CFG_GUARDS_CL: tuple[str, ...] = (
+    "game",
+    "seed",
+    "meta",
+    "cascade_iterations_1",
+    "cascade_iterations_2",
+    "num_frames",
+    "curriculum",
+    "adaptive_backbone",
+    "max_input_channels",
+)
+
+
+def _persist_checkpoint_cl(
+    checkpoint_path: Path,
+    *,
+    t: int,
+    episode_idx: int,
+    policy_update_counter: int,
+    policy_net: torch.nn.Module,
+    target_net: torch.nn.Module,
+    second_order_net: torch.nn.Module | None,
+    teacher_first_net: torch.nn.Module | None,
+    teacher_second_net: torch.nn.Module | None,
+    optimizer: optim.Optimizer,
+    optimizer2: optim.Optimizer | None,
+    scheduler1: Any,
+    scheduler2: Any | None,
+    loss_weighter: DynamicLossWeighter | None,
+    loss_weighter_second: DynamicLossWeighter | None,
+    buffer: SarlReplayBuffer,
+    metrics: "CLTrainingMetrics",
+    cfg: SarlCLTrainingConfig,
+) -> None:
+    """Atomically persist the full SARL+CL training state for resume.
+
+    Adds to the standard SARL checkpoint: teacher networks' state_dicts (when
+    active) and both DynamicLossWeighter internal states. Teachers are never
+    updated by the training loop — persisted here only so resumed runs start
+    from the same frozen reference as the pre-pause run.
+    """
+    payload: dict[str, Any] = {
+        "format_version": _CHECKPOINT_FORMAT_VERSION_CL,
+        "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "t": t,
+        "episode_idx": episode_idx,
+        "policy_update_counter": policy_update_counter,
+        # Core SARL state.
+        "policy_state_dict": policy_net.state_dict(),
+        "target_state_dict": target_net.state_dict(),
+        "second_order_state_dict": (
+            second_order_net.state_dict() if second_order_net is not None else None
+        ),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "optimizer2_state_dict": optimizer2.state_dict() if optimizer2 is not None else None,
+        "scheduler1_state_dict": scheduler1.state_dict(),
+        "scheduler2_state_dict": scheduler2.state_dict() if scheduler2 is not None else None,
+        # CL-specific additions.
+        "teacher_first_state_dict": (
+            teacher_first_net.state_dict() if teacher_first_net is not None else None
+        ),
+        "teacher_second_state_dict": (
+            teacher_second_net.state_dict() if teacher_second_net is not None else None
+        ),
+        "loss_weighter": loss_weighter,
+        "loss_weighter_second": loss_weighter_second,
+        # Buffer + metrics + cfg snapshot.
+        "buffer_buffer": buffer.buffer,
+        "buffer_location": buffer.location,
+        "buffer_size": buffer.buffer_size,
+        "metrics": metrics,
+        "cfg_snapshot": asdict(cfg),
+        # RNG states.
+        "rng_torch": torch.get_rng_state(),
+        "rng_torch_cuda": (
+            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+        ),
+        "rng_python": random.getstate(),
+        "rng_numpy_legacy": np.random.get_state(),
+    }
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = checkpoint_path.with_suffix(checkpoint_path.suffix + ".tmp")
+    torch.save(payload, tmp_path)
+    os.replace(tmp_path, checkpoint_path)
+    log.info(
+        "CL checkpoint persisted: %s (t=%d, episode=%d, updates=%d)",
+        checkpoint_path,
+        t,
+        episode_idx,
+        policy_update_counter,
+    )
+
+
+def _restore_from_checkpoint_cl(
+    checkpoint_path: Path,
+    cfg: SarlCLTrainingConfig,
+    policy_net: torch.nn.Module,
+    target_net: torch.nn.Module,
+    second_order_net: torch.nn.Module | None,
+    teacher_first_net: torch.nn.Module | None,
+    teacher_second_net: torch.nn.Module | None,
+    optimizer: optim.Optimizer,
+    optimizer2: optim.Optimizer | None,
+    scheduler1: Any,
+    scheduler2: Any | None,
+) -> tuple[
+    int, int, int, SarlReplayBuffer, "CLTrainingMetrics",
+    DynamicLossWeighter | None, DynamicLossWeighter | None,
+]:
+    """Load a CL checkpoint. Networks / optimizers / schedulers / teachers are
+    mutated in place; buffer, metrics, and both loss weighters are returned.
+
+    Guards on ``_CHECKPOINT_CFG_GUARDS_CL`` (standard SARL set + CL-specific
+    curriculum / adaptive_backbone / max_input_channels).
+    """
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"CL checkpoint not found: {checkpoint_path}")
+    payload = torch.load(checkpoint_path, map_location=cfg.device, weights_only=False)
+
+    version = payload.get("format_version")
+    if version != _CHECKPOINT_FORMAT_VERSION_CL:
+        raise ValueError(
+            f"CL checkpoint format_version={version!r} incompatible with runtime's "
+            f"{_CHECKPOINT_FORMAT_VERSION_CL}. Refusing to resume."
+        )
+
+    snapshot = payload["cfg_snapshot"]
+    current = asdict(cfg)
+    mismatches = {
+        k: (snapshot.get(k), current.get(k))
+        for k in _CHECKPOINT_CFG_GUARDS_CL
+        if snapshot.get(k) != current.get(k)
+    }
+    if mismatches:
+        raise ValueError(
+            f"CL checkpoint cfg mismatch on guarded fields: {mismatches}"
+        )
+
+    policy_net.load_state_dict(payload["policy_state_dict"])
+    target_net.load_state_dict(payload["target_state_dict"])
+    if second_order_net is not None:
+        so_state = payload["second_order_state_dict"]
+        if so_state is None:
+            raise ValueError("CL checkpoint has no second-order state but caller expects meta=True")
+        second_order_net.load_state_dict(so_state)
+
+    optimizer.load_state_dict(payload["optimizer_state_dict"])
+    scheduler1.load_state_dict(payload["scheduler1_state_dict"])
+    if optimizer2 is not None:
+        optimizer2.load_state_dict(payload["optimizer2_state_dict"])
+    if scheduler2 is not None:
+        scheduler2.load_state_dict(payload["scheduler2_state_dict"])
+
+    if teacher_first_net is not None:
+        tf_state = payload.get("teacher_first_state_dict")
+        if tf_state is None:
+            raise ValueError(
+                "CL checkpoint has no teacher_first state but caller expects curriculum=True"
+            )
+        teacher_first_net.load_state_dict(tf_state)
+    if teacher_second_net is not None:
+        ts_state = payload.get("teacher_second_state_dict")
+        if ts_state is None:
+            raise ValueError(
+                "CL checkpoint has no teacher_second state but caller expects meta+curriculum"
+            )
+        teacher_second_net.load_state_dict(ts_state)
+
+    buffer = SarlReplayBuffer(payload["buffer_size"])
+    buffer.buffer = payload["buffer_buffer"]
+    buffer.location = payload["buffer_location"]
+
+    torch.set_rng_state(payload["rng_torch"])
+    if payload.get("rng_torch_cuda") is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all(payload["rng_torch_cuda"])
+    random.setstate(payload["rng_python"])
+    np.random.set_state(payload["rng_numpy_legacy"])
+
+    metrics = payload["metrics"]
+    log.info(
+        "CL checkpoint restored: %s (resuming at t=%d, episode=%d, updates=%d)",
+        checkpoint_path,
+        payload["t"],
+        payload["episode_idx"],
+        payload["policy_update_counter"],
+    )
+    return (
+        int(payload["t"]),
+        int(payload["episode_idx"]),
+        int(payload["policy_update_counter"]),
+        buffer,
+        metrics,
+        payload.get("loss_weighter"),
+        payload.get("loss_weighter_second"),
+    )
+
+
 # ── Main entry point ────────────────────────────────────────────────────────
 
 
@@ -372,13 +585,43 @@ def run_training_cl(
         feature=cfg.weight_feature,
     )
 
-    buffer = SarlReplayBuffer(cfg.replay_buffer_size)
-    metrics = CLTrainingMetrics()
+    # Resume from checkpoint if requested (Sprint-08 D.13). Teachers and loss
+    # weighters round-trip too so the distillation anchor stays the same
+    # across the pause.
+    if cfg.resume_from is not None:
+        (
+            t,
+            episode_idx,
+            policy_update_counter,
+            buffer,
+            metrics,
+            loss_weighter,
+            loss_weighter_second,
+        ) = _restore_from_checkpoint_cl(
+            cfg.resume_from,
+            cfg,
+            policy_net,
+            target_net,
+            second_order_net,
+            teacher_first,
+            teacher_second,
+            optimizer,
+            optimizer2,
+            scheduler1,
+            scheduler2,
+        )
+        log.info("SARL+CL resumed from %s at t=%d", cfg.resume_from, t)
+    else:
+        buffer = SarlReplayBuffer(cfg.replay_buffer_size)
+        metrics = CLTrainingMetrics()
+        t = 0
+        episode_idx = 0
+        policy_update_counter = 0
 
-    t = 0
-    episode_idx = 0
-    policy_update_counter = 0
     wall_start = time.time()
+    checkpoint_path: Path | None = (
+        cfg.output_dir / "checkpoint.pt" if cfg.output_dir is not None else None
+    )
 
     while t < cfg.num_frames:
         # ── Episode setup ──────────────────────────────────────────────────
@@ -476,6 +719,33 @@ def run_training_cl(
                         t,
                     )
 
+                # Intra-training CL checkpoint (Sprint-08 D.13).
+                if (
+                    checkpoint_path is not None
+                    and cfg.checkpoint_every_updates > 0
+                    and policy_update_counter % cfg.checkpoint_every_updates == 0
+                ):
+                    _persist_checkpoint_cl(
+                        checkpoint_path,
+                        t=t,
+                        episode_idx=episode_idx,
+                        policy_update_counter=policy_update_counter,
+                        policy_net=policy_net,
+                        target_net=target_net,
+                        second_order_net=second_order_net,
+                        teacher_first_net=teacher_first,
+                        teacher_second_net=teacher_second,
+                        optimizer=optimizer,
+                        optimizer2=optimizer2,
+                        scheduler1=scheduler1,
+                        scheduler2=scheduler2,
+                        loss_weighter=loss_weighter,
+                        loss_weighter_second=loss_weighter_second,
+                        buffer=buffer,
+                        metrics=metrics,
+                        cfg=cfg,
+                    )
+
             t += 1
 
         # ── Episode bookkeeping ────────────────────────────────────────────
@@ -563,6 +833,29 @@ def run_training_cl(
         metrics.total_updates,
         metrics.wall_time_seconds,
     )
+
+    # Final CL checkpoint — always when output_dir is set.
+    if checkpoint_path is not None:
+        _persist_checkpoint_cl(
+            checkpoint_path,
+            t=t,
+            episode_idx=episode_idx,
+            policy_update_counter=policy_update_counter,
+            policy_net=policy_net,
+            target_net=target_net,
+            second_order_net=second_order_net,
+            teacher_first_net=teacher_first,
+            teacher_second_net=teacher_second,
+            optimizer=optimizer,
+            optimizer2=optimizer2,
+            scheduler1=scheduler1,
+            scheduler2=scheduler2,
+            loss_weighter=loss_weighter,
+            loss_weighter_second=loss_weighter_second,
+            buffer=buffer,
+            metrics=metrics,
+            cfg=cfg,
+        )
 
     if cfg.output_dir is not None:
         _persist_outputs(policy_net, second_order_net, metrics, cfg)
