@@ -95,24 +95,57 @@ def target_wager(rewards: torch.Tensor, alpha: float) -> torch.Tensor:
 
     Paper source: ``external/MinAtar/examples/maps.py:514-532``.
 
-    The paper passes ``alpha`` in *percent* (e.g. ``alpha=1.0`` means a 0.01
-    EMA smoothing factor) — this function divides by 100 internally, exactly
-    as the paper does. Do not pre-scale ``alpha`` at the call site.
+    The paper passes ``alpha`` in *percent* (e.g. ``alpha=45`` → 0.45 EMA
+    smoothing factor) — this function divides by 100 internally, exactly as
+    the paper does. Do not pre-scale ``alpha`` at the call site.
 
-    For each reward ``G`` in the batch (processed sequentially to preserve
-    the paper's in-place EMA update), label ``[1, 0]`` if ``G > EMA`` (bet)
-    else ``[0, 1]`` (no-bet). Return shape: ``(batch, 2)``.
+    For each reward ``G`` in the batch, compute the running EMA
+    ``EMA_i = α·G_i + (1-α)·EMA_{i-1}`` with ``EMA_0 = 0`` then label
+    ``[1, 0]`` if ``G > EMA`` (bet) else ``[0, 1]`` (no-bet). Return shape:
+    ``(batch, 2)``.
+
+    Shape contract
+    --------------
+    ``rewards`` must be shape ``(B,)`` or ``(B, 1)``. Multi-dim inputs with
+    ``rewards.shape = (B, k>1)`` will be silently truncated because the
+    function reads ``rewards.size(0)`` as batch size and then indexes into
+    a flat view — the last ``B·(k-1)`` elements are ignored. Same behaviour
+    as the student reference; documented to prevent a silent correctness bug.
+
+    Implementation
+    --------------
+    The EMA recurrence is scalar and depends on the previous value, so it
+    must be computed sequentially. We keep the Python loop for the EMA
+    update (bit-parity with student) but vectorise the label construction
+    via boolean indexing on the final EMA series — removes 2·B intermediate
+    ``torch.tensor([1, 0])`` allocations without changing numerics.
     """
     flattened_rewards = rewards.view(-1)
     scaled_alpha = float(alpha / 100)
-    ema = 0.0
     batch_size = rewards.size(0)
-    new_tensor = torch.zeros(batch_size, 2, device=rewards.device)
+
+    # Sequential EMA scan — required by the scalar recurrence.
+    # Keeping the Python loop (rather than a cumsum-based vectorisation)
+    # preserves bit-parity with the student reference `target_wager` used
+    # in `tests/parity/sarl/_reference_sarl.py:189`.
+    #
+    # EMA series is always float (default torch dtype). The student builds
+    # `new_tensor` with `torch.zeros(batch, 2, device=...)` (default float32)
+    # then assigns int `torch.tensor([1, 0])` into it — the assignment casts
+    # to float32. We match that by pinning float32 explicitly here so that
+    # int-valued `rewards` (typical in MinAtar) don't silently truncate the
+    # float EMA updates.
+    ema_series = torch.zeros(batch_size, device=rewards.device, dtype=torch.float32)
+    ema: torch.Tensor | float = 0.0
     for i in range(batch_size):
-        g = flattened_rewards[i]
-        ema = scaled_alpha * g + (1 - scaled_alpha) * ema
-        if g > ema:
-            new_tensor[i] = torch.tensor([1, 0], device=rewards.device)
-        else:
-            new_tensor[i] = torch.tensor([0, 1], device=rewards.device)
+        ema = scaled_alpha * flattened_rewards[i] + (1 - scaled_alpha) * ema
+        ema_series[i] = ema  # type: ignore[assignment]
+
+    # Vectorised label construction: [1, 0] where G > EMA, else [0, 1].
+    # Comparison promotes int rewards to float via ema_series.dtype — bit-exact
+    # with the student loop which also compared float EMA against int G.
+    bet_mask = (flattened_rewards > ema_series).to(torch.float32)  # (B,)
+    new_tensor = torch.zeros(batch_size, 2, device=rewards.device, dtype=torch.float32)
+    new_tensor[:, 0] = bet_mask
+    new_tensor[:, 1] = 1.0 - bet_mask
     return new_tensor

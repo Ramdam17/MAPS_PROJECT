@@ -40,8 +40,13 @@ scheduler:
   step_size: 1_000             # scheduler_period
   gamma: 0.999                 # scheduler_step
 
-# ── EMA for target_wager — paper passes alpha in PERCENT (e.g. alpha=1 → 0.01)
-alpha: 1.0
+# ── EMA for target_wager — paper passes alpha in PERCENT (alpha=45 → 0.45)
+# Paper Table 11 specifies α=0.45 (post-division). Student shell default was
+# `-ema 25` (→ 0.25), which itself diverged from paper; our prior value of 1.0
+# (→ 0.01) diverged from both. Aligned to paper-faithful value 2026-04-20
+# (D-sarl-alpha-ema fix, Sprint-08 D.2). To reproduce the student baseline
+# instead, override via `--override alpha=25` on the CLI.
+alpha: 45
 
 # ── Validation ──────────────────────────────────────────────────────────────
 validation:
