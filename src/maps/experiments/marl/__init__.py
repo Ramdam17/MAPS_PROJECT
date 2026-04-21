@@ -40,13 +40,21 @@ Exports
 - :class:`MAPPOTrainer`, :class:`TrainInfo`, :class:`ValueNorm` (E.9a)
 - :class:`RolloutBuffer`, :class:`MeltingpotRunner`, :class:`RunnerConfig`,
   :func:`compute_wager_objective` (E.9b)
-
-Env wrappers raise ``NotImplementedError`` until E.10.
+- :class:`MeltingPotEnv`, :class:`DownSamplingSubstrateWrapper`,
+  :func:`env_creator`, :func:`spec_to_space`,
+  :func:`timestep_to_observations` (E.10)
 """
 
 from __future__ import annotations
 
 from maps.experiments.marl.data import RolloutBuffer
+from maps.experiments.marl.env import (
+    DownSamplingSubstrateWrapper,
+    MeltingPotEnv,
+    env_creator,
+    spec_to_space,
+    timestep_to_observations,
+)
 from maps.experiments.marl.policy import (
     MAPPOActor,
     MAPPOCritic,
@@ -65,6 +73,7 @@ from maps.experiments.marl.trainer import MAPPOTrainer, TrainInfo
 from maps.experiments.marl.valuenorm import ValueNorm
 
 __all__ = [
+    "DownSamplingSubstrateWrapper",
     "MAPPOActor",
     "MAPPOCritic",
     "MAPPOPolicy",
@@ -73,10 +82,14 @@ __all__ = [
     "MAPSCritic",
     "MarlSecondOrderNetwork",
     "MarlSetting",
+    "MeltingPotEnv",
     "MeltingpotRunner",
     "RolloutBuffer",
     "RunnerConfig",
     "TrainInfo",
     "ValueNorm",
     "compute_wager_objective",
+    "env_creator",
+    "spec_to_space",
+    "timestep_to_observations",
 ]
