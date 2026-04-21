@@ -73,11 +73,13 @@ def cfg():
     return load_config(
         "training/agl",
         overrides=[
-            f"train.n_epochs={N_EPOCHS}",
-            f"train.batch_size={PATTERNS}",
+            f"train.n_epochs_pretrain={N_EPOCHS}",
+            f"train.batch_size_pretrain={PATTERNS}",
             f"first_order.input_dim={NUM_UNITS}",
             f"first_order.hidden_dim={HIDDEN}",
             f"second_order.input_dim={NUM_UNITS}",
+            "second_order.hidden_dim=0",  # D.28.a: legacy no-hidden wager for parity w/ reference
+            "optimizer.name=ADAMAX",      # D.28.a: reference uses ADAMAX; RangerVA is Phase B
             "cascade.alpha=0.2",
             "cascade.n_iterations=5",
             f"losses.cae_lambda={LAM}",

@@ -1,47 +1,76 @@
-# AGL training defaults — extracted from AGL/AGL_TMLR.py (L1660-1678).
+# AGL training defaults — paper Table 10 authoritative (D.28.a, 2026-04-20).
+#
+# Paper §A.2 + Table 10 are explicit on most knobs. Student code diverges from
+# paper on n_epochs_pre (code: 30 with comment "default is 60" vs paper: 60).
+# We align to paper (T.10) for these, with override paths for ablation.
+#
+# Paper silent on:
+#   - num_networks per seed (student uses 20 with comment "default is 30")
+#   - second_order.hidden_dim (student passes 48 unused — same Pasquali 2010
+#     code bug as Blindsight D.25; we restore the hidden layer)
+#   - meta override in training() phase (student freezes 2nd-order via L969)
+#
+# Ablation overrides (to be tested per D.28.h):
+#   -o train.n_epochs_pretrain=30          # student init_global value
+#   -o train.train_meta_frozen_in_training=false  # trains 2nd-order in training()
+#   -o train.num_networks=30               # student comment "default 30"
+#   -o optimizer.name=ADAMAX               # fallback if RangerVA issue
 
 defaults:
   - /maps@_here_      # inherit cascade / first_order / second_order / losses / seed
 
 # Override shared dims for AGL (symbolic: 48-d input, 8 letters × 6 bits).
 first_order:
-  input_dim: 48          # 8 letters × 6 bits
-  hidden_dim: 40         # AGL default (paper §2.3)
+  input_dim: 48          # paper T.10 Input/Output size = 48
+  hidden_dim: 40         # paper T.10 Hidden size = 40
 
 second_order:
   input_dim: 48          # matches first-order output for the comparator
+  hidden_dim: 48         # Pasquali 2010 hidden (restored — student passes 48 but drops layer)
   # dropout / n_wager_units / wager_weight_init_range inherited from maps.yaml
 
 # AGL-specific constant.
-bits_per_letter: 6       # winner-takes-all chunk size in decoder
+bits_per_letter: 6       # winner-takes-all chunk size in decoder (paper §2.3 / student L1676)
 
 optimizer:
-  name: ADAMAX           # AGL_TMLR.py supports multiple; ADAMAX matches Blindsight/lab default
-  lr_first_order: 0.4    # learning_rate_1
-  lr_second_order: 0.1   # learning_rate_2
-  # Downstream-training LRs (used by Sprint 05+, not by pre-training).
+  name: RANGERVA         # paper T.10 = RangerVA (via torch-optimizer dep)
+  lr_first_order: 0.4    # paper T.10 = 0.4
+  lr_second_order: 0.1   # paper T.10 = 0.1
+  # Separate LRs for the downstream training() phase (same values in student init_global).
   lr_training_first_order: 0.4
   lr_training_second_order: 0.1
 
 scheduler:
   name: StepLR
-  step_size: 25          # reference passes `stepsize` via train()
-  gamma: 0.98            # reference passes `gam` via train()
+  step_size: 1           # paper T.10 = 1 (was 25 pre-D.28)
+  gamma: 0.999           # paper T.10 = 0.999 (was 0.98 pre-D.28)
 
 train:
-  # Pre-training parameters used by AGLTrainer.pre_train().
-  n_epochs: 200          # reference default was 60; 200 is the published run length
-  batch_size: 80         # patterns_number_pre (words per epoch)
+  # Pre-training (random-grammar) parameters.
+  n_epochs_pretrain: 60      # paper T.10 "Epochs number for pre-training" = 60
+  batch_size_pretrain: 80    # student init_global patterns_number_pre = 80
+  # Grammar-A training phase (12 epochs for High Aw., 3 epochs for Low Aw.) — paper T.10 + §A.2.
+  n_epochs_training_high: 12 # paper T.10 + §A.2 explicit
+  n_epochs_training_low: 3   # paper T.10 + §A.2 explicit
+  batch_size_training: 45    # student L941 patterns_number_train = 45 * factor
+  batch_size_testing: 20     # student L1197 test set = len(networks) * factor = 20 per grammar
+  # Network replication per seed (student num_networks, comment "default 30" but code uses 20).
+  num_networks: 20
+  # Design toggle: student L969 overrides meta to False inside training() — 2nd-order frozen.
+  # Paper silent. Default preserves student; ablation D.28.h A1 tests False.
+  train_meta_frozen_in_training: true
+  # Shared.
   data_factor: 1
-  momentum: 0.5
-  temperature: 1.0
-  threshold: 0.5
+  momentum: 0.5           # student init_global momentum = 0.5
+  temperature: 1.0        # paper T.10 Temperature = 1.0
+  threshold: 0.5          # student init_global threshold = 0.5
 
-ema_window: 25           # shell-level EMA for reporting
+ema_window: 25             # shell-level EMA for reporting
 
-# Held-out evaluation — AGL_TMLR.py `testing()` (L1150).
-# Each network is evaluated on (grammar A + grammar B) concatenated; per-seed
-# metrics are split post-hoc into High/Low Awareness at aggregation time.
+# Held-out evaluation — AGL_TMLR.py `testing()` (L1150+).
+# Per-network test set = `len(networks) * factor` words of each grammar → 20 Grammar A + 20
+# Grammar B = 40 total per network. High/Low awareness split is per-seed on the 20 networks
+# (first 10 = High, trained 12 epochs ; last 10 = Low, trained 3 epochs), NOT seed-pool split.
 eval:
-  patterns_number: 60      # per-grammar test size (reference L1156: int(60*factor))
-  wager_threshold: 0.5     # reference-global `threshold`; matches train.threshold
+  patterns_number_per_grammar: 20   # int(len(networks) * factor) with factor=1, num_networks=20
+  wager_threshold: 0.5              # reference-global `threshold`; matches train.threshold

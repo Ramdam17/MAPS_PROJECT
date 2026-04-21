@@ -63,7 +63,7 @@ __all__ = ["AGLSetting", "AGLTrainer"]
 
 log = logging.getLogger(__name__)
 
-_OPTIMIZERS = {
+_OPTIMIZERS: dict[str, type] = {
     "ADAM": torch.optim.Adam,
     "ADAMW": torch.optim.AdamW,
     "ADAMAX": torch.optim.Adamax,
@@ -71,6 +71,18 @@ _OPTIMIZERS = {
     "RMS": torch.optim.RMSprop,
     "RMSPROP": torch.optim.RMSprop,
 }
+
+# RangerVA lives in the optional `torch-optimizer` dep (paper Table 10). Import lazily
+# so we can fall back to ADAMAX with a warning if the dep is not installed.
+try:
+    import torch_optimizer
+
+    _OPTIMIZERS["RANGERVA"] = torch_optimizer.RangerVA
+except ImportError:
+    log.warning(
+        "torch_optimizer not available; 'RANGERVA' optimizer will fall back to "
+        "ADAMAX. Install via `uv sync --extra agl` to match paper Table 10."
+    )
 
 
 @dataclass(frozen=True)
@@ -94,6 +106,10 @@ class AGLSetting:
 
 def _build_optimizer(name: str, params, lr: float) -> torch.optim.Optimizer:
     key = name.upper()
+    if key == "RANGERVA" and key not in _OPTIMIZERS:
+        # Fallback: user asked for RangerVA but torch-optimizer missing.
+        log.warning("RangerVA requested but torch-optimizer not installed; falling back to ADAMAX.")
+        key = "ADAMAX"
     if key not in _OPTIMIZERS:
         raise ValueError(f"Unsupported optimizer: {name!r} (options: {sorted(_OPTIMIZERS)})")
     return _OPTIMIZERS[key](params, lr=lr)
@@ -197,7 +213,7 @@ class AGLTrainer:
         Parameters
         ----------
         n_epochs : int, optional
-            Override ``cfg.train.n_epochs``.
+            Override ``cfg.train.n_epochs_pretrain``.
         batches : list[TrainingBatch], optional
             Pre-generated batches — used by parity tests to eliminate RNG
             synchronization issues. When supplied, ``len(batches)`` sets the
@@ -226,8 +242,8 @@ class AGLTrainer:
         if batches is not None:
             n = len(batches)
         else:
-            n = int(n_epochs if n_epochs is not None else self.cfg.train.n_epochs)
-        patterns_number = int(self.cfg.train.batch_size)
+            n = int(n_epochs if n_epochs is not None else self.cfg.train.n_epochs_pretrain)
+        patterns_number = int(self.cfg.train.batch_size_pretrain)
         num_units = int(self.cfg.first_order.input_dim)
         factor = int(self.cfg.train.get("data_factor", 1))
         lam = float(self.cfg.losses.cae_lambda)
@@ -355,7 +371,7 @@ class AGLTrainer:
         n_eval = int(
             eval_patterns_number
             if eval_patterns_number is not None
-            else eval_cfg.get("patterns_number", 60)
+            else eval_cfg.get("patterns_number_per_grammar", 20)
         )
         thr = float(
             threshold

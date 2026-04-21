@@ -10,7 +10,7 @@ Usage
 -----
     uv run python scripts/run_agl.py --setting both
     uv run python scripts/run_agl.py --setting neither --seed 43
-    uv run python scripts/run_agl.py --setting both -o train.n_epochs=20
+    uv run python scripts/run_agl.py --setting both -o train.n_epochs_pretrain=20
     uv run python scripts/run_agl.py --all-settings
 
 Notes
@@ -73,7 +73,7 @@ def _run_one(cfg, setting: AGLSetting, seed: int, out_dir: Path) -> dict:
     summary = {
         "setting": setting.id,
         "seed": seed,
-        "n_epochs": int(cfg.train.n_epochs),
+        "n_epochs": int(cfg.train.n_epochs_pretrain),
         "loss_1_final": float(losses_1[-1]),
         "loss_2_final": float(losses_2[-1]),
         "loss_1_min": float(losses_1.min()),
@@ -89,7 +89,7 @@ def _run_one(cfg, setting: AGLSetting, seed: int, out_dir: Path) -> dict:
         "loss_1[-1]=%.3f, loss_2[-1]=%.3f, classif=%.3f, wager=%.3f",
         setting.id,
         seed,
-        cfg.train.n_epochs,
+        cfg.train.n_epochs_pretrain,
         train_elapsed,
         eval_elapsed,
         losses_1[-1],
@@ -127,7 +127,7 @@ def main(
         [],
         "--override",
         "-o",
-        help="Hydra-style override, e.g. `-o train.n_epochs=10`. Repeatable.",
+        help="Hydra-style override, e.g. `-o train.n_epochs_pretrain=10`. Repeatable.",
     ),
     log_level: str = typer.Option("INFO", help="Python logging level"),
 ) -> None:
