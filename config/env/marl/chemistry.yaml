@@ -1,5 +1,7 @@
 # Chemistry Three Metabolic Cycles with Plentiful Distractors (paper §A.4 p. 27).
 # Equilibrium-selection + puzzle + resource sharing + stochastic rewards.
+# Reward: +1 per correct metabolic-cycle completion (dmlab2d-native) ; no shaping.
+# Termination: env truncates at max_cycles ; no natural terminal state.
 
 id: chemistry
 substrate_name: chemistry__three_metabolic_cycles_with_plentiful_distractors
@@ -8,4 +10,5 @@ roles: ["default", "default", "default", "default",
         "default", "default", "default", "default"]
 downsample_scale: 8
 obs_shape_agent: [11, 11, 3]
-max_cycles: 400
+episode_length: 1000              # student train_meltingpot.sh (CHEMISTRY=1000)
+max_cycles: 1000

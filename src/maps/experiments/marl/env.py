@@ -42,6 +42,7 @@ from gymnasium import spaces
 __all__ = [
     "DownSamplingSubstrateWrapper",
     "MeltingPotEnv",
+    "build_env_from_config",
     "downsample_observation",
     "env_creator",
     "remove_world_observations_from_space",
@@ -432,3 +433,36 @@ def env_creator(
     raw_env = meltingpot_substrate.build(substrate_id, roles=list(roles))
     downsampled = DownSamplingSubstrateWrapper(raw_env, scaled=scaled)
     return MeltingPotEnv(downsampled, max_cycles=max_cycles)
+
+
+def build_env_from_config(env_cfg: Any) -> MeltingPotEnv:
+    """Build a :class:`MeltingPotEnv` from a loaded ``config/env/marl/*.yaml``.
+
+    Thin wrapper over :func:`env_creator` that keeps the runner pipeline free
+    of config-structure knowledge. Expects the following fields on ``env_cfg``
+    (OmegaConf DictConfig or plain dict, both supported) :
+
+    - ``substrate_name`` : str — dmlab2d substrate id.
+    - ``roles`` : list[str] — per-agent role strings (paper-faithful count).
+    - ``downsample_scale`` : int — RGB downsample factor (paper §A.4 = 8).
+    - ``max_cycles`` : int — env truncation, aligned with ``episode_length``
+      of the training config (both 1000 per student train_meltingpot.sh).
+
+    A sanity assertion enforces ``num_agents == len(roles)`` so the runner's
+    per-agent policy/buffer count matches the env's player count.
+    """
+    substrate_name = env_cfg["substrate_name"]
+    roles = list(env_cfg["roles"])
+    num_agents = int(env_cfg["num_agents"])
+    if len(roles) != num_agents:
+        raise ValueError(
+            f"env_cfg inconsistent : num_agents={num_agents} but len(roles)={len(roles)}"
+        )
+    scaled = int(env_cfg.get("downsample_scale", 8))
+    max_cycles = int(env_cfg.get("max_cycles", MAX_CYCLES))
+    return env_creator(
+        substrate_id=substrate_name,
+        roles=roles,
+        scaled=scaled,
+        max_cycles=max_cycles,
+    )

@@ -51,6 +51,7 @@ from maps.experiments.marl.data import RolloutBuffer
 from maps.experiments.marl.env import (
     DownSamplingSubstrateWrapper,
     MeltingPotEnv,
+    build_env_from_config,
     env_creator,
     spec_to_space,
     timestep_to_observations,
@@ -88,6 +89,7 @@ __all__ = [
     "RunnerConfig",
     "TrainInfo",
     "ValueNorm",
+    "build_env_from_config",
     "compute_wager_objective",
     "env_creator",
     "spec_to_space",

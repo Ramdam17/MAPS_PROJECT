@@ -1,5 +1,8 @@
 # Territory Inside Out (paper §A.4 p. 27).
 # Bargaining + dynamic intra-episode learning + delayed rewards + zap-elimination.
+# Reward: +1 per claimed resource patch, -penalty on zap (dmlab2d-native) ; no shaping.
+# Termination: env truncates at max_cycles ; agents can be zapped out early
+# (per-player done), but episode continues until truncation for global done.
 
 id: territory_inside_out
 substrate_name: territory_inside_out
@@ -7,4 +10,5 @@ num_agents: 5                     # paper §A.4
 roles: ["default", "default", "default", "default", "default"]
 downsample_scale: 8
 obs_shape_agent: [11, 11, 3]
-max_cycles: 400
+episode_length: 1000              # student train_meltingpot.sh (TERRITORY_I=1000)
+max_cycles: 1000

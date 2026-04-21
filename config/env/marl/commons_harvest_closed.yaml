@@ -1,5 +1,7 @@
 # Commons Harvest Closed (paper §A.4 p. 26).
-# Social dilemma + enclosed rooms. Apples regrow based on neighbors.
+# Social dilemma + enclosed rooms. Apples regrow based on neighbor counts.
+# Reward: +1 per apple harvested (dmlab2d-native) ; no custom shaping.
+# Termination: env truncates at max_cycles ; no natural terminal state.
 
 id: commons_harvest_closed
 substrate_name: commons_harvest__closed
@@ -9,4 +11,5 @@ roles: ["default", "default", "default", "default", "default", "default"]
 downsample_scale: 8               # 88×88 → 11×11 RGB
 obs_shape_agent: [11, 11, 3]      # per-agent RGB after downsample
 # share_obs (WORLD.RGB) shape varies per substrate — resolved at env build.
-max_cycles: 400                   # hard cap on episode length (student default)
+episode_length: 1000              # student train_meltingpot.sh ; per-rollout step count
+max_cycles: 1000                  # env truncation = episode_length (aligned)
