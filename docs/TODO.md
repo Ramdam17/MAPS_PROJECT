@@ -2,13 +2,13 @@
 
 ## Reproduction gaps
 
-| ID | Surfaced in | Blocker | Description |
-|----|-------------|---------|-------------|
-| RG-001 | Sprint 06 §6.6 | ⚠️ Eval path shipped; downstream training not ported | `AGLTrainer.evaluate()` now runs the paper's `testing()` on a (grammar A + grammar B) held-out batch; `scripts/aggregate_perceptual.py` performs the post-hoc seed-pool High/Low awareness split (reference `metrics_testing_table` L1276). **But** AGL's `pre_train` restores the first-order to its initial random weights by design (reference L751), so `classification_precision` after pre-training alone is near-random (~0.08) across all settings — the paper's 0.66/0.62 numbers require the *downstream* training phase (post-pre_train supervised training on grammar A vs B), which lived in `AGL/AGL_TMLR.py` and is **not ported**. New blocker: RG-003. |
-| RG-003 | Sprint 06 addendum | AGL downstream training phase not ported | `AGL/AGL_TMLR.py` had a two-stage flow: pre_train (wagering circuit) then a downstream supervised training on Grammar A vs B using the pre-trained 2nd-order. Only pre_train is ported. Without the downstream phase, AGL classification accuracy is always ~chance. Porting effort: moderate (single loop, clear reference). |
-| RG-002 | Sprint 06 §6.4 | ⚠️ Eval path shipped; headline-number match deferred | `BlindsightTrainer.evaluate()` now ports the paper's `testing()` routine (discrimination + wager acc × 3 conditions, config-driven thresholds). Current 10-seed mean of full MAPS is 0.755 discrimination (z=+0.40) vs. paper's 0.97 (z=9.01). Remaining gap is either a metric-definition mismatch (the paper may report wager-accuracy, which we compute but don't headline) or training-regime drift. Not a code bug — a reproduction-depth question. |
+| ID | Surfaced in | Status | Description |
+|----|-------------|--------|-------------|
+| RG-001 | Sprint 06 §6.6 | ✅ **resolved Sprint 08 D.28** | Subsumed by RG-003 resolution (AGL 3-phase protocol ported). |
+| RG-002 | Sprint 06 §6.4 | ✅ **resolved Sprint 08 D.25** | Blindsight discrim 0.76 → 0.94, wager 0.71 → 0.82 (paper: 0.97/0.85). Root causes: (1) paper T.9 says hidden_dim=60 but student `main()` uses 40 → adopted 40. (2) Pasquali 2010 hidden layer dropped in student code → restored (`second_order.hidden_dim=100`). Validated on 500 seeds. See `docs/reviews/rg002-wager-gap-investigation.md`. |
+| RG-003 | Sprint 06 addendum | ✅ **resolved Sprint 08 D.28** | AGL 3-phase protocol (pretrain → Grammar-A training on 20-cell pool → test) fully ported. MAE 0.0142 vs paper Table 5b/5c on 12000-run validation (Phase B + 5-knob ablation sweep). Adopted `n_epochs_pretrain=30` (student actual, not paper T.10's 60) per ablation A3 evidence. See `docs/reviews/rg003-resolution.md` + `docs/reviews/rg003-ablation-sweep.md`. |
 
-Unblocking either requires porting the paper's evaluation protocol (held-out sample generation + threshold-based detection / WTA classification / wager-based grouping for awareness split) from the pre-Sprint-04b git history of `BLINDSIGHT/Blindsight_TMLR.py` and `AGL/AGL_TMLR.py`.
+All three reproduction gaps closed in Sprint 08. See `docs/sprints/sprint-08-reproduction-perceptual-closeout.md` for the full retrospective.
 
 ---
 
