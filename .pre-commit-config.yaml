@@ -59,9 +59,8 @@ repos:
         entry: '/(home|Users)/[A-Za-z0-9._-]+/'
         language: pygrep
         types_or: [python, shell, yaml]
-        # Only enforce on NEW code. Legacy shell scripts (SARL*.sh,
-        # meltingpot.sh, MARL/) are known-bad and will be migrated to
-        # config/paths.yaml in Phase 3.
+        # Only enforce on NEW code. Reference code under external/ is
+        # known-bad (verbatim student snapshots, never edited).
         files: ^(src/|scripts/|tests/|config/)
 
       - id: ban-aws-key-prefix
@@ -86,9 +85,9 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.11
     hooks:
-      # Ruff only runs on NEW code. Legacy monoliths (Blindsight_TMLR.py,
-      # AGL_TMLR.py, MARL/MAPPO-ATTENTIOAN/, SARL/MinAtar/, SARL_CL/) are
-      # touched by refactors in Phase 3 and will be linted once moved to src/.
+      # Ruff only runs on NEW code under src/, scripts/, tests/. Reference
+      # snapshots in external/paper_reference/ are excluded (see ruff
+      # extend-exclude in pyproject.toml).
       - id: ruff
         args: ['--fix', '--exit-non-zero-on-fix']
         files: ^(src/|scripts/|tests/)

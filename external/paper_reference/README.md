@@ -15,6 +15,7 @@ Appendix B hyperparameter tables are ambiguous.
 | `agl_tmlr.py` | `AGL/AGL_TMLR.py` @ `d90d8f8^` | 2 785 L | Source for `src/maps/experiments/agl/` |
 | `blindsight_tmlr.py` | `BLINDSIGHT/Blindsight_TMLR.py` @ `d90d8f8^` | 2 419 L | Source for `src/maps/experiments/blindsight/` |
 | `sarl_ac_lambda.py` | `external/MinAtar/examples/AC_lambda.py` | 498 L | Paper Setting 7 (ACB) baseline — not yet ported |
+| `marl_tmlr/` (dir, 188 files ~2 MB) | `MARL/MAPPO-ATTENTIOAN/` (forked from `neuronphysics/MAPPO-ATTENTIOAN`, MAPPO Yu et al. 2022) | ~30k L | Source for `src/maps/experiments/marl/` (Phase E port ; restored at `db3e2af`, moved here at E.1) |
 
 ## Canonical reproduction target
 

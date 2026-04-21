@@ -150,7 +150,6 @@ src = ["src", "scripts", "tests"]
 extend-exclude = [
     "external/",
     "METTA/",
-    "MARL/MAPPO-ATTENTIOAN/",
     # Verbatim paper-code extracts used as parity ground truth.
     # Reformatting would break the "do not touch" guarantee documented in
     # each file's header banner. Per-file lint ignores live in
