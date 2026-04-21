@@ -115,6 +115,123 @@ def _build_optimizer(name: str, params, lr: float) -> torch.optim.Optimizer:
     return _OPTIMIZERS[key](params, lr=lr)
 
 
+def _run_training_loop(
+    *,
+    first_order: FirstOrderMLP,
+    second_order: SecondOrderNetwork,
+    optim_1: torch.optim.Optimizer,
+    optim_2: torch.optim.Optimizer,
+    sched_1: StepLR,
+    sched_2: StepLR,
+    n_epochs: int,
+    batches: list[TrainingBatch] | None,
+    batch_size: int,
+    num_units: int,
+    factor: int,
+    lam: float,
+    bits_per_letter: int,
+    meta_frozen: bool,
+    setting_second_order: bool,
+    cascade_iters: int,
+    cascade_rate: float,
+    device: torch.device,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Shared Grammar-A training loop used by ``AGLTrainer.training`` and
+    ``AGLNetworkPool.train_range``. Extracted as a module-level helper to avoid
+    code duplication between the single-network and pool execution paths.
+
+    See ``AGLTrainer.training`` docstring for the behavioural contract.
+    """
+    if batches is not None:
+        n = len(batches)
+    else:
+        n = int(n_epochs)
+
+    losses_1 = np.zeros(n)
+    losses_2 = np.zeros(n)
+    precision = np.zeros(n)
+
+    for epoch in range(n):
+        if batches is not None:
+            batch = batches[epoch]
+        else:
+            batch = generate_batch(
+                grammar_type=GrammarType.A,  # Grammar-A fine-tuning (student L947)
+                number=batch_size * factor,
+                device=device,
+            )
+
+        h1: torch.Tensor | None = None
+        h2: torch.Tensor | None = None
+        for _ in range(cascade_iters):
+            h1, h2 = first_order(
+                batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=cascade_rate
+            )
+
+        batch.patterns.requires_grad_(True)
+        assert h2 is not None
+        h2.requires_grad_(True)
+
+        optim_1.zero_grad()
+
+        comparison: torch.Tensor | None = None
+        if setting_second_order:
+            # Second-order cascade pass — forward always runs (logs loss_2).
+            # Backward gated by ``meta_frozen``.
+            wager: torch.Tensor | None = None
+            for _ in range(cascade_iters):
+                wager, comparison = second_order(
+                    batch.patterns, h2, comparison, cascade_rate
+                )
+            assert wager is not None
+            wager = wager.squeeze()
+
+            target = target_second(batch.patterns, h2)
+            loss_2 = wagering_bce_loss(wager, target, reduction="sum")
+            losses_2[epoch] = float(loss_2.item())
+
+            if not meta_frozen:
+                # Non-student path: 2nd-order also trains during Grammar-A phase.
+                loss_2 = loss_2.requires_grad_()
+                optim_2.zero_grad()
+                loss_2.backward(retain_graph=True)
+                optim_2.step()
+                sched_2.step()
+                optim_2.zero_grad()
+            # Else: student L969 path — forward only, no backward/step.
+
+        # First-order CAE loss.
+        assert h1 is not None
+        W = first_order.fc1.weight
+        loss_1 = cae_loss(
+            W,
+            x=batch.patterns.view(-1, num_units),
+            recons_x=h2,
+            h=h1,
+            lam=lam,
+            recon="bce_sum",
+        )
+        loss_1.backward()
+        optim_1.step()
+        sched_1.step()
+        losses_1[epoch] = float(loss_1.item())
+
+        # Per-epoch first-order precision (inlined student ``calculate_metrics`` L451).
+        with torch.no_grad():
+            pred = torch.zeros_like(h2)
+            for row_idx in range(h2.shape[0]):
+                for chunk_start in range(0, h2.shape[1], bits_per_letter):
+                    chunk = h2[row_idx, chunk_start : chunk_start + bits_per_letter]
+                    max_idx = int(torch.argmax(chunk).item())
+                    if chunk[max_idx].item() > 0.1:
+                        pred[row_idx, chunk_start + max_idx] = 1.0
+            tp = float((batch.patterns * pred).sum().item())
+            fp = float(((1 - batch.patterns) * pred).sum().item())
+            precision[epoch] = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+
+    return losses_1, losses_2, precision
+
+
 class AGLTrainer:
     """Stateful trainer for one (seed, setting) combination.
 
@@ -179,6 +296,7 @@ class AGLTrainer:
             input_dim=int(so_cfg.input_dim),
             dropout=float(so_cfg.dropout),
             n_wager_units=int(so_cfg.n_wager_units),
+            hidden_dim=int(so_cfg.get("hidden_dim", 0)),  # D.28.a: Pasquali 2010 (paper §2.2)
             weight_init_range=tuple(so_cfg.wager_weight_init_range),
         ).to(self.device)
 
@@ -396,101 +514,26 @@ class AGLTrainer:
         sched_1 = StepLR(optim_1, step_size=int(sch_cfg.step_size), gamma=float(sch_cfg.gamma))
         sched_2 = StepLR(optim_2, step_size=int(sch_cfg.step_size), gamma=float(sch_cfg.gamma))
 
-        if batches is not None:
-            n = len(batches)
-        else:
-            n = int(n_epochs)
-
-        patterns_number = int(self.cfg.train.batch_size_training)
-        num_units = int(self.cfg.first_order.input_dim)
-        factor = int(self.cfg.train.get("data_factor", 1))
-        lam = float(self.cfg.losses.cae_lambda)
-        bits_per_letter = int(self.cfg.get("bits_per_letter", BITS_PER_LETTER))
-        meta_frozen = bool(self.cfg.train.get("train_meta_frozen_in_training", True))
-
-        losses_1 = np.zeros(n)
-        losses_2 = np.zeros(n)
-        precision = np.zeros(n)
-
-        for epoch in range(n):
-            if batches is not None:
-                batch = batches[epoch]
-            else:
-                batch = generate_batch(
-                    grammar_type=GrammarType.A,  # Grammar-A fine-tuning (student L947)
-                    number=patterns_number * factor,
-                    device=self.device,
-                )
-
-            h1: torch.Tensor | None = None
-            h2: torch.Tensor | None = None
-            for _ in range(self.cascade_iters):
-                h1, h2 = self.first_order(
-                    batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate
-                )
-
-            batch.patterns.requires_grad_(True)
-            assert h2 is not None
-            h2.requires_grad_(True)
-
-            optim_1.zero_grad()
-
-            comparison: torch.Tensor | None = None
-            if self.setting.second_order:
-                # Second-order cascade pass — forward always runs (logs loss_2).
-                # Backward gated by meta_frozen.
-                wager: torch.Tensor | None = None
-                for _ in range(self.cascade_iters):
-                    wager, comparison = self.second_order(
-                        batch.patterns, h2, comparison, self.cascade_rate
-                    )
-                assert wager is not None
-                wager = wager.squeeze()
-
-                target = target_second(batch.patterns, h2)
-                loss_2 = wagering_bce_loss(wager, target, reduction="sum")
-                losses_2[epoch] = float(loss_2.item())
-
-                if not meta_frozen:
-                    # Non-student path: 2nd-order also trains during Grammar-A phase.
-                    loss_2 = loss_2.requires_grad_()
-                    optim_2.zero_grad()
-                    loss_2.backward(retain_graph=True)
-                    optim_2.step()
-                    sched_2.step()
-                    optim_2.zero_grad()
-                # Else: student L969 path — forward only, no backward/step.
-
-            # First-order CAE loss.
-            assert h1 is not None
-            W = self.first_order.fc1.weight
-            loss_1 = cae_loss(
-                W,
-                x=batch.patterns.view(-1, num_units),
-                recons_x=h2,
-                h=h1,
-                lam=lam,
-                recon="bce_sum",
-            )
-            loss_1.backward()
-            optim_1.step()
-            sched_1.step()
-            losses_1[epoch] = float(loss_1.item())
-
-            # Per-epoch first-order precision (inlined student `calculate_metrics` L451).
-            with torch.no_grad():
-                pred = torch.zeros_like(h2)
-                for row_idx in range(h2.shape[0]):
-                    for chunk_start in range(0, h2.shape[1], bits_per_letter):
-                        chunk = h2[row_idx, chunk_start : chunk_start + bits_per_letter]
-                        max_idx = int(torch.argmax(chunk).item())
-                        if chunk[max_idx].item() > 0.1:
-                            pred[row_idx, chunk_start + max_idx] = 1.0
-                tp = float((batch.patterns * pred).sum().item())
-                fp = float(((1 - batch.patterns) * pred).sum().item())
-                precision[epoch] = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-
-        return losses_1, losses_2, precision
+        return _run_training_loop(
+            first_order=self.first_order,
+            second_order=self.second_order,
+            optim_1=optim_1,
+            optim_2=optim_2,
+            sched_1=sched_1,
+            sched_2=sched_2,
+            n_epochs=n_epochs,
+            batches=batches,
+            batch_size=int(self.cfg.train.batch_size_training),
+            num_units=int(self.cfg.first_order.input_dim),
+            factor=int(self.cfg.train.get("data_factor", 1)),
+            lam=float(self.cfg.losses.cae_lambda),
+            bits_per_letter=int(self.cfg.get("bits_per_letter", BITS_PER_LETTER)),
+            meta_frozen=bool(self.cfg.train.get("train_meta_frozen_in_training", True)),
+            setting_second_order=self.setting.second_order,
+            cascade_iters=self.cascade_iters,
+            cascade_rate=self.cascade_rate,
+            device=self.device,
+        )
 
     def evaluate(
         self,
