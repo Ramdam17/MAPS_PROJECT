@@ -42,7 +42,7 @@ MAPPO + no cascade (D-marl-cascade-not-implemented, already in deviations.md).
   hours for MAPS run × 6 settings — could be 1000+ GPU hours total. Mitigated
   by (a) paper only runs 2 useful settings, (b) tamia has H100/H200 (faster).
 
-**Student code source :** `MARL/MAPPO-ATTENTIOAN/` was deleted from repo tree
+**Student code source :** `MARL/MAPPO-ATTENTION/` was deleted from repo tree
 in Sprint 04b/07. Must be restored from git history for reference.
 
 ---
@@ -52,11 +52,11 @@ in Sprint 04b/07. Must be restored from git history for reference.
 ### Sprint 09a — Audit + environment (E.1-E.6)
 
 #### E.1 — Restore student MARL code from git history (~1 h)
-**Goal :** snapshot `MARL/MAPPO-ATTENTIOAN/` from the last commit before its
+**Goal :** snapshot `MARL/MAPPO-ATTENTION/` from the last commit before its
 deletion into `external/paper_reference/marl_tmlr/`. Read-only.
 
 - Find the SHA where `MARL/` was last present (pre-Sprint 04b).
-- `git checkout <SHA> -- MARL/MAPPO-ATTENTIOAN`
+- `git checkout <SHA> -- MARL/MAPPO-ATTENTION`
 - Move to `external/paper_reference/marl_tmlr/` (following Blindsight/AGL
   naming pattern).
 - Add `external/paper_reference/marl_tmlr/.gitignore` for pycache.
@@ -92,7 +92,7 @@ Document this.
 
 #### E.5 — Decide on RIM / SCOFF / skill_dynamics / bottom_up extensions (~1 h)
 **Goal :** paper Fig.4 shows plain GRU only ; student has RIM + SCOFF + skill
-dynamics + bottom-up attention (from the forked MAPPO-ATTENTIOAN repo).
+dynamics + bottom-up attention (from the forked MAPPO-ATTENTION repo).
 
 Per B.11 audit decision : **OMIT these extensions** (paper-faithful scope).
 Document in deviations.md as `D-marl-attention-extensions` (already exists,
@@ -268,7 +268,7 @@ Commit discipline : each sub-phase atomically committed, as per Phase D.
 - [ ] Plan v1 validated by Rémy.
 - [ ] Lab queue discipline confirmed : 3-4 concurrent jobs, chain via
   `--dependency`, `--mem=Xxxx M` not `XG`.
-- [ ] OK to restore deleted `MARL/MAPPO-ATTENTIOAN/` tree into
+- [ ] OK to restore deleted `MARL/MAPPO-ATTENTION/` tree into
   `external/paper_reference/marl_tmlr/` (read-only).
 
 Once confirmed, we start E.1.

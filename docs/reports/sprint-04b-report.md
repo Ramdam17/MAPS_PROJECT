@@ -15,7 +15,7 @@
 
 All items from the spec landed. Nothing dropped or deferred.
 
-**Correction (2026-04-18, Sprint 07 P1.1-P1.3):** 4.7 was partial. The 4 TMLR monolith scripts were deleted, but surrounding legacy trees remained tracked — `SARL/` (shell wrappers), `SARL_CL/` (shell wrappers + `AC_lambda.py`), `MARL/MAPPO-ATTENTIOAN/` (2.1 MB vendored MAPPO + dmlab2d wheel + committed tokens), `MARL/meltingpot.sh` (orphan once MAPPO removed), `requirements-legacy.txt`. Sprint 07 Phase 1 removed them (~197 files). `BLINDSIGHT/`, `AGL/`, `METTA/` had already been cleared in Sprint 04b.
+**Correction (2026-04-18, Sprint 07 P1.1-P1.3):** 4.7 was partial. The 4 TMLR monolith scripts were deleted, but surrounding legacy trees remained tracked — `SARL/` (shell wrappers), `SARL_CL/` (shell wrappers + `AC_lambda.py`), `MARL/MAPPO-ATTENTION/` (2.1 MB vendored MAPPO + dmlab2d wheel + committed tokens), `MARL/meltingpot.sh` (orphan once MAPPO removed), `requirements-legacy.txt`. Sprint 07 Phase 1 removed them (~197 files). `BLINDSIGHT/`, `AGL/`, `METTA/` had already been cleared in Sprint 04b.
 
 ## Code / test deltas
 

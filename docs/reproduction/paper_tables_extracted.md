@@ -268,7 +268,7 @@ Deux flags critiques à lever avant tout port ou config alignment (Phase B.11, E
   - `7e-3` (= 100 × 7e-5, ratio actor-critic usuel en MAPPO — Yu et al. 2022 default `critic_lr=7e-3`)
   - `1e-2` (ratio 142× vs actor)
   - Perte d'un suffixe "e-3" au copy-paste vers LaTeX
-  À **vérifier** contre `MARL/MAPPO-ATTENTIOAN/` Phase B.11 pour arbitrer.
+  À **vérifier** contre `MARL/MAPPO-ATTENTION/` Phase B.11 pour arbitrer.
 - ⚠️ **`Num env steps = 15e6` (15 millions)** — **conflit main text**. Paper page 15, MARL Results :
   > *"The agents were trained for 300,000 steps on three seeds, due to computational constraints
   > (refer to Table 4)."*
@@ -279,7 +279,7 @@ Deux flags critiques à lever avant tout port ou config alignment (Phase B.11, E
   2. **300k est faux** : possible mais très peu plausible (un ordre de magnitude entre table et
      texte sur le même domaine c'est rare).
   Hypothèse forte : **table wrong, texte right → 300,000 est la bonne valeur**. À confirmer via
-  `MARL/MAPPO-ATTENTIOAN/` shells ou code Phase B.11.
+  `MARL/MAPPO-ATTENTION/` shells ou code Phase B.11.
 - **MAPS "not implemented fully"** (preamble) — paper avoue que le 2nd-order MARL n'a pas de cascade
   model faute de compute. Implication : reproduction MARL **ne pourra pas** être strictement
   paper-faithful pour les settings qui utilisent cascade (2, 4, 5, 6). À documenter dans

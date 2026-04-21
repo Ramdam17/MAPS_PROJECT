@@ -14,7 +14,7 @@
 Objectif non-négociable : **reproduire intégralement le papier MAPS (Vargas et al., TMLR submission)**. Le papier couvre 5 domaines (Blindsight, AGL, SARL, SARL+CL, MARL), 7 settings (1-6 MAPS factorial + setting 7 = ACB baseline), avec N=500 seeds pour les tâches perceptuelles et N=3 seeds pour les tâches RL.
 
 Audit 2026-04-19 a révélé les écarts suivants entre le working tree et ce que le papier exige :
-- **Code MARL absent** de `src/maps/` (jamais porté ; restauré dans `MARL/MAPPO-ATTENTIOAN/` depuis git).
+- **Code MARL absent** de `src/maps/` (jamais porté ; restauré dans `MARL/MAPPO-ATTENTION/` depuis git).
 - **Setting 7 (ACB) absent** de la factorielle courante (6 settings au lieu de 7).
 - **Hyperparams SARL/SARL+CL divergent du papier Table 11** sur 5-6 axes (num_frames, lr_second_order, alpha EMA, gamma DQN, scheduler step, poids CL).
 - **MeltingPot env non-installé.** Recipe existe (DeepMind open-source, dmlab2d Python 3.10 wheel) mais jamais exécutée.
@@ -31,7 +31,7 @@ Audit 2026-04-19 a révélé les écarts suivants entre le working tree et ce qu
 
 **Pourquoi papier > maps.py ?** Parce que l'objectif est de reproduire ce que dit **le papier**, pas ce que faisait le code du student. Quand ils divergent (et ils divergent), le papier doit gagner — sinon on ne reproduit pas le papier, on réplique le code. Les deux sont différents.
 
-**Pourquoi composante par composante et pas un big-bang ?** Parce qu'on a déjà vu ce qu'un plan trop macro donne (Sprint-07 Phase 1 a supprimé MAPPO-ATTENTIOAN sans port existant → mandat de restauration). La granularité atomique (1 sous-phase = 1 commit) force :
+**Pourquoi composante par composante et pas un big-bang ?** Parce qu'on a déjà vu ce qu'un plan trop macro donne (Sprint-07 Phase 1 a supprimé MAPPO-ATTENTION sans port existant → mandat de restauration). La granularité atomique (1 sous-phase = 1 commit) force :
 - Chaque décision à être examinée isolément.
 - Les tests de parité à passer vert à chaque étape (pas de régression cachée par d'autres changements).
 - La rollback facile si un pas casse quelque chose en aval.
@@ -323,8 +323,8 @@ Chaque sous-phase a : **titre · préambule court · ce qu'on fait · vérificat
 - **DoD :** section complète.
 - **Effort :** 1 h.
 
-### B.11 Audit croisé MARL : paper Table 12 ↔ `MARL/MAPPO-ATTENTIOAN/` (pas de port à comparer)
-- **Faire :** section "MARL". Identifier structure modules MAPPO-ATTENTIOAN + mapping vers futur `src/maps/experiments/marl/`.
+### B.11 Audit croisé MARL : paper Table 12 ↔ `MARL/MAPPO-ATTENTION/` (pas de port à comparer)
+- **Faire :** section "MARL". Identifier structure modules MAPPO-ATTENTION + mapping vers futur `src/maps/experiments/marl/`.
 - **Vérifier :** map fonctionnelle documentée.
 - **DoD :** section complète.
 - **Effort :** 2 h.
@@ -789,15 +789,15 @@ Chaque composante suit ce pattern :
 - **DoD :** commit.
 - **Effort :** 2 h.
 
-### E.10 MARL — lecture complète `MARL/MAPPO-ATTENTIOAN/` + mapping functionnel
-- **Faire :** doc `docs/reviews/marl-mapping.md` : mapping module-by-module des ~188 fichiers MAPPO-ATTENTIOAN vers la cible `src/maps/experiments/marl/` (6 fichiers cible).
+### E.10 MARL — lecture complète `MARL/MAPPO-ATTENTION/` + mapping functionnel
+- **Faire :** doc `docs/reviews/marl-mapping.md` : mapping module-by-module des ~188 fichiers MAPPO-ATTENTION vers la cible `src/maps/experiments/marl/` (6 fichiers cible).
 - **Vérifier :** doc + diagramme structural.
 - **DoD :** doc.
 - **Effort :** 1 j.
 
 ### E.11 MARL — `src/maps/experiments/marl/model.py`
 - **Faire :** Encoder conv + positional encoding (sinusoïdal relatif) + linear + GRU + second-order. Paper fig 4 + Table 12 (hidden_size=100).
-- **Vérifier :** forward shapes match MAPPO-ATTENTIOAN sur une obs dummy.
+- **Vérifier :** forward shapes match MAPPO-ATTENTION sur une obs dummy.
 - **DoD :** commit.
 - **Effort :** 4 h.
 
@@ -850,7 +850,7 @@ Chaque composante suit ce pattern :
 - **Effort :** 1 h.
 
 ### E.20 MARL — `tests/parity/marl/` (Tier 1/2/3)
-- **Faire :** parity vs MAPPO-ATTENTIOAN : Tier 1 forward, Tier 2 buffer, Tier 3 update. `_reference_marl.py` extraits.
+- **Faire :** parity vs MAPPO-ATTENTION : Tier 1 forward, Tier 2 buffer, Tier 3 update. `_reference_marl.py` extraits.
 - **Vérifier :** atol=1e-6 sur chaque tier.
 - **DoD :** commit.
 - **Effort :** 4 h.

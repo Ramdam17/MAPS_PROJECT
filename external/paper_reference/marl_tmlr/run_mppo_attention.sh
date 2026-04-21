@@ -7,8 +7,8 @@
 #SBATCH --mem=95000M   
 #SBATCH --time=1-10:00:00
 #SBATCH --account=def-gdumas85
-#SBATCH --output=/home/memole/projects/def-gdumas85/memole/MPPO-ATTENTIOAN/logs/MAPPO-attention-seed-1_%N-%j.out
-#SBATCH --error=/home/memole/projects/def-gdumas85/memole/MPPO-ATTENTIOAN/logs/MAPPO-attention-seed-1_%N-%j.err
+#SBATCH --output=/home/memole/projects/def-gdumas85/memole/MPPO-ATTENTION/logs/MAPPO-attention-seed-1_%N-%j.out
+#SBATCH --error=/home/memole/projects/def-gdumas85/memole/MPPO-ATTENTION/logs/MAPPO-attention-seed-1_%N-%j.err
 #SBATCH --mail-user=sheikhbahaee@gmail.com              # notification for job conditions
 #SBATCH --mail-type=END
 #SBATCH --mail-type=FAIL
@@ -16,7 +16,7 @@
 module load gcc python/3.10 opencv/4.7 mujoco mpi4py
 module load scipy-stack
 module load rust/1.65.0
-DIR=/home/memole//projects/def-gdumas85/memole/MPPO-ATTENTIOAN
+DIR=/home/memole//projects/def-gdumas85/memole/MPPO-ATTENTION
 
 #virtualenv --no-download --clear /home/memole/MAPPO
 source /home/memole/MAPPO/bin/activate
@@ -28,7 +28,7 @@ pip install --no-index --upgrade pip
 #pip install --no-index --no-cache-dir numpy 
 #pip install --no-index torch torchvision torchtext torchaudio
 #pip install --no-index wandb
-#pip install --no-cache-dir -r ~/projects/def-gdumas85/memole/MPPO-ATTENTIOAN/requirements.txt
+#pip install --no-cache-dir -r ~/projects/def-gdumas85/memole/MPPO-ATTENTION/requirements.txt
 #python -m pip install git+https://github.com/mpi4py/mpi4py
 #pip install --no-cache-dir mpyq
 
@@ -41,18 +41,18 @@ pip install --no-index --upgrade pip
 # install this package first
 # install on-policy package
 
-cd /home/memole/projects/def-gdumas85/memole/MPPO-ATTENTIOAN/
+cd /home/memole/projects/def-gdumas85/memole/MPPO-ATTENTION/
 pip install -e .
 #install starcraft
 #mkdir 3rdparty
-export SC2PATH="/home/memole/projects/def-gdumas85/memole/MPPO-ATTENTIOAN/3rdparty/StarCraftII"
+export SC2PATH="/home/memole/projects/def-gdumas85/memole/MPPO-ATTENTION/3rdparty/StarCraftII"
 
 #cd 3rdparty
 #echo 'SC2PATH is set to '$SC2PATH
 #wget http://blzdistsc2-a.akamaihd.net/Linux/SC2.4.10.zip
 #unzip -P iagreetotheeula SC2.4.10.zip
 #rm -rf SC2.4.10.zip
-#export MAP_DIR="/content/drive/MyDrive/MPPO-ATTENTIOAN/3rdparty/StarCraftII/Maps/"
+#export MAP_DIR="/content/drive/MyDrive/MPPO-ATTENTION/3rdparty/StarCraftII/Maps/"
 #echo 'MAP_DIR is set to '$MAP_DIR
 #mkdir -p $MAP_DIR
 #cd ..

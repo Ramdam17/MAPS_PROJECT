@@ -24,13 +24,13 @@ The audit found ~5k LOC of dead/duplicated code across the repo. Removing it **b
 ### 1.1 — Kill duplicates
 - [ ] Diff-verify `energy_tracker.py` is byte-identical in the 4 locations
 - [ ] Move to `src/maps/utils/energy_tracker.py`
-- [ ] Delete copies in `AGL/`, `BLINDSIGHT/`, `MARL/MAPPO-ATTENTIOAN/`, `SARL/MinAtar/examples/`
+- [ ] Delete copies in `AGL/`, `BLINDSIGHT/`, `MARL/MAPPO-ATTENTION/`, `SARL/MinAtar/examples/`
 - [ ] Update imports in Blindsight_TMLR.py, AGL_TMLR.py, SARL examples, MARL
 
 ### 1.2 — Shadow files
-- [ ] Delete `MARL/MAPPO-ATTENTIOAN/onpolicy/algorithms/happo/happo_trainer(1).py` (accidental download)
-- [ ] Delete `MARL/MAPPO-ATTENTIOAN/onpolicy/envs/some_env_old.py` and `...environment_old.py` (check first)
-- [ ] Delete `MARL/MAPPO-ATTENTIOAN/onpolicy/algorithms/utils/cnn_original.py`
+- [ ] Delete `MARL/MAPPO-ATTENTION/onpolicy/algorithms/happo/happo_trainer(1).py` (accidental download)
+- [ ] Delete `MARL/MAPPO-ATTENTION/onpolicy/envs/some_env_old.py` and `...environment_old.py` (check first)
+- [ ] Delete `MARL/MAPPO-ATTENTION/onpolicy/algorithms/utils/cnn_original.py`
 - [ ] Resolve `SARL/MinAtar/examples/maps_v1.py` vs `maps_v2.py`:
     - [ ] diff v1 vs v2; confirm v2 is newer/correct
     - [ ] delete v1, rename v2 → `maps.py`

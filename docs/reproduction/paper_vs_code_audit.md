@@ -594,8 +594,8 @@ gap). H2 est nécessaire mais insuffisant.
   Table 7 cibles z-scores (p. 17). Paper preamble Table 12 : *"MAPS not implemented fully, only
   with simple 2nd order network with no cascade model due to limitations with computational
   resources."*
-- Student code : `MARL/MAPPO-ATTENTIOAN/` (188 fichiers, 1.5 MB) — forké de
-  `https://github.com/neuronphysics/MAPPO-ATTENTIOAN` (lui-même dérivé de MAPPO, Yu et al. 2022).
+- Student code : `MARL/MAPPO-ATTENTION/` (188 fichiers, 1.5 MB) — forké de
+  `https://github.com/neuronphysics/MAPPO-ATTENTION` (lui-même dérivé de MAPPO, Yu et al. 2022).
   Entry point : `onpolicy/scripts/train/train_meltingpot.py` (lancé via `train_meltingpot.sh`).
   Defaults dans `onpolicy/config.py`. MAPS-specific additions dans :
   - `onpolicy/algorithms/r_mappo/algorithm/r_actor_critic_meta.py` (L20 : classe `SecondOrderNetwork`)

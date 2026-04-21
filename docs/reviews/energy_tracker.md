@@ -8,13 +8,13 @@
 - Byte-identical copies (pré-Sprint-01) :
   - `BLINDSIGHT/energy_tracker.py`
   - `AGL/energy_tracker.py`
-  - `MARL/MAPPO-ATTENTIOAN/energy_tracker.py`
+  - `MARL/MAPPO-ATTENTION/energy_tracker.py`
   - `SARL/MinAtar/examples/energy_tracker.py`
 - Dedup en Sprint-01 → unique copie dans `src/maps/utils/energy_tracker.py` (+ `print()→log` migration
   en Sprint-04b 4.9).
 **Callers** :
 - `src/maps/**/*.py` : **0 caller**.
-- `MARL/MAPPO-ATTENTIOAN/onpolicy/runner/separated/meltingpot_runner.py:14` : **1 caller externe**
+- `MARL/MAPPO-ATTENTION/onpolicy/runner/separated/meltingpot_runner.py:14` : **1 caller externe**
   (MARL runner, paper reproduction ref, non-actively-maintained pour Phase F reproduction SARL/
   Blindsight/AGL).
 
@@ -98,7 +98,7 @@ n'exporte pas `energy_tracker`, confirmé en C.13).
 - Sprint-04b (4.9) : migré 14 `print()` → structured `log.info/warn/error`, scoped ruff ignore
   `T20` retiré.
 - **Aucun caller dans `src/`** (grep confirmé 2026-04-20).
-- Unique caller externe : `MARL/MAPPO-ATTENTIOAN/onpolicy/runner/separated/meltingpot_runner.py:13-14`
+- Unique caller externe : `MARL/MAPPO-ATTENTION/onpolicy/runner/separated/meltingpot_runner.py:13-14`
   → `from maps.utils.energy_tracker import NvidiaEnergyTracker, MLModelEnergyEfficiency`.
 
 **Status** :
