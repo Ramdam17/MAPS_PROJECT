@@ -1,0 +1,10 @@
+# Commons Harvest Partnership (paper §A.4 p. 26).
+# Similar to Closed but requires 2 agents to defend a room → cooperation.
+
+id: commons_harvest_partnership
+substrate_name: commons_harvest__partnership
+num_agents: 4                     # paper §A.4
+roles: ["default", "default", "default", "default"]
+downsample_scale: 8
+obs_shape_agent: [11, 11, 3]
+max_cycles: 400

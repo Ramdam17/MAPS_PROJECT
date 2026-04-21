@@ -1,0 +1,11 @@
+# Chemistry Three Metabolic Cycles with Plentiful Distractors (paper §A.4 p. 27).
+# Equilibrium-selection + puzzle + resource sharing + stochastic rewards.
+
+id: chemistry
+substrate_name: chemistry__three_metabolic_cycles_with_plentiful_distractors
+num_agents: 8                     # paper §A.4
+roles: ["default", "default", "default", "default",
+        "default", "default", "default", "default"]
+downsample_scale: 8
+obs_shape_agent: [11, 11, 3]
+max_cycles: 400

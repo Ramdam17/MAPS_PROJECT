@@ -1,0 +1,45 @@
+"""MARL (Multi-Agent Reinforcement Learning) experiment package.
+
+Ports student ``MARL/MAPPO-ATTENTION/`` → ``external/paper_reference/marl_tmlr/``
+into a paper-faithful MAPPO + MAPS implementation running on MeltingPot 2.x
+substrates.
+
+See :
+- ``docs/plans/plan-20260421-phase-e-marl.md`` for the 18-sub-phase plan.
+- ``docs/reviews/marl-architecture.md`` (E.2 audit).
+- ``docs/reviews/marl-env.md`` (E.3 audit).
+- ``docs/reviews/marl-maps-additions.md`` (E.4 audit).
+- ``docs/reviews/marl-scope-decisions.md`` (E.5 scope lock).
+- ``docs/install_marl_drac.md`` (E.6 install recipe).
+
+Package layout
+--------------
+- ``setting.py`` : :class:`MarlSetting` dataclass (6 factorial cells).
+- ``encoder.py`` : ConvEncoder (paper Fig.4). **E.8 scope.**
+- ``rnn.py`` : RNNLayer + RNNLayerMeta. **E.8 scope.**
+- ``policy.py`` : MAPPOActor + MAPPOCritic + MAPSActor + MAPSCritic +
+  MarlSecondOrderNetwork + MAPPOPolicy wrapper. **E.8 scope.**
+- ``trainer.py`` : MAPPOTrainer (PPO clip + value + entropy + MAPS wager BCE).
+  **E.9 scope.**
+- ``env.py`` : MeltingPotEnv wrapper. **E.10 scope.**
+- ``runner.py`` : MeltingpotRunner (rollout + EMA wager + train loop).
+  **E.9 scope.**
+- ``data.py`` : rollout buffer dataclasses. **E.9 scope.**
+
+Runtime environment
+-------------------
+MARL runs from the **dedicated ``.venv-marl`` (Python 3.11.4)** — the main
+``.venv`` (Python 3.12) cannot install ``dmlab2d`` / ``meltingpot`` due to
+missing cp312 wheels. See ``docs/install_marl_drac.md``.
+
+Exports
+-------
+Only :class:`MarlSetting` is public at this stage (E.7 scaffold). Other
+classes raise ``NotImplementedError`` until their implementation phase.
+"""
+
+from __future__ import annotations
+
+from maps.experiments.marl.setting import MarlSetting
+
+__all__ = ["MarlSetting"]

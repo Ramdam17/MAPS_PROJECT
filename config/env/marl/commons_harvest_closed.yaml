@@ -1,0 +1,12 @@
+# Commons Harvest Closed (paper §A.4 p. 26).
+# Social dilemma + enclosed rooms. Apples regrow based on neighbors.
+
+id: commons_harvest_closed
+substrate_name: commons_harvest__closed
+num_agents: 6                     # paper §A.4
+# Note: MeltingPot default_player_roles may give 7 ; force 6 via explicit roles.
+roles: ["default", "default", "default", "default", "default", "default"]
+downsample_scale: 8               # 88×88 → 11×11 RGB
+obs_shape_agent: [11, 11, 3]      # per-agent RGB after downsample
+# share_obs (WORLD.RGB) shape varies per substrate — resolved at env build.
+max_cycles: 400                   # hard cap on episode length (student default)

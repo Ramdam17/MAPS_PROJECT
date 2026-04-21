@@ -1,0 +1,10 @@
+# Territory Inside Out (paper §A.4 p. 27).
+# Bargaining + dynamic intra-episode learning + delayed rewards + zap-elimination.
+
+id: territory_inside_out
+substrate_name: territory_inside_out
+num_agents: 5                     # paper §A.4
+roles: ["default", "default", "default", "default", "default"]
+downsample_scale: 8
+obs_shape_agent: [11, 11, 3]
+max_cycles: 400

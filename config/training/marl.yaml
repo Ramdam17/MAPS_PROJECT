@@ -1,0 +1,90 @@
+# MARL training defaults — paper Table 12 authoritative (E.7 scaffold).
+#
+# Paper §B.4 Table 12 (p. 30) : hidden_size=100, actor_lr=7e-5, entropy_coef=0.01,
+# clip_param=0.2, ppo_epoch=15, weight_decay=1e-5, num_env_steps=15e6, optimizer=Adam.
+#
+# Known divergences vs student config (all aligned to paper here) :
+#   - hidden_size : 100 (paper) vs 144 (student config.py)
+#   - actor_lr    : 7e-5 (paper) vs 2e-5 (student shell --lr override)
+#   - entropy_coef: 0.01 (paper) vs 0.004 (student shell override)
+#   - num_env_steps: 15e6 (paper T.12) vs 40e6 (student config) / 300k (paper text)
+#   - EMA wager α : 0.45 (paper eq.13) vs 0.25 (student runner L197)
+#   - Wager cond : r_t > EMA_t (paper eq.14) vs EMA_t > 0 (student L338)
+#
+# Port scope lock : docs/reviews/marl-scope-decisions.md §e.
+
+defaults:
+  - /maps@_here_          # inherit cascade / first_order / second_order / losses / seed
+
+# ── Model architecture ──────────────────────────────────────────────────
+# Paper Fig.4 : ConvEncoder → GRU → (Actor head + Critic head + optional wager).
+# Note : Fig.4 doesn't specify hidden_second; MARL SecondOrderNetwork uses
+# the same ``hidden_size`` as actor/critic (see r_actor_critic_meta.py:90).
+model:
+  hidden_size: 100                # paper T.12
+  recurrent_n: 1                  # 1 GRU layer (paper Fig.4)
+  use_orthogonal: true            # student default, stable init
+  use_ReLU: true                  # default in student cnn.py
+  gain: 0.01                      # ACT layer init gain
+  # Dropout inside MarlSecondOrderNetwork's comparison_layer
+  second_order_dropout: 0.1       # student r_actor_critic_meta.py:25
+
+# ── Optimizer (paper T.12 = Adam, RangerVA as optional fallback) ────────
+optimizer:
+  name: Adam                      # paper T.12
+  actor_lr: 7.0e-5                # paper T.12 (NOT student 2e-5 shell)
+  critic_lr: 7.0e-5               # paper T.12 — paper lists "100" which is a typo ; student uses 7e-5
+  opti_eps: 1.0e-5                # student config default
+  weight_decay: 1.0e-5            # paper T.12
+  amsgrad: false                  # Adam default
+
+# ── PPO hyperparameters ─────────────────────────────────────────────────
+ppo:
+  clip_param: 0.2                 # paper T.12
+  ppo_epoch: 15                   # paper T.12
+  num_mini_batch: 1               # student default
+  data_chunk_length: 10           # student default for recurrent generator
+  value_loss_coef: 1.0            # standard MAPPO
+  entropy_coef: 0.01              # paper T.12 (NOT student 0.004 shell)
+  max_grad_norm: 10.0             # student default
+  huber_delta: 10.0               # student default
+  use_clipped_value_loss: true    # student default
+  use_huber_loss: true            # student default
+  use_popart: false               # optional, omitted per E.5
+  use_valuenorm: true             # student default (stabilizer)
+  use_value_active_masks: true    # student default
+  use_policy_active_masks: true   # student default
+
+# ── Training loop ───────────────────────────────────────────────────────
+training:
+  num_env_steps: 15_000_000       # paper T.12 = 15e6 (NOT student config 40e6 or text 300k)
+  n_rollout_threads: 1            # student default ; adjustable via --n-rollout-threads
+  n_eval_rollout_threads: 1
+  episode_length: 1000            # constant, student's get_episode_parameters is dead code
+  log_interval: 10                # episodes
+  save_interval: 50               # episodes
+  eval_interval: 50               # episodes
+  use_linear_lr_decay: false      # student default
+  use_recurrent_policy: true      # paper Fig.4 GRU
+  use_naive_recurrent_policy: false
+  share_policy: false             # use separated runner, NOT shared (broken)
+  use_centralized_V: true         # MAPPO centralized critic
+  use_wandb: false                # off on DRAC (compute nodes no internet)
+
+# ── MAPS second-order (eq.13-14 paper-faithful) ─────────────────────────
+maps:
+  # Paper eq.13 : EMA_t = α · r_t + (1-α) · EMA_{t-1}
+  ema_alpha: 0.45                 # paper §2.2 (student uses 0.25 — D-marl-ema-alpha)
+  # Paper eq.14 : y_wager = (1, 0) if r_t > EMA_t else (0, 1)
+  # Student uses EMA_t > 0 instead — D-marl-wager-condition. Port = paper literal.
+  wager_condition: "r_t_gt_ema"   # {"r_t_gt_ema" | "ema_gt_zero"}
+
+# ── Env reset / cascade defaults ────────────────────────────────────────
+# Per-setting override via config/experiments/factorial_marl.yaml.
+# Default = setting 1 (baseline: no meta, no cascade).
+meta: false
+cascade_iterations1: 1
+cascade_iterations2: 1
+
+# ── Seed ─────────────────────────────────────────────────────────────────
+seed: 42
