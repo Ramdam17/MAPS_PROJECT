@@ -111,3 +111,58 @@ def test_pool_train_range_rejects_bad_ranges(tiny_cfg):
         pool.train_range(start=-1, end=2, n_epochs=1)
     with pytest.raises(ValueError):
         pool.train_range(start=2, end=2, n_epochs=1)  # end == start
+
+
+def test_evaluate_pool_returns_high_low_overall_tiers(tiny_cfg):
+    """evaluate_pool aggregates per-cell metrics into high / low / overall tiers."""
+    set_all_seeds(42)
+    trainer = AGLTrainer(tiny_cfg, SETTINGS[1])  # setting=both
+    trainer.build()
+    trainer.pre_train()
+    # num_networks=4 → high=[0:2], low=[2:4].
+    pool = AGLNetworkPool(trainer, num_networks=4)
+    pool.train_range(0, 2, n_epochs=3)
+    pool.train_range(2, 4, n_epochs=1)
+
+    result = trainer.evaluate_pool(pool)
+
+    assert set(result.keys()) == {"high", "low", "overall"}
+    for tier in ("high", "low", "overall"):
+        assert "precision_1st" in result[tier]
+        assert "precision_1st_std" in result[tier]
+        assert "wager_accuracy" in result[tier]  # setting.second_order=True
+        assert "wager_accuracy_std" in result[tier]
+        # f1 / precision_2nd / recall_2nd also present.
+        assert "f1_2nd" in result[tier]
+
+
+def test_evaluate_pool_without_second_order_has_no_wager_keys(tiny_cfg):
+    """When setting.second_order=False, wager keys must be absent from tiers."""
+    set_all_seeds(42)
+    trainer = AGLTrainer(tiny_cfg, SETTINGS[0])  # setting=neither (second_order=False)
+    trainer.build()
+    trainer.pre_train()
+    pool = AGLNetworkPool(trainer, num_networks=3)
+    pool.train_range(0, 3, n_epochs=2)
+
+    result = trainer.evaluate_pool(pool)
+    for tier in ("high", "low", "overall"):
+        assert "precision_1st" in result[tier]
+        assert "wager_accuracy" not in result[tier]
+        assert "f1_2nd" not in result[tier]
+
+
+def test_evaluate_pool_rejects_empty_pool(tiny_cfg):
+    """evaluate_pool must raise on empty pool."""
+    set_all_seeds(42)
+    trainer = AGLTrainer(tiny_cfg, SETTINGS[0])
+    trainer.build()
+
+    class _EmptyPool:
+        cells = []
+
+        def __len__(self):
+            return 0
+
+    with pytest.raises(ValueError):
+        trainer.evaluate_pool(_EmptyPool())

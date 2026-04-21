@@ -115,6 +115,135 @@ def _build_optimizer(name: str, params, lr: float) -> torch.optim.Optimizer:
     return _OPTIMIZERS[key](params, lr=lr)
 
 
+def _evaluate_single_cell(
+    *,
+    first_order: FirstOrderMLP,
+    second_order: SecondOrderNetwork,
+    patterns: torch.Tensor,
+    bits_per_letter: int,
+    setting_second_order: bool,
+    cascade_iters: int,
+    cascade_rate: float,
+    threshold: float,
+) -> dict[str, float]:
+    """Per-network evaluation on a concatenated (Grammar-A + Grammar-B) batch.
+
+    Runs the cascade forward pass and computes (student ``testing()`` L1150) :
+
+    - ``precision_1st`` : per-letter WTA precision on first-order
+      reconstruction (inlined student ``calculate_metrics`` L451, returns
+      precision only even though TP/FP/TN/FN are computed internally).
+    - ``wager_accuracy`` : (TP + TN) / (TP + TN + FP + FN) on the binary
+      wager output vs ``target_second``. Only populated when
+      ``setting_second_order`` is True.
+    - ``precision_2nd``, ``recall_2nd``, ``f1_2nd`` : extra 2nd-order metrics
+      from student ``compute_metrics`` L1142-1148. Useful for tier-level
+      analysis later. Populated only when ``setting_second_order``.
+
+    Called by ``AGLTrainer.evaluate`` (single-network smoke) and
+    ``AGLTrainer.evaluate_pool`` (production 20-cell per seed).
+    """
+    metrics: dict[str, float] = {}
+    with torch.no_grad():
+        h1: torch.Tensor | None = None
+        h2: torch.Tensor | None = None
+        for _ in range(cascade_iters):
+            h1, h2 = first_order(
+                patterns, prev_h1=h1, prev_h2=h2, cascade_rate=cascade_rate
+            )
+        assert h2 is not None
+
+        # First-order WTA precision on each 6-bit letter chunk.
+        pred = torch.zeros_like(h2)
+        for row_idx in range(h2.shape[0]):
+            for chunk_start in range(0, h2.shape[1], bits_per_letter):
+                chunk = h2[row_idx, chunk_start : chunk_start + bits_per_letter]
+                max_idx = int(torch.argmax(chunk).item())
+                if chunk[max_idx].item() > 0.1:
+                    pred[row_idx, chunk_start + max_idx] = 1.0
+        tp_1 = float((patterns * pred).sum().item())
+        fp_1 = float(((1 - patterns) * pred).sum().item())
+        metrics["precision_1st"] = tp_1 / (tp_1 + fp_1) if (tp_1 + fp_1) > 0 else 0.0
+        # Kept-in alias for backward compat with pre-D.28 callers.
+        metrics["classification_precision"] = metrics["precision_1st"]
+
+        if setting_second_order:
+            comparison: torch.Tensor | None = None
+            wager: torch.Tensor | None = None
+            for _ in range(cascade_iters):
+                wager, comparison = second_order(
+                    patterns, h2, comparison, cascade_rate
+                )
+            assert wager is not None
+            wager = wager.squeeze()
+            target = target_second(patterns, h2)
+
+            # Reference flattens both then compares element-wise.
+            w = wager.detach().cpu().numpy().flatten()
+            t = target.cpu().numpy().flatten()
+            pred_bin = (w > threshold).astype(int)
+            tgt_bin = (t > threshold).astype(int)
+
+            # Student ``compute_metrics`` L1142-1148 : TP/TN/FP/FN-based precision,
+            # recall, F1, accuracy.
+            tp_2 = float(((pred_bin == 1) & (tgt_bin == 1)).sum())
+            tn_2 = float(((pred_bin == 0) & (tgt_bin == 0)).sum())
+            fp_2 = float(((pred_bin == 1) & (tgt_bin == 0)).sum())
+            fn_2 = float(((pred_bin == 0) & (tgt_bin == 1)).sum())
+            denom_total = tp_2 + tn_2 + fp_2 + fn_2
+            denom_precision = tp_2 + fp_2
+            denom_recall = tp_2 + fn_2
+            prec2 = tp_2 / denom_precision if denom_precision > 0 else 0.0
+            rec2 = tp_2 / denom_recall if denom_recall > 0 else 0.0
+            f12 = (2 * prec2 * rec2 / (prec2 + rec2)) if (prec2 + rec2) > 0 else 0.0
+            metrics["wager_accuracy"] = (tp_2 + tn_2) / denom_total if denom_total > 0 else 0.0
+            metrics["precision_2nd"] = prec2
+            metrics["recall_2nd"] = rec2
+            metrics["f1_2nd"] = f12
+
+    return metrics
+
+
+def _aggregate_pool_metrics(
+    per_cell: list[dict[str, float]],
+    *,
+    num_networks: int,
+) -> dict[str, dict[str, float]]:
+    """Aggregate per-cell metrics into High/Low/overall tiers.
+
+    High = cells ``[0 : num_networks//2]`` (12 epochs, student main L1499-1500).
+    Low  = cells ``[num_networks//2 : num_networks]`` (3 epochs, student L1504-1505).
+    """
+    if not per_cell:
+        return {"high": {}, "low": {}, "overall": {}}
+
+    split = num_networks // 2
+    tiers = {
+        "high": per_cell[:split],
+        "low": per_cell[split:num_networks],
+        "overall": per_cell,
+    }
+    keys = sorted({k for cell in per_cell for k in cell.keys()})
+
+    out: dict[str, dict[str, float]] = {}
+    for tier_name, cells in tiers.items():
+        tier_out: dict[str, float] = {}
+        if not cells:
+            out[tier_name] = tier_out
+            continue
+        for k in keys:
+            vals = np.array([c.get(k, np.nan) for c in cells], dtype=float)
+            # Drop NaNs (absent keys): cells without second-order lack wager keys.
+            vals = vals[~np.isnan(vals)]
+            if vals.size == 0:
+                continue
+            tier_out[k] = float(vals.mean())
+            tier_out[f"{k}_std"] = float(vals.std())
+        out[tier_name] = tier_out
+
+    return out
+
+
 def _run_training_loop(
     *,
     first_order: FirstOrderMLP,
@@ -541,22 +670,15 @@ class AGLTrainer:
         eval_patterns_number: int | None = None,
         threshold: float | None = None,
     ) -> dict[str, float]:
-        """Held-out evaluation — ports AGL_TMLR.py `testing()` (L1150).
+        """Single-network held-out evaluation — smoke/test helper.
+
+        For the **production** AGL evaluation (20-cell pool with High/Low
+        awareness tier split) call :meth:`evaluate_pool` instead. This method
+        is kept for unit tests and single-network smokes.
 
         Generates a concatenated batch of Grammar A + Grammar B test words
-        (size `2 * eval_patterns_number`), runs the cascade forward pass, and
-        computes:
-
-        - ``classification_precision`` — per-letter WTA precision on the
-          first-order reconstruction (`calculate_metrics` L451).
-        - ``wager_accuracy`` — binary classification accuracy of the
-          second-order wager against ``target_second``. Only populated when
-          ``setting.second_order`` is True.
-
-        Note: the paper's High/Low Awareness split is a **post-hoc seed-pool
-        split** (first half of networks → "high", second half → "low") and is
-        handled at aggregation time, not here. A single `evaluate()` call
-        returns per-network metrics regardless of awareness tier.
+        (size ``2 * eval_patterns_number``), runs the cascade forward pass,
+        and returns per-metric dict via :func:`_evaluate_single_cell`.
         """
         if self.first_order is None or self.second_order is None:
             raise RuntimeError("Call `.build()` before `.evaluate()`.")
@@ -577,49 +699,93 @@ class AGLTrainer:
         )
         bits_per_letter = int(self.cfg.get("bits_per_letter", BITS_PER_LETTER))
 
-        metrics: dict[str, float] = {}
+        batch_a = generate_batch(grammar_type=GrammarType.A, number=n_eval, device=self.device)
+        batch_b = generate_batch(grammar_type=GrammarType.B, number=n_eval, device=self.device)
+        patterns = torch.cat((batch_a.patterns, batch_b.patterns), dim=0)
 
-        with torch.no_grad():
-            batch_a = generate_batch(grammar_type=GrammarType.A, number=n_eval, device=self.device)
-            batch_b = generate_batch(grammar_type=GrammarType.B, number=n_eval, device=self.device)
+        return _evaluate_single_cell(
+            first_order=self.first_order,
+            second_order=self.second_order,
+            patterns=patterns,
+            bits_per_letter=bits_per_letter,
+            setting_second_order=self.setting.second_order,
+            cascade_iters=self.cascade_iters,
+            cascade_rate=self.cascade_rate,
+            threshold=thr,
+        )
+
+    def evaluate_pool(
+        self,
+        pool,  # type: "AGLNetworkPool"  — avoid circular import
+        *,
+        eval_patterns_number: int | None = None,
+        threshold: float | None = None,
+    ) -> dict[str, dict[str, float]]:
+        """Held-out evaluation for a trained :class:`AGLNetworkPool` — ports
+        student ``testing()`` L1150-1270 + aggregation L1264-1266.
+
+        For each cell in ``pool``, generates a **fresh** (Grammar-A + Grammar-B)
+        test batch of ``eval_patterns_number`` per grammar (student L1197-1198
+        uses ``int(len(networks) * factor)`` per grammar). Runs the cell's
+        cascade forward, and collects per-cell metrics via
+        :func:`_evaluate_single_cell`.
+
+        Then aggregates over cells into three tiers:
+
+        - ``"high"``    : mean/std over cells ``[0 : num_networks//2]``
+          (trained ``n_epochs_training_high`` epochs = 12 by paper T.10).
+        - ``"low"``     : mean/std over cells ``[num_networks//2 : num_networks]``
+          (trained ``n_epochs_training_low`` epochs = 3).
+        - ``"overall"`` : mean/std over all cells.
+
+        Each tier dict contains keys ``precision_1st``, ``precision_1st_std``,
+        ``wager_accuracy``, ``wager_accuracy_std``, ``precision_2nd``,
+        ``precision_2nd_std``, ``recall_2nd``, ``recall_2nd_std``, ``f1_2nd``,
+        ``f1_2nd_std`` (second-order keys populated iff
+        ``setting.second_order`` is True).
+        """
+        if self.first_order is None or self.second_order is None:
+            raise RuntimeError("Call `.build()` before `.evaluate_pool()`.")
+        if len(pool) == 0:
+            raise ValueError("evaluate_pool requires a non-empty AGLNetworkPool.")
+
+        eval_cfg = self.cfg.get("eval", {}) if hasattr(self.cfg, "get") else {}
+        n_eval = int(
+            eval_patterns_number
+            if eval_patterns_number is not None
+            else eval_cfg.get("patterns_number_per_grammar", 20)
+        )
+        thr = float(
+            threshold
+            if threshold is not None
+            else eval_cfg.get("wager_threshold", self.cfg.train.get("threshold", 0.5))
+        )
+        bits_per_letter = int(self.cfg.get("bits_per_letter", BITS_PER_LETTER))
+
+        per_cell: list[dict[str, float]] = []
+        for cell in pool.cells:
+            cell.first_order.eval()
+            cell.second_order.eval()
+
+            # Fresh test batch per cell (student L1197-1198).
+            batch_a = generate_batch(
+                grammar_type=GrammarType.A, number=n_eval, device=self.device
+            )
+            batch_b = generate_batch(
+                grammar_type=GrammarType.B, number=n_eval, device=self.device
+            )
             patterns = torch.cat((batch_a.patterns, batch_b.patterns), dim=0)
 
-            h1: torch.Tensor | None = None
-            h2: torch.Tensor | None = None
-            for _ in range(self.cascade_iters):
-                h1, h2 = self.first_order(
-                    patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate
-                )
-            assert h2 is not None
+            cell_metrics = _evaluate_single_cell(
+                first_order=cell.first_order,
+                second_order=cell.second_order,
+                patterns=patterns,
+                bits_per_letter=bits_per_letter,
+                setting_second_order=self.setting.second_order,
+                cascade_iters=self.cascade_iters,
+                cascade_rate=self.cascade_rate,
+                threshold=thr,
+            )
+            per_cell.append(cell_metrics)
 
-            # Classification precision: WTA on each 6-bit letter chunk, then
-            # per-unit precision against the one-hot input.
-            pred = torch.zeros_like(h2)
-            for row_idx in range(h2.shape[0]):
-                for chunk_start in range(0, h2.shape[1], bits_per_letter):
-                    chunk = h2[row_idx, chunk_start : chunk_start + bits_per_letter]
-                    max_idx = int(torch.argmax(chunk).item())
-                    if chunk[max_idx].item() > 0.1:
-                        pred[row_idx, chunk_start + max_idx] = 1.0
-            tp = float((patterns * pred).sum().item())
-            fp = float(((1 - patterns) * pred).sum().item())
-            metrics["classification_precision"] = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-
-            if self.setting.second_order:
-                comparison: torch.Tensor | None = None
-                wager: torch.Tensor | None = None
-                for _ in range(self.cascade_iters):
-                    wager, comparison = self.second_order(
-                        patterns, h2, comparison, self.cascade_rate
-                    )
-                assert wager is not None
-                wager = wager.squeeze()
-                target = target_second(patterns, h2)
-                # Reference flattens both then compares element-wise.
-                w = wager.detach().cpu().numpy().flatten()
-                t = target.cpu().numpy().flatten()
-                pred_bin = (w > thr).astype(int)
-                tgt_bin = (t > thr).astype(int)
-                metrics["wager_accuracy"] = float((pred_bin == tgt_bin).mean())
-
-        return metrics
+        return _aggregate_pool_metrics(per_cell, num_networks=len(pool))
