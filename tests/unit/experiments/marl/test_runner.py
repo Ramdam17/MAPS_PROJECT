@@ -236,3 +236,44 @@ def test_runner_collect_returns_expected_keys(runner_cfg):
         assert r["actions"].shape == (N_THREADS, 1)
         assert r["values"].shape == (N_THREADS, 1)
         assert r["rnn_states"].shape[0] == N_THREADS
+
+
+# ──────────────────────────────────────────────────────────────
+# Episode reward logging (E.17b2) — required to compare to paper Table 7.
+# ──────────────────────────────────────────────────────────────
+
+
+class _ConstRewardEnv(_FakeEnv):
+    """Env that always returns reward = ``const`` per agent per step.
+
+    Useful for exact-arithmetic reward-logging test : with constant rewards,
+    the per-episode return is deterministic and we can check the aggregator.
+    """
+
+    def __init__(self, num_agents, n_threads, obs_shape, n_actions, const):
+        super().__init__(num_agents, n_threads, obs_shape, n_actions)
+        self.const = float(const)
+
+    def step(self, action_dict):
+        obs = self._obs_dict()
+        rewards = {k: np.full(self.n_threads, self.const, dtype=np.float32) for k in self._player_keys}
+        dones = {k: np.zeros(self.n_threads, dtype=bool) for k in self._player_keys}
+        return obs, rewards, dones, {}
+
+
+def test_runner_logs_per_episode_return(runner_cfg):
+    """Constant reward per step × episode_length steps = deterministic return."""
+    const = 0.5
+    env = _ConstRewardEnv(N_AGENTS, N_THREADS, OBS_SHAPE, N_ACTIONS, const=const)
+    runner = MeltingpotRunner(runner_cfg, env)
+    infos = runner.run(num_episodes=2)
+    assert len(infos) == 2
+    for ep_info in infos:
+        assert "episode_return_mean" in ep_info
+        assert "episode_return_per_agent" in ep_info
+        # Each agent accumulates ``const`` for every one of ``EPISODE_LEN`` steps.
+        expected_return = const * EPISODE_LEN
+        assert len(ep_info["episode_return_per_agent"]) == N_AGENTS
+        for per_agent in ep_info["episode_return_per_agent"]:
+            assert abs(per_agent - expected_return) < 1e-5
+        assert abs(ep_info["episode_return_mean"] - expected_return) < 1e-5

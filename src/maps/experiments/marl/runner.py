@@ -450,6 +450,12 @@ class MeltingpotRunner:
             # Actually student keeps grad_rewards across episodes ; we preserve that.
             # Just capture per-step wagers to feed train_agents.
             episode_wagers: list[np.ndarray] = []  # len = episode_length, each (num_agents, 2)
+            # E.17b2 : accumulate per-step rewards so we can report per-episode
+            # returns (paper Table 7 metric is "training rewards" = episode
+            # reward mean across seeds, ± std).
+            episode_reward_sum = np.zeros(
+                (self.num_agents, self.n_rollout_threads), dtype=np.float32
+            )
 
             for step in range(self.episode_length):
                 rollout = self.collect(step)
@@ -462,6 +468,8 @@ class MeltingpotRunner:
 
                 env_step_result = self.env.step(action_dict)
                 rewards_per_agent = self.insert(step, rollout, env_step_result)
+
+                episode_reward_sum += rewards_per_agent
 
                 # Update EMA + compute wager target (paper eq.13-14).
                 if self.setting.meta:
@@ -495,16 +503,23 @@ class MeltingpotRunner:
             # Train
             infos = self.train_agents(wager_per_agent)
 
+            # Per-episode return (paper Table 7 "training rewards") :
+            # mean across agents × threads + per-agent breakdown so we can
+            # verify reproduction at both aggregated and per-seat levels.
+            mean_episode_return = float(episode_reward_sum.mean())
+            per_agent_return = episode_reward_sum.mean(axis=1).tolist()  # (num_agents,)
+
             total_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
             if episode % self.log_interval == 0:
                 mean_value_loss = np.mean([i["value_loss"] for i in infos])
                 mean_policy_loss = np.mean([i["policy_loss"] for i in infos])
                 elapsed = time.time() - start
                 log.info(
-                    "episode %d/%d (steps=%d) | mean value=%.4f policy=%.4f | elapsed=%.1fs",
+                    "episode %d/%d (steps=%d) | reward=%.4f | mean value=%.4f policy=%.4f | elapsed=%.1fs",
                     episode + 1,
                     num_episodes,
                     total_steps,
+                    mean_episode_return,
                     float(mean_value_loss),
                     float(mean_policy_loss),
                     elapsed,
@@ -515,6 +530,8 @@ class MeltingpotRunner:
                     "episode": episode,
                     "per_agent": infos,
                     "total_steps": total_steps,
+                    "episode_return_mean": mean_episode_return,
+                    "episode_return_per_agent": per_agent_return,
                 }
             )
 
