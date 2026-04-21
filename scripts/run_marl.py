@@ -177,17 +177,17 @@ def main(
         "--resume",
         "-r",
         help=(
-            "Auto-detect a checkpoint at ``<output_dir>/checkpoint.pt`` and resume "
-            "from it. MARL checkpointing is NOT implemented yet (E.13+). For now "
-            "this logs a warning and starts fresh."
+            "Auto-detect ``<output_dir>/checkpoint.pt`` and resume from it. "
+            "Silent no-op (with a warning) if the file does not exist — safe "
+            "to pass unconditionally for idempotent re-submissions."
         ),
     ),
     resume_from: Path | None = typer.Option(  # noqa: B008
         None,
         "--resume-from",
         help=(
-            "Explicit path to a checkpoint file. Raises ``NotImplementedError`` "
-            "until MARL checkpointing lands in a later sub-phase."
+            "Explicit path to a checkpoint file. Raises if the file does not "
+            "exist — explicit resume requests should never silently restart."
         ),
     ),
     log_level: str = typer.Option("INFO", help="Python logging level"),
@@ -232,24 +232,32 @@ def main(
         / f"seed-{effective_seed}"
     )
 
-    # ── Resume resolution (skeleton only for now) ─────────────────────────
+    # ── Resume resolution (E.17a) ─────────────────────────────────────────
+    # --resume-from wins over --resume. Both land at a Path that's either
+    # None (fresh run) or an existing checkpoint file.
+    resolved_resume: Path | None = None
     if resume_from is not None:
-        raise NotImplementedError(
-            "--resume-from is not supported yet. MARL checkpointing is "
-            "scheduled for a follow-up sub-phase (E.13+)."
-        )
-    if resume:
+        if not resume_from.is_file():
+            raise typer.BadParameter(
+                f"--resume-from path does not exist: {resume_from}",
+                param_hint="--resume-from",
+            )
+        resolved_resume = resume_from
+        log.info("resuming from explicit --resume-from=%s", resolved_resume)
+    elif resume:
         candidate = out_dir / "checkpoint.pt"
         if candidate.is_file():
-            raise NotImplementedError(
-                f"--resume auto-detected {candidate} but MARL checkpoint loading "
-                "is not implemented yet. Move / delete it and rerun, or wait for E.13+."
+            resolved_resume = candidate
+            log.info("--resume auto-detected checkpoint: %s", resolved_resume)
+        else:
+            log.warning(
+                "--resume requested but no checkpoint at %s — starting fresh",
+                candidate,
             )
-        log.warning(
-            "--resume requested but no checkpoint at %s — starting fresh "
-            "(MARL checkpointing lands in E.13+).",
-            candidate,
-        )
+
+    # Periodic checkpoint path — enabled by default inside the run output dir.
+    # One file per cell ; overwritten in place every save_interval episodes.
+    checkpoint_path = out_dir / "checkpoint.pt"
 
     log.info(
         "MARL run : substrate=%s setting=%s seed=%d device=%s num_env_steps=%d",
@@ -272,7 +280,10 @@ def main(
     # ── Train ─────────────────────────────────────────────────────────────
     t0 = time.perf_counter()
     try:
-        infos = runner.run()
+        infos = runner.run(
+            checkpoint_path=checkpoint_path,
+            resume_from=resolved_resume,
+        )
     finally:
         env.close()
     elapsed = time.perf_counter() - t0

@@ -27,8 +27,11 @@ Env interface contract (E.10 will wire MeltingPotEnv to this) :
 from __future__ import annotations
 
 import logging
+import os
+import random
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -38,6 +41,7 @@ from maps.experiments.marl.data import RolloutBuffer
 from maps.experiments.marl.policy import MAPPOPolicy
 from maps.experiments.marl.setting import MarlSetting
 from maps.experiments.marl.trainer import MAPPOTrainer
+from maps.experiments.marl.valuenorm import ValueNorm
 
 __all__ = ["MeltingpotRunner", "RunnerConfig", "compute_wager_objective"]
 
@@ -389,26 +393,51 @@ class MeltingpotRunner:
     # Outer loop (simplified from student L117-295)
     # ──────────────────────────────────────────────────────────────
 
-    def run(self, num_episodes: int | None = None) -> list[dict]:
+    def run(
+        self,
+        num_episodes: int | None = None,
+        checkpoint_path: str | Path | None = None,
+        resume_from: str | Path | None = None,
+    ) -> list[dict]:
         """Main rollout + train loop.
 
         Parameters
         ----------
         num_episodes : int, optional
             Override the default (``num_env_steps // episode_length``).
+        checkpoint_path : str or Path, optional
+            If set, save the runner state at this path every
+            ``cfg.training.save_interval`` episodes (and on completion).
+            Atomic write via tmp file + rename.
+        resume_from : str or Path, optional
+            Load runner state from this checkpoint file and resume from
+            the next episode. Replaces fresh init — every module's state
+            (weights, optimizers, ValueNorm, RNG states, EMA, training
+            history) is restored.
 
         Returns
         -------
         list of dict
-            Per-episode aggregated train info (value_loss, policy_loss, etc.).
+            Per-episode aggregated train info. When resuming, infos
+            from the prior run are prepended.
         """
         if num_episodes is None:
             num_episodes = max(1, self.num_env_steps // (self.episode_length * self.n_rollout_threads))
 
+        start_episode = 0
         all_infos: list[dict] = []
+        if resume_from is not None:
+            start_episode, all_infos = self.load_checkpoint(resume_from)
+            log.info(
+                "resumed from %s at episode %d/%d (%d infos carried over)",
+                resume_from,
+                start_episode,
+                num_episodes,
+                len(all_infos),
+            )
 
         start = time.time()
-        for episode in range(num_episodes):
+        for episode in range(start_episode, num_episodes):
             # Reset env + seed buffer step 0 at the start of each rollout.
             # Without this, ``num_cycles`` in the MeltingPotEnv truncation
             # counter accumulates across episodes — by ep2 ``num_cycles >=
@@ -489,7 +518,154 @@ class MeltingpotRunner:
                 }
             )
 
+            if (
+                checkpoint_path is not None
+                and self.save_interval > 0
+                and (episode + 1) % self.save_interval == 0
+            ):
+                self.save_checkpoint(checkpoint_path, next_episode=episode + 1, all_infos=all_infos)
+
+        # Final checkpoint save (even if we didn't land on save_interval).
+        if checkpoint_path is not None:
+            self.save_checkpoint(checkpoint_path, next_episode=num_episodes, all_infos=all_infos)
+
         return all_infos
+
+    # ──────────────────────────────────────────────────────────────
+    # Checkpoint save / load (E.17a)
+    # ──────────────────────────────────────────────────────────────
+
+    def save_checkpoint(
+        self,
+        path: str | Path,
+        next_episode: int,
+        all_infos: list[dict],
+    ) -> None:
+        """Atomically serialize the runner state to ``path`` (tmp + rename).
+
+        Contents : per-agent actor/critic/optional-meta state_dicts +
+        their optimizer state_dicts + ValueNorm state_dict ; plus EMA
+        reward, RNG states (torch/numpy/python/cuda), training history,
+        and meta (substrate, setting, seed, next_episode).
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        agents_payload = []
+        for agent_id in range(self.num_agents):
+            policy = self.policies[agent_id]
+            trainer = self.trainers[agent_id]
+            entry = {
+                "actor": policy.actor.state_dict(),
+                "critic": policy.critic.state_dict(),
+                "actor_meta": policy.actor_meta.state_dict() if policy.actor_meta is not None else None,
+                "critic_meta": policy.critic_meta.state_dict() if policy.critic_meta is not None else None,
+                "actor_opt": policy.optimizers.actor.state_dict(),
+                "critic_opt": policy.optimizers.critic.state_dict(),
+                "actor_meta_opt": policy.optimizers.actor_meta.state_dict()
+                if policy.optimizers.actor_meta is not None
+                else None,
+                "critic_meta_opt": policy.optimizers.critic_meta.state_dict()
+                if policy.optimizers.critic_meta is not None
+                else None,
+                "value_normalizer": trainer.value_normalizer.state_dict()
+                if trainer.value_normalizer is not None
+                else None,
+            }
+            agents_payload.append(entry)
+
+        cuda_rng = (
+            [torch.cuda.get_rng_state(i) for i in range(torch.cuda.device_count())]
+            if torch.cuda.is_available()
+            else None
+        )
+
+        payload = {
+            "meta": {
+                "substrate": str(self.setting.id),  # setting id is a slug ; substrate comes from env_cfg separately
+                "setting_id": self.setting.id,
+                "setting": {
+                    "id": self.setting.id,
+                    "label": self.setting.label,
+                    "meta": self.setting.meta,
+                    "cascade_iterations1": self.setting.cascade_iterations1,
+                    "cascade_iterations2": self.setting.cascade_iterations2,
+                },
+                "num_agents": self.num_agents,
+                "num_env_steps": self.num_env_steps,
+                "episode_length": self.episode_length,
+                "next_episode": int(next_episode),
+            },
+            "agents": agents_payload,
+            "ema_reward": self.ema_reward,
+            "rng": {
+                "torch": torch.get_rng_state(),
+                "numpy": np.random.get_state(),
+                "python": random.getstate(),
+                "cuda": cuda_rng,
+            },
+            "all_infos": all_infos,
+        }
+
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        torch.save(payload, tmp_path)
+        os.replace(tmp_path, path)
+        log.info("checkpoint saved : %s (next_episode=%d, %d infos)", path, next_episode, len(all_infos))
+
+    def load_checkpoint(self, path: str | Path) -> tuple[int, list[dict]]:
+        """Restore the runner state from ``path`` — inverse of
+        :meth:`save_checkpoint`. Returns ``(next_episode, all_infos)`` so
+        :meth:`run` can resume its outer loop.
+
+        Raises if the checkpoint's setting/num_agents don't match the current
+        runner — refuses to cross-load incompatible runs.
+        """
+        path = Path(path)
+        payload = torch.load(path, map_location=self.device, weights_only=False)
+
+        # Sanity : reject cross-setting / cross-agent-count loads.
+        ck_meta = payload["meta"]
+        if ck_meta["num_agents"] != self.num_agents:
+            raise ValueError(
+                f"checkpoint num_agents={ck_meta['num_agents']} != runner num_agents={self.num_agents}"
+            )
+        if ck_meta["setting"]["id"] != self.setting.id:
+            raise ValueError(
+                f"checkpoint setting.id={ck_meta['setting']['id']!r} != runner setting.id={self.setting.id!r}"
+            )
+
+        for agent_id, entry in enumerate(payload["agents"]):
+            policy = self.policies[agent_id]
+            trainer = self.trainers[agent_id]
+            policy.actor.load_state_dict(entry["actor"])
+            policy.critic.load_state_dict(entry["critic"])
+            if entry["actor_meta"] is not None and policy.actor_meta is not None:
+                policy.actor_meta.load_state_dict(entry["actor_meta"])
+            if entry["critic_meta"] is not None and policy.critic_meta is not None:
+                policy.critic_meta.load_state_dict(entry["critic_meta"])
+            policy.optimizers.actor.load_state_dict(entry["actor_opt"])
+            policy.optimizers.critic.load_state_dict(entry["critic_opt"])
+            if entry["actor_meta_opt"] is not None and policy.optimizers.actor_meta is not None:
+                policy.optimizers.actor_meta.load_state_dict(entry["actor_meta_opt"])
+            if entry["critic_meta_opt"] is not None and policy.optimizers.critic_meta is not None:
+                policy.optimizers.critic_meta.load_state_dict(entry["critic_meta_opt"])
+            if entry["value_normalizer"] is not None and trainer.value_normalizer is not None:
+                trainer.value_normalizer.load_state_dict(entry["value_normalizer"])
+
+        self.ema_reward = np.asarray(payload["ema_reward"], dtype=np.float32)
+
+        rng = payload["rng"]
+        torch.set_rng_state(rng["torch"])
+        np.random.set_state(rng["numpy"])
+        random.setstate(rng["python"])
+        if rng["cuda"] is not None and torch.cuda.is_available():
+            for i, state in enumerate(rng["cuda"]):
+                if i < torch.cuda.device_count():
+                    torch.cuda.set_rng_state(state, device=i)
+
+        next_episode = int(ck_meta["next_episode"])
+        all_infos = list(payload["all_infos"])
+        return next_episode, all_infos
 
 
 def alpha_broadcast(ema_per_thread: np.ndarray, reward_per_thread: np.ndarray, alpha: float) -> np.ndarray:

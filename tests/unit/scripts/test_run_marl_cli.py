@@ -54,10 +54,10 @@ def test_run_marl_rejects_unknown_setting(cli_app):
     assert result.exit_code != 0
 
 
-def test_run_marl_resume_from_raises_not_implemented(cli_app, tmp_path):
+def test_run_marl_resume_from_missing_path_raises(cli_app, tmp_path):
+    """--resume-from pointing at a non-existent file must fail loudly (E.17a)."""
     runner = CliRunner()
-    fake_ckpt = tmp_path / "ckpt.pt"
-    fake_ckpt.write_bytes(b"stub")
+    missing = tmp_path / "does-not-exist.pt"
     result = runner.invoke(
         cli_app,
         [
@@ -66,13 +66,12 @@ def test_run_marl_resume_from_raises_not_implemented(cli_app, tmp_path):
             "--setting",
             "baseline",
             "--resume-from",
-            str(fake_ckpt),
+            str(missing),
         ],
     )
     assert result.exit_code != 0
-    # Either raised directly or captured by typer → ensure NotImplementedError surfaced.
     err = str(result.exception) + (result.output or "")
-    assert "resume-from is not supported" in err or "NotImplementedError" in err
+    assert "does not exist" in err or "BadParameter" in err
 
 
 def test_run_marl_help_includes_paper_settings(cli_app):
