@@ -97,15 +97,9 @@ def test_marl_factorial_all_3_seeds():
     assert len(factorial.substrates) == 4
 
 
-# E.9+ stubs : ensure remaining stubs raise NotImplementedError.
-# (E.8 implemented networks — their shape/forward tests live in test_networks.py.)
-
-
-def test_trainer_stub_raises():
-    from maps.experiments.marl.trainer import MAPPOTrainer
-
-    with pytest.raises(NotImplementedError):
-        MAPPOTrainer(cfg=None, policy=None, device=None)
+# E.9b+ stubs : ensure remaining stubs raise NotImplementedError.
+# (E.8 networks in test_networks.py ; E.9a trainer in test_trainer.py ;
+#  E.10 env wrappers remain stubbed.)
 
 
 def test_runner_stub_raises():

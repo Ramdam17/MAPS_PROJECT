@@ -37,9 +37,10 @@ Exports
 - :class:`MarlSetting` (E.7)
 - :class:`MAPPOActor`, :class:`MAPPOCritic`, :class:`MAPSActor`,
   :class:`MAPSCritic`, :class:`MarlSecondOrderNetwork`, :class:`MAPPOPolicy` (E.8)
+- :class:`MAPPOTrainer`, :class:`TrainInfo`, :class:`ValueNorm` (E.9a)
 
-:class:`MAPPOTrainer` / :class:`MeltingpotRunner` / env wrappers raise
-``NotImplementedError`` until their implementation phase (E.9 / E.10).
+:class:`MeltingpotRunner` / env wrappers raise ``NotImplementedError`` until
+E.9b / E.10.
 """
 
 from __future__ import annotations
@@ -53,13 +54,18 @@ from maps.experiments.marl.policy import (
     MarlSecondOrderNetwork,
 )
 from maps.experiments.marl.setting import MarlSetting
+from maps.experiments.marl.trainer import MAPPOTrainer, TrainInfo
+from maps.experiments.marl.valuenorm import ValueNorm
 
 __all__ = [
     "MAPPOActor",
     "MAPPOCritic",
     "MAPPOPolicy",
+    "MAPPOTrainer",
     "MAPSActor",
     "MAPSCritic",
     "MarlSecondOrderNetwork",
     "MarlSetting",
+    "TrainInfo",
+    "ValueNorm",
 ]
