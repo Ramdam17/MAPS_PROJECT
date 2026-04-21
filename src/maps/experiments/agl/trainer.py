@@ -338,6 +338,160 @@ class AGLTrainer:
 
         return losses_1, losses_2
 
+    def training(
+        self,
+        n_epochs: int,
+        *,
+        batches: list[TrainingBatch] | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Grammar-A fine-tuning phase — port of student `training()` L904-1035.
+
+        Operates on ``self.first_order`` + ``self.second_order`` as-is (typically
+        post-pretrain). Does NOT reset first-order weights (only ``pre_train()``
+        does). Uses fresh training-phase optimizers with LRs from
+        ``cfg.optimizer.lr_training_first_order/second_order`` (same 0.4 / 0.1 as
+        pretrain by default, matching student ``initialize_global``).
+
+        The ``cfg.train.train_meta_frozen_in_training`` toggle controls whether
+        the 2nd-order network updates during this phase. ``True`` (default,
+        student L969 override) = 2nd-order frozen (forward runs to log loss_2
+        but no backward/step). ``False`` = 2nd-order trains via BCE normally.
+        Paper silent on this choice — ablation D.28.h A1 tests both.
+
+        Parameters
+        ----------
+        n_epochs : int
+            Epoch count. Paper T.10 + §A.2 : 12 for High Awareness, 3 for Low.
+        batches : list[TrainingBatch], optional
+            Pre-generated batches for tests. If provided, ``len(batches)``
+            sets the epoch count and ``n_epochs`` is ignored.
+
+        Returns
+        -------
+        (losses_1, losses_2, precision) : tuple[np.ndarray, np.ndarray, np.ndarray]
+            Per-epoch 1st-order CAE loss, 2nd-order BCE loss (zero when
+            ``setting.second_order`` is False; computed but unapplied when
+            meta is frozen), and first-order classification precision
+            (inlined student ``calculate_metrics`` L451).
+        """
+        if self.first_order is None or self.second_order is None:
+            raise RuntimeError("Call `.build()` before `.training()`.")
+        assert self.first_order is not None and self.second_order is not None
+
+        # Fresh training-phase optimizers (student `create_networks` L826-890
+        # builds new optimizers per cell; we mirror at trainer level so the
+        # pretrain optimizer state does not leak into training).
+        opt_cfg = self.cfg.optimizer
+        optim_1 = _build_optimizer(
+            opt_cfg.name,
+            self.first_order.parameters(),
+            lr=float(opt_cfg.lr_training_first_order),
+        )
+        optim_2 = _build_optimizer(
+            opt_cfg.name,
+            self.second_order.parameters(),
+            lr=float(opt_cfg.lr_training_second_order),
+        )
+        sch_cfg = self.cfg.scheduler
+        sched_1 = StepLR(optim_1, step_size=int(sch_cfg.step_size), gamma=float(sch_cfg.gamma))
+        sched_2 = StepLR(optim_2, step_size=int(sch_cfg.step_size), gamma=float(sch_cfg.gamma))
+
+        if batches is not None:
+            n = len(batches)
+        else:
+            n = int(n_epochs)
+
+        patterns_number = int(self.cfg.train.batch_size_training)
+        num_units = int(self.cfg.first_order.input_dim)
+        factor = int(self.cfg.train.get("data_factor", 1))
+        lam = float(self.cfg.losses.cae_lambda)
+        bits_per_letter = int(self.cfg.get("bits_per_letter", BITS_PER_LETTER))
+        meta_frozen = bool(self.cfg.train.get("train_meta_frozen_in_training", True))
+
+        losses_1 = np.zeros(n)
+        losses_2 = np.zeros(n)
+        precision = np.zeros(n)
+
+        for epoch in range(n):
+            if batches is not None:
+                batch = batches[epoch]
+            else:
+                batch = generate_batch(
+                    grammar_type=GrammarType.A,  # Grammar-A fine-tuning (student L947)
+                    number=patterns_number * factor,
+                    device=self.device,
+                )
+
+            h1: torch.Tensor | None = None
+            h2: torch.Tensor | None = None
+            for _ in range(self.cascade_iters):
+                h1, h2 = self.first_order(
+                    batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate
+                )
+
+            batch.patterns.requires_grad_(True)
+            assert h2 is not None
+            h2.requires_grad_(True)
+
+            optim_1.zero_grad()
+
+            comparison: torch.Tensor | None = None
+            if self.setting.second_order:
+                # Second-order cascade pass — forward always runs (logs loss_2).
+                # Backward gated by meta_frozen.
+                wager: torch.Tensor | None = None
+                for _ in range(self.cascade_iters):
+                    wager, comparison = self.second_order(
+                        batch.patterns, h2, comparison, self.cascade_rate
+                    )
+                assert wager is not None
+                wager = wager.squeeze()
+
+                target = target_second(batch.patterns, h2)
+                loss_2 = wagering_bce_loss(wager, target, reduction="sum")
+                losses_2[epoch] = float(loss_2.item())
+
+                if not meta_frozen:
+                    # Non-student path: 2nd-order also trains during Grammar-A phase.
+                    loss_2 = loss_2.requires_grad_()
+                    optim_2.zero_grad()
+                    loss_2.backward(retain_graph=True)
+                    optim_2.step()
+                    sched_2.step()
+                    optim_2.zero_grad()
+                # Else: student L969 path — forward only, no backward/step.
+
+            # First-order CAE loss.
+            assert h1 is not None
+            W = self.first_order.fc1.weight
+            loss_1 = cae_loss(
+                W,
+                x=batch.patterns.view(-1, num_units),
+                recons_x=h2,
+                h=h1,
+                lam=lam,
+                recon="bce_sum",
+            )
+            loss_1.backward()
+            optim_1.step()
+            sched_1.step()
+            losses_1[epoch] = float(loss_1.item())
+
+            # Per-epoch first-order precision (inlined student `calculate_metrics` L451).
+            with torch.no_grad():
+                pred = torch.zeros_like(h2)
+                for row_idx in range(h2.shape[0]):
+                    for chunk_start in range(0, h2.shape[1], bits_per_letter):
+                        chunk = h2[row_idx, chunk_start : chunk_start + bits_per_letter]
+                        max_idx = int(torch.argmax(chunk).item())
+                        if chunk[max_idx].item() > 0.1:
+                            pred[row_idx, chunk_start + max_idx] = 1.0
+                tp = float((batch.patterns * pred).sum().item())
+                fp = float(((1 - batch.patterns) * pred).sum().item())
+                precision[epoch] = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+
+        return losses_1, losses_2, precision
+
     def evaluate(
         self,
         *,
