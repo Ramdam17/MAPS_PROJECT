@@ -47,7 +47,11 @@ scheduler:
 
 train:
   # Pre-training (random-grammar) parameters.
-  n_epochs_pretrain: 60      # paper T.10 "Epochs number for pre-training" = 60
+  # D.28.h ablation A3 (2026-04-20) : paper T.10 says 60 but student init_global
+  # literally uses 30 with comment "default is 60" — code contradicts table.
+  # 30 gives MAE=0.014 vs paper, 60 gives MAE=0.021 ; student value (30) wins
+  # again (same pattern as Blindsight D.25 hidden_dim=40≠T.9's 60).
+  n_epochs_pretrain: 30      # student init_global value (paper T.10 says 60)
   batch_size_pretrain: 80    # student init_global patterns_number_pre = 80
   # Grammar-A training phase (12 epochs for High Aw., 3 epochs for Low Aw.) — paper T.10 + §A.2.
   n_epochs_training_high: 12 # paper T.10 + §A.2 explicit

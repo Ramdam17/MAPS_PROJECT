@@ -138,20 +138,46 @@ mismatch.
 paper std. See `docs/reviews/rg002-wager-gap-investigation.md` for 6-hypothesis sweep and
 500-seed validation of each fix.
 
-### B.10 — AGL deviations (7 new + D-001/D-002/D-004 cross-refs)
+### B.10 — AGL deviations (D.28 RG-003 resolved)
 
-| ID                               | Location                          | Paper T.10               | Student `agl_tmlr.py`                             | Port + config                  | Verdict | Phase action                                 |
-|----------------------------------|-----------------------------------|--------------------------|----------------------------------------------------|--------------------------------|:-------:|:---------------------------------------------|
-| **D-agl-training-missing**       | `src/maps/experiments/agl/trainer.py` | 3-phase (pretrain→train→test) p.13 | `pre_train` L619 + `training` L904 + `testing` L1150 | **only pre_train + evaluate** ❌ | 🚨+❌   | D.28 — port `training()` (RG-003 structural) |
-| D-agl-optimizer                  | `config.optimizer.name`           | RangerVA                 | RangerVA (default L1436)                           | **ADAMAX**                     | ❌      | D.26 — align RangerVA (add `torch_optimizer` dep) |
-| D-agl-sched-step                 | `config.scheduler.step_size`      | 1                        | 1 (actual calls L2144+)                            | **25** (Blindsight-style copy) | ❌      | D.26 — align to 1                            |
-| D-agl-sched-gamma                | `config.scheduler.gamma`          | 0.999                    | 0.999 (actual calls)                               | **0.98**                       | ❌      | D.26 — align to 0.999                        |
-| D-agl-epochs-pretrain            | `config.train.n_epochs`           | 60                       | 30 (L1659, self-contradicts `#default is 60`)      | 200                            | ❌+🆘   | D.26 — align to 60                           |
-| D-agl-seeds                      | `experiment_matrix.md`            | 500                      | 5-10                                                | 10 (matrix)                    | ⚠️      | B.13 + F.2                                   |
-| D-agl-temperature                | config                             | 1.0                      | implicit                                            | config silent                  | ⚠️      | D.26                                         |
-| *D-001 (existing)*                | Wagering head                    | 2 raw logits             | 2-unit                                              | 1-unit sigmoid                 | ❌      | already open                                 |
-| *D-002 (existing)*                | Main-task loss                   | SimCLR eq. 4             | CAE                                                 | CAE                            | 🆘+❌   | already open                                 |
-| *D-004 (existing)*                | AGL chunked sigmoid              | global sigmoid           | chunked per 6-bit WTA                               | chunked per 6-bit WTA          | ⚠️      | already open, confirmed aligned              |
+**D.28 closeout (2026-04-20)** : port now implements the paper's 3-phase AGL
+protocol (pretrain → Grammar-A training → test on 20-network pool). 500-seed
+validation (Phase B) + 5-knob ablation sweep (Phase C = 10000 runs) confirms
+reproduction within MAE 0.014 of paper Table 5b/5c. See
+`docs/reviews/rg003-resolution.md` and `docs/reviews/rg003-ablation-sweep.md`.
+
+Same paper↔code pattern as Blindsight D.25 : paper Table 10 says one value,
+student `init_global` uses a different one, student code produces the paper
+numbers. **Align to code, document the discrepancy.**
+
+| ID                               | Location                          | Paper T.10               | Student `agl_tmlr.py`                             | Port + config (post-D.28)      | Verdict | Closing action |
+|----------------------------------|-----------------------------------|--------------------------|----------------------------------------------------|--------------------------------|:-------:|:---|
+| **D-agl-training-missing**       | `src/maps/experiments/agl/trainer.py` | 3-phase (pretrain→train→test) §A.2 | `pre_train` L619 + `training` L904 + `testing` L1150 | **full 3-phase implemented** via `AGLTrainer.training`, `AGLNetworkPool`, `evaluate_pool` | ✅ **resolved** D.28.b-d |
+| **D-agl-optimizer**              | `config.optimizer.name`           | RangerVA                 | RangerVA (default L1436)                           | **RANGERVA** (torch-optimizer dep) | ✅ **resolved** D.28.a — fallback to ADAMAX with warning if dep missing. Ablation A4 confirmed RangerVA essential (ADAMAX MAE 0.0381 vs RangerVA 0.0142) |
+| **D-agl-sched-step**             | `config.scheduler.step_size`      | 1                        | 1                                                 | **1**                            | ✅ **resolved** D.28.a |
+| **D-agl-sched-gamma**            | `config.scheduler.gamma`          | 0.999                    | 0.999                                             | **0.999**                        | ✅ **resolved** D.28.a |
+| **D-agl-epochs-pretrain**        | `config.train.n_epochs_pretrain`  | **60** (paper)           | **30** (L1659, comment "default is 60")            | **30** (student value ; ablation A3 MAE 0.0142 vs paper-60 MAE 0.0206) | ✅ **resolved** D.28.i — aligned with student code, paper T.10's 60 is inaccurate summary |
+| **D-agl-wager-hidden** (new)     | `src/maps/components/second_order.py:WageringHead` | §2.2 "as in Pasquali & Cleeremans (2010)" | `SecondOrderNetwork.__init__` receives `hidden_second=48` but **never uses it** (L217 hardcode) | **`hidden_dim=48`** (Pasquali hidden restored) | ✅ **resolved** D.28.a — same bug pattern as Blindsight D.25. Ablation A5 trade-off : disabling marginally improves `both/high/wager` but degrades `both/low/wager`. Keep for architectural citation alignment. |
+| **D-agl-training-meta-override** (new) | `src/maps/experiments/agl/trainer.py:training` | paper silent | L969 `meta = False` override — 2nd-order frozen in training phase | `train_meta_frozen_in_training: true` (student behaviour) | ✅ **validated** D.28.h ablation A1 — flipping to False degrades MAE from 0.0206 to 0.0246. Student override is intentional, not a bug. |
+| D-agl-seeds                      | `experiment_matrix.md`            | 500                      | 5-10                                               | **500** via DRAC sbatch array   | ✅ resolved D.28.g (Phase B + 5 × Phase C ablations = 12000 runs total) |
+| D-agl-temperature                | `config.train.temperature`        | 1.0                      | implicit                                            | **1.0**                         | ✅ verified D.28.a |
+| *D-001 (existing)*               | Wagering head                    | 2 raw logits             | 2-unit                                              | 1-unit default ; 2-unit path via `n_wager_units=2` available, not yet plumbed into AGL loss branching | ⚠️ partially resolved — blocked by Blindsight D.25 finding that 2-unit ≡ 1-unit numerically for 1-hot binary targets. Deferrable. |
+| *D-002 (existing)*               | Main-task loss                   | SimCLR eq. 4             | CAE                                                 | CAE (default) + SimCLR stub    | 🆘+❌ open, not an AGL gap cause (MAE 0.014 achieved with CAE) |
+| *D-004 (existing)*               | AGL chunked sigmoid              | global sigmoid           | chunked per 6-bit WTA                               | chunked per 6-bit WTA          | ✅ aligned |
+
+**RG-003 status after D.28 fixes** (paper Table 5b/5c MAE):
+
+| Config | MAE over 12 metrics | Notes |
+|:--|:--:|:--|
+| Pre-D.28 port (pretrain only, wrong config) | N/A | No Grammar-A training phase → meaningless for paper comparison |
+| D.28 Phase B (paper-faithful T.10 literal)   | 0.0206 | Baseline with RangerVA, n_pre=60, Pasquali hidden |
+| **D.28 final (A3 adopted : n_pre=30)**       | **0.0142** | Best config ; adopted as port default |
+
+Residual on individual metrics all ≤ 1σ of paper std. Headline paper signature
+(`low wager > high wager` on 2nd-order settings) fully reproduced.
+
+See `docs/reviews/rg003-resolution.md` for final port config block and
+architectural decisions.
 
 ### B.11 — MARL deviations (8 new)
 
