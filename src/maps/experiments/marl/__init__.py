@@ -34,12 +34,32 @@ missing cp312 wheels. See ``docs/install_marl_drac.md``.
 
 Exports
 -------
-Only :class:`MarlSetting` is public at this stage (E.7 scaffold). Other
-classes raise ``NotImplementedError`` until their implementation phase.
+- :class:`MarlSetting` (E.7)
+- :class:`MAPPOActor`, :class:`MAPPOCritic`, :class:`MAPSActor`,
+  :class:`MAPSCritic`, :class:`MarlSecondOrderNetwork`, :class:`MAPPOPolicy` (E.8)
+
+:class:`MAPPOTrainer` / :class:`MeltingpotRunner` / env wrappers raise
+``NotImplementedError`` until their implementation phase (E.9 / E.10).
 """
 
 from __future__ import annotations
 
+from maps.experiments.marl.policy import (
+    MAPPOActor,
+    MAPPOCritic,
+    MAPPOPolicy,
+    MAPSActor,
+    MAPSCritic,
+    MarlSecondOrderNetwork,
+)
 from maps.experiments.marl.setting import MarlSetting
 
-__all__ = ["MarlSetting"]
+__all__ = [
+    "MAPPOActor",
+    "MAPPOCritic",
+    "MAPPOPolicy",
+    "MAPSActor",
+    "MAPSCritic",
+    "MarlSecondOrderNetwork",
+    "MarlSetting",
+]

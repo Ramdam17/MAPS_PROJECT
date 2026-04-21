@@ -97,40 +97,8 @@ def test_marl_factorial_all_3_seeds():
     assert len(factorial.substrates) == 4
 
 
-# E.8+ stubs : ensure they raise NotImplementedError when touched.
-
-
-def test_encoder_stub_raises():
-    from maps.experiments.marl.encoder import CNNBase
-
-    with pytest.raises(NotImplementedError):
-        CNNBase(obs_shape=(11, 11, 3), hidden_size=100)
-
-
-def test_policy_stubs_raise():
-    from maps.experiments.marl.policy import (
-        MAPPOActor,
-        MAPPOCritic,
-        MAPSActor,
-        MAPSCritic,
-        MarlSecondOrderNetwork,
-        MAPPOPolicy,
-    )
-
-    with pytest.raises(NotImplementedError):
-        MarlSecondOrderNetwork(hidden_size=100)
-    with pytest.raises(NotImplementedError):
-        MAPPOActor(cfg=None, obs_space=None, action_space=None, device=None)
-    with pytest.raises(NotImplementedError):
-        MAPPOCritic(cfg=None, cent_obs_space=None, device=None)
-    with pytest.raises(NotImplementedError):
-        MAPSActor(cfg=None, obs_space=None, action_space=None, device=None)
-    with pytest.raises(NotImplementedError):
-        MAPSCritic(cfg=None, cent_obs_space=None, device=None)
-    with pytest.raises(NotImplementedError):
-        MAPPOPolicy(
-            cfg=None, obs_space=None, cent_obs_space=None, action_space=None, device=None
-        )
+# E.9+ stubs : ensure remaining stubs raise NotImplementedError.
+# (E.8 implemented networks — their shape/forward tests live in test_networks.py.)
 
 
 def test_trainer_stub_raises():
