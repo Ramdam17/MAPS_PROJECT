@@ -80,6 +80,43 @@ class R_Actor(nn.Module):
         actions, action_log_probs = self.act(actor_features, available_actions, deterministic)
         return actions, action_log_probs, rnn_states
 
+    def evaluate_actions(
+        self,
+        obs,
+        rnn_states,
+        action,
+        masks,
+        available_actions=None,
+        active_masks=None,
+    ):
+        """Student L125-196 — returns (action_log_probs, dist_entropy)."""
+        output_cascade1 = None
+        obs = check(obs).to(**self.tpdv)
+        rnn_states = check(rnn_states).to(**self.tpdv)
+        action = check(action).to(**self.tpdv)
+        masks = check(masks).to(**self.tpdv)
+        if available_actions is not None:
+            available_actions = check(available_actions).to(**self.tpdv)
+        if active_masks is not None:
+            active_masks = check(active_masks).to(**self.tpdv)
+
+        actor_features = self.base(obs)
+        for _ in range(self.cascade_one):
+            actor_features, rnn_states, output_cascade1 = self.rnn(
+                actor_features, rnn_states, masks, output_cascade1, self.cascade_rate_one
+            )
+
+        # Student L199-204 — Discrete ACT eval.
+        action_logits = self.act.action_out(actor_features, available_actions)
+        action_log_probs = action_logits.log_probs(action)
+        if active_masks is not None:
+            dist_entropy = (
+                action_logits.entropy() * active_masks.squeeze(-1)
+            ).sum() / active_masks.sum()
+        else:
+            dist_entropy = action_logits.entropy().mean()
+        return action_log_probs, dist_entropy
+
 
 class R_Critic(nn.Module):
     def __init__(self, args, cent_obs_space, device=torch.device("cpu")):
