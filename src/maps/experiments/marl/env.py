@@ -128,13 +128,21 @@ def downsample_observation(array: np.ndarray, scaled: int) -> np.ndarray:
     """Downsample an RGB frame by ``scaled`` (spatial integer divisor).
 
     Uses ``cv2.INTER_AREA`` — the standard anti-aliased downsampling
-    filter (student L303-315). Lazy-imports ``cv2`` so the main ``.venv``
-    can still import this module for tests that don't call this path.
+    filter. Lazy-imports ``cv2`` so the main ``.venv`` can still import
+    this module for tests that don't call this path.
+
+    Fix vs student L303-315 : student passes ``dsize = (H//s, W//s)`` which
+    cv2 interprets as ``(new_w, new_h)``, producing an axis-swapped output
+    ``(W//s, H//s, C)`` that contradicts the spec reported by
+    :func:`_downsample_multi_spec` (``(H//s, W//s, C)``). The bug was
+    invisible for square obs (11×11 per-agent RGB) but blew up on
+    non-square WORLD.RGB. Logged as D-marl-downsample-axis.
     """
     import cv2
 
-    new_w = array.shape[0] // int(scaled)
-    new_h = array.shape[1] // int(scaled)
+    # array.shape = (H, W, C) ; cv2.resize dsize is (W, H) and returns (H, W, C).
+    new_h = array.shape[0] // int(scaled)
+    new_w = array.shape[1] // int(scaled)
     return cv2.resize(array, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
 

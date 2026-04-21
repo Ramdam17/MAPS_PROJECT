@@ -95,18 +95,20 @@ def _resolve_setting(factorial_cfg, setting_id: str) -> MarlSetting:
     raise typer.BadParameter(f"Unknown setting {setting_id!r}. Valid: {valid}")
 
 
-def _build_runner_config(cfg, env_cfg, setting: MarlSetting, device: str) -> RunnerConfig:
-    """Bundle the loaded configs into a :class:`RunnerConfig` dataclass.
+def _build_runner_config(cfg, env, env_cfg, setting: MarlSetting, device: str) -> RunnerConfig:
+    """Bundle the loaded configs + live env into a :class:`RunnerConfig`.
 
-    Note : MeltingPotEnv exposes per-player ``Dict`` spaces with ``RGB`` key.
-    We pass the agent's RGB shape + the centralized WORLD.RGB shape to the
-    runner, matching the model-input contract established in E.8.
+    MeltingPotEnv exposes :
+    - ``observation_space["player_0"]["RGB"]`` — per-agent RGB (11×11×3 after 8× downsample).
+    - ``share_observation_space["player_0"]`` — centralized WORLD.RGB, whose
+      spatial dims are substrate-specific (e.g. 24×18×3 for commons_harvest_closed).
+      These do NOT equal the per-agent RGB — query the env directly to get
+      the real shape.
+    - ``action_space["player_0"]`` — Discrete action space (8 for most substrates).
     """
-    import numpy as np  # local — sharp edge: scripts re-import after sys.path hack
-
-    obs_shape = tuple(env_cfg.obs_shape_agent)
-    share_obs_shape = obs_shape  # WORLD.RGB spatial dims equal obs after env config
-    action_space = spaces.Discrete(8)  # MeltingPot movement+grab default; D-marl docs
+    obs_shape = tuple(env.observation_space["player_0"]["RGB"].shape)
+    share_obs_shape = tuple(env.share_observation_space["player_0"].shape)
+    action_space = env.action_space["player_0"]
 
     return RunnerConfig(
         cfg=cfg,
@@ -264,7 +266,7 @@ def main(
     # ── Build env ─────────────────────────────────────────────────────────
     env = build_env_from_config(env_cfg)
 
-    runner_cfg = _build_runner_config(cfg, env_cfg, setting_obj, device=device)
+    runner_cfg = _build_runner_config(cfg, env, env_cfg, setting_obj, device=device)
     runner = MeltingpotRunner(runner_cfg, env)
 
     # ── Train ─────────────────────────────────────────────────────────────

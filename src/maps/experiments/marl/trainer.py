@@ -46,6 +46,29 @@ __all__ = ["MAPPOTrainer", "TrainInfo"]
 log = logging.getLogger(__name__)
 
 
+def _assert_finite(name: str, tensor: torch.Tensor) -> None:
+    """Raise with context if ``tensor`` contains any NaN/Inf. E.16 diagnostic."""
+    if not torch.isfinite(tensor).all():
+        n_nan = int(torch.isnan(tensor).sum().item())
+        n_inf = int(torch.isinf(tensor).sum().item())
+        total = int(tensor.numel())
+        stats = (
+            f"NaN={n_nan}/{total}, Inf={n_inf}/{total}, "
+            f"min={tensor.min().item():.3e}, max={tensor.max().item():.3e}"
+        )
+        raise RuntimeError(f"[NaN-guard] {name} not finite : shape={tuple(tensor.shape)}, {stats}")
+
+
+def _assert_weights_finite(label: str, module: nn.Module) -> None:
+    for pname, p in module.named_parameters():
+        if not torch.isfinite(p).all():
+            n_nan = int(torch.isnan(p).sum().item())
+            n_inf = int(torch.isinf(p).sum().item())
+            raise RuntimeError(
+                f"[NaN-guard] {label} param {pname} not finite : NaN={n_nan}, Inf={n_inf}, shape={tuple(p.shape)}"
+            )
+
+
 @dataclass
 class TrainInfo:
     """Per-PPO-update metrics, averaged across mini-batches (student L273-297)."""
@@ -217,6 +240,30 @@ class MAPPOTrainer:
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
         return_batch = check(return_batch).to(**self.tpdv)
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
+        # Move forward-pass inputs onto the trainer's device too — the rollout
+        # buffer yields CPU tensors, but model weights live on ``self.device``.
+        # Actions stay int64 (not self.tpdv) so Categorical.log_prob indexes work.
+        share_obs_batch = check(share_obs_batch).to(**self.tpdv)
+        obs_batch = check(obs_batch).to(**self.tpdv)
+        rnn_states_batch = check(rnn_states_batch).to(**self.tpdv)
+        rnn_states_critic_batch = check(rnn_states_critic_batch).to(**self.tpdv)
+        masks_batch = check(masks_batch).to(**self.tpdv)
+        actions_batch = check(actions_batch).to(device=self.device)
+        if available_actions_batch is not None:
+            available_actions_batch = check(available_actions_batch).to(**self.tpdv)
+
+        # Diagnostic guards (E.16 NaN investigation). Fail fast with context
+        # as soon as non-finite values appear so we can localise the source.
+        _assert_finite("obs_batch", obs_batch)
+        _assert_finite("share_obs_batch", share_obs_batch)
+        _assert_finite("rnn_states_batch", rnn_states_batch)
+        _assert_finite("rnn_states_critic_batch", rnn_states_critic_batch)
+        _assert_finite("adv_targ", adv_targ)
+        _assert_finite("return_batch", return_batch)
+        _assert_finite("value_preds_batch", value_preds_batch)
+        _assert_finite("old_action_log_probs_batch", old_action_log_probs_batch)
+        _assert_weights_finite("actor (pre-forward)", self.policy.actor)
+        _assert_weights_finite("critic (pre-forward)", self.policy.critic)
 
         # ─ Baseline forward : evaluate actions + values through actor/critic.
         action_log_probs, dist_entropy = self.policy.actor.evaluate_actions(
@@ -227,7 +274,10 @@ class MAPPOTrainer:
             available_actions=available_actions_batch,
             active_masks=active_masks_batch if self._use_policy_active_masks else None,
         )
+        _assert_finite("action_log_probs (post-actor)", action_log_probs)
+        _assert_finite("dist_entropy (post-actor)", dist_entropy)
         values, _ = self.policy.critic(share_obs_batch, rnn_states_critic_batch, masks_batch)
+        _assert_finite("values (post-critic)", values)
 
         # ─ Meta wager — actor side forward only (student L149-166).
         # Critic wager is re-forwarded AFTER actor.step() to avoid stale graphs.
@@ -285,7 +335,10 @@ class MAPPOTrainer:
             ).item()
         else:
             actor_grad_norm = get_grad_norm(self.policy.actor.parameters())
+        if not np.isfinite(actor_grad_norm):
+            raise RuntimeError(f"[NaN-guard] actor grad_norm = {actor_grad_norm}")
         self.policy.optimizers.actor.step()
+        _assert_weights_finite("actor (post-step)", self.policy.actor)
 
         # ─ Critic update (student L211-242).
         self.policy.optimizers.critic.zero_grad()
@@ -322,7 +375,10 @@ class MAPPOTrainer:
             ).item()
         else:
             critic_grad_norm = get_grad_norm(self.policy.critic.parameters())
+        if not np.isfinite(critic_grad_norm):
+            raise RuntimeError(f"[NaN-guard] critic grad_norm = {critic_grad_norm}")
         self.policy.optimizers.critic.step()
+        _assert_weights_finite("critic (post-step)", self.policy.critic)
 
         return (
             value_loss.item(),
@@ -367,12 +423,52 @@ class MAPPOTrainer:
             dist_entropy, actor_grad_norm, critic_grad_norm, ratio,
             wager_loss_actor, wager_loss_critic).
         """
-        if self.value_normalizer is not None:
-            advantages = buffer.returns[:-1] - self.value_normalizer.denormalize(
-                buffer.value_preds[:-1]
+        # E.16 diagnostic : finer-grained guards around advantage computation.
+        returns_slice = buffer.returns[:-1]
+        value_preds_slice = buffer.value_preds[:-1]
+        if not np.isfinite(returns_slice).all():
+            raise RuntimeError(
+                f"[NaN-guard] buffer.returns[:-1] not finite entering train() : "
+                f"NaN={int(np.isnan(returns_slice).sum())}"
             )
+        if not np.isfinite(value_preds_slice).all():
+            raise RuntimeError(
+                f"[NaN-guard] buffer.value_preds[:-1] not finite entering train() : "
+                f"NaN={int(np.isnan(value_preds_slice).sum())}"
+            )
+
+        if self.value_normalizer is not None:
+            # Log valuenorm internals before denormalize ; an NaN here is the
+            # smoking gun for catastrophic valuenorm drift.
+            vn = self.value_normalizer
+            rm = vn.running_mean
+            rms = vn.running_mean_sq
+            db = vn.debiasing_term
+            if not (torch.isfinite(rm).all() and torch.isfinite(rms).all() and torch.isfinite(db)):
+                raise RuntimeError(
+                    f"[NaN-guard] value_normalizer state not finite entering train() : "
+                    f"running_mean={rm.tolist()} running_mean_sq={rms.tolist()} "
+                    f"debiasing_term={db.item()}"
+                )
+            denorm = self.value_normalizer.denormalize(value_preds_slice)
+            if not np.isfinite(denorm).all():
+                mean, var = vn.running_mean_var()
+                raise RuntimeError(
+                    f"[NaN-guard] denormalize(value_preds) not finite : "
+                    f"NaN={int(np.isnan(denorm).sum())}, "
+                    f"running_mean={rm.tolist()} var={var.tolist()} "
+                    f"value_preds.min={value_preds_slice.min():.3e} max={value_preds_slice.max():.3e} "
+                    f"debiasing_term={db.item():.3e}"
+                )
+            advantages = returns_slice - denorm
         else:
-            advantages = buffer.returns[:-1] - buffer.value_preds[:-1]
+            advantages = returns_slice - value_preds_slice
+
+        if not np.isfinite(advantages).all():
+            raise RuntimeError(
+                f"[NaN-guard] advantages (before normalization) not finite : "
+                f"NaN={int(np.isnan(advantages).sum())}"
+            )
 
         advantages_copy = advantages.copy()
         advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
@@ -383,22 +479,40 @@ class MAPPOTrainer:
         info = TrainInfo()
         n_updates = 0
 
-        for _ in range(self.ppo_epoch):
+        # E.16 diagnostic : log adv stats to correlate with NaN-guard triggers.
+        log.info(
+            "train() starting : ppo_epoch=%d num_mini_batch=%d | "
+            "adv_mean=%.4e adv_std=%.4e adv_finite=%d/%d",
+            self.ppo_epoch,
+            self.num_mini_batch,
+            float(mean_adv),
+            float(std_adv),
+            int(np.isfinite(advantages).sum()),
+            advantages.size,
+        )
+
+        for epoch_idx in range(self.ppo_epoch):
             data_generator = buffer.recurrent_generator(
                 advantages, self.num_mini_batch, self.data_chunk_length
             )
 
-            for sample in data_generator:
-                (
-                    value_loss,
-                    critic_grad_norm,
-                    policy_loss,
-                    dist_entropy,
-                    actor_grad_norm,
-                    ratio,
-                    wl_actor,
-                    wl_critic,
-                ) = self.ppo_update(sample, update_actor, wager_objective, meta)
+            for mb_idx, sample in enumerate(data_generator):
+                log.debug("ppo_update epoch=%d mb=%d", epoch_idx, mb_idx)
+                try:
+                    (
+                        value_loss,
+                        critic_grad_norm,
+                        policy_loss,
+                        dist_entropy,
+                        actor_grad_norm,
+                        ratio,
+                        wl_actor,
+                        wl_critic,
+                    ) = self.ppo_update(sample, update_actor, wager_objective, meta)
+                except RuntimeError as e:
+                    raise RuntimeError(
+                        f"ppo_update failed at epoch={epoch_idx} mb={mb_idx} : {e}"
+                    ) from e
 
                 info.value_loss += value_loss
                 info.policy_loss += policy_loss

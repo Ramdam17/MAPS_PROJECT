@@ -44,6 +44,48 @@ __all__ = ["MeltingpotRunner", "RunnerConfig", "compute_wager_objective"]
 log = logging.getLogger(__name__)
 
 
+# ──────────────────────────────────────────────────────────────
+# E.16 diagnostic helpers (remove once smoke is green).
+# ──────────────────────────────────────────────────────────────
+
+
+def _buffer_finite_check(agent_id: int, buf, stage: str) -> None:
+    """Fail fast if any of the buffer's training-relevant arrays went non-finite."""
+    for name in ("rewards", "value_preds", "returns", "masks", "active_masks"):
+        arr = getattr(buf, name, None)
+        if arr is None:
+            continue
+        if not np.isfinite(arr).all():
+            n_nan = int(np.isnan(arr).sum())
+            n_inf = int(np.isinf(arr).sum())
+            raise RuntimeError(
+                f"[NaN-guard] buffer.{name} not finite at agent_id={agent_id} "
+                f"stage={stage} : NaN={n_nan}, Inf={n_inf}, shape={arr.shape}, "
+                f"min={arr.min():.3e}, max={arr.max():.3e}"
+            )
+
+
+def _next_values_finite_check(agent_id: int, next_values: np.ndarray) -> None:
+    if not np.isfinite(next_values).all():
+        n_nan = int(np.isnan(next_values).sum())
+        raise RuntimeError(
+            f"[NaN-guard] critic next_values not finite at agent_id={agent_id} : "
+            f"NaN={n_nan}/{next_values.size}, shape={next_values.shape}"
+        )
+
+
+def _valuenorm_finite_check(agent_id: int, vn, stage: str) -> None:
+    if vn is None:
+        return
+    for name in ("running_mean", "running_mean_sq", "debiasing_term"):
+        p = getattr(vn, name)
+        if not torch.isfinite(p).all():
+            raise RuntimeError(
+                f"[NaN-guard] value_normalizer.{name} not finite at agent_id={agent_id} "
+                f"stage={stage} : value={p.tolist() if p.numel() <= 5 else p}"
+            )
+
+
 @dataclass
 class RunnerConfig:
     """Runtime config bundle passed to :class:`MeltingpotRunner`.
@@ -216,6 +258,22 @@ class MeltingpotRunner:
                 cent_obs=share_obs, rnn_states=rnn_states_critic, masks=masks
             )
 
+            # E.16 diagnostic : catch rollout-level NaN before it poisons the
+            # buffer. Helps localise whether blow-up is rollout-side or train-side.
+            for name, t in (
+                ("rollout actions", actions),
+                ("rollout action_log_probs", action_log_probs),
+                ("rollout values", values),
+                ("rollout rnn_states", new_rnn_states),
+                ("rollout rnn_states_critic", new_rnn_states_critic),
+            ):
+                if not torch.isfinite(t).all():
+                    n_nan = int(torch.isnan(t).sum().item())
+                    raise RuntimeError(
+                        f"[NaN-guard] {name} not finite at step={step} agent_id={agent_id} "
+                        f"(NaN={n_nan}/{t.numel()}, shape={tuple(t.shape)})"
+                    )
+
             # ACTLayer returns log_prob with shape (N,) ; buffer expects (N, 1).
             alp_np = action_log_probs.detach().cpu().numpy()
             if alp_np.ndim == 1:
@@ -253,6 +311,11 @@ class MeltingpotRunner:
 
             # Reshape reward → (n_rollout_threads, 1) for buffer.
             reward_col = reward.reshape(self.n_rollout_threads, 1).astype(np.float32)
+            if not np.isfinite(reward_col).all():
+                raise RuntimeError(
+                    f"[NaN-guard] env-side reward not finite at step={step} "
+                    f"agent_id={agent_id} : {reward_col}"
+                )
             rewards_per_agent[agent_id] = reward.reshape(-1)
 
             # Masks : 0 if done, 1 otherwise (paper eq.6 convention).
@@ -289,7 +352,16 @@ class MeltingpotRunner:
 
             next_values, _ = policy.critic(share_obs, rnn_states_critic, masks)
             next_values_np = next_values.cpu().numpy()
+
+            # E.16 diagnostic : trace state of buffer + valuenorm + next_values
+            # entering GAE so we can locate where NaN first appears.
+            _buffer_finite_check(agent_id, buf, "pre-GAE")
+            _next_values_finite_check(agent_id, next_values_np)
+            _valuenorm_finite_check(agent_id, self.trainers[agent_id].value_normalizer, "pre-GAE")
+
             buf.compute_returns(next_values_np, self.trainers[agent_id].value_normalizer)
+
+            _buffer_finite_check(agent_id, buf, "post-GAE")
 
     def train_agents(self, wager_targets_per_agent: np.ndarray | None) -> list[dict]:
         """Run one PPO update per agent. Returns a list of train_info dicts.
@@ -300,12 +372,15 @@ class MeltingpotRunner:
         for agent_id in range(self.num_agents):
             self.trainers[agent_id].prep_training()
             wager = wager_targets_per_agent[agent_id] if wager_targets_per_agent is not None else None
-            info = self.trainers[agent_id].train(
-                self.buffers[agent_id],
-                wager_objective=wager,
-                update_actor=True,
-                meta=self.setting.meta,
-            )
+            try:
+                info = self.trainers[agent_id].train(
+                    self.buffers[agent_id],
+                    wager_objective=wager,
+                    update_actor=True,
+                    meta=self.setting.meta,
+                )
+            except RuntimeError as e:
+                raise RuntimeError(f"train_agents failed at agent_id={agent_id} : {e}") from e
             infos.append(info)
             self.buffers[agent_id].after_update()
         return infos
@@ -331,10 +406,17 @@ class MeltingpotRunner:
             num_episodes = max(1, self.num_env_steps // (self.episode_length * self.n_rollout_threads))
 
         all_infos: list[dict] = []
-        self.warmup()
 
         start = time.time()
         for episode in range(num_episodes):
+            # Reset env + seed buffer step 0 at the start of each rollout.
+            # Without this, ``num_cycles`` in the MeltingPotEnv truncation
+            # counter accumulates across episodes — by ep2 ``num_cycles >=
+            # max_cycles`` always holds, env returns done=True for every step,
+            # active_masks fill with zeros and np.nanmean of all-NaN masks
+            # cascades NaN through advantages. See E.16 diagnosis notes.
+            self.warmup()
+
             # EMA per-agent reset at episode start (student L161).
             # Actually student keeps grad_rewards across episodes ; we preserve that.
             # Just capture per-step wagers to feed train_agents.

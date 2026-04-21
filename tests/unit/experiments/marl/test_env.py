@@ -288,6 +288,23 @@ def test_meltingpot_env_close_closes_inner():
 
 
 # ──────────────────────────────────────────────────────────────
+# downsample_observation — non-square axis regression (D-marl-downsample-axis)
+# ──────────────────────────────────────────────────────────────
+
+
+def test_downsample_observation_preserves_H_W_C_order():
+    """Student L303-315 passed cv2 dsize arguments in the wrong order,
+    swapping H/W on non-square frames. Guard the fix with a regression test."""
+    cv2 = pytest.importorskip("cv2")
+    from maps.experiments.marl.env import downsample_observation
+
+    # Non-square frame : H=192, W=144, C=3 (commons_harvest_closed WORLD.RGB).
+    frame = np.random.randint(0, 256, (192, 144, 3), dtype=np.uint8)
+    out = downsample_observation(frame, scaled=8)
+    assert out.shape == (24, 18, 3), f"expected (24, 18, 3) got {out.shape}"
+
+
+# ──────────────────────────────────────────────────────────────
 # Lazy-import paths : env_creator / DownSamplingSubstrateWrapper
 # These don't have meltingpot → they should raise ImportError clearly.
 # ──────────────────────────────────────────────────────────────

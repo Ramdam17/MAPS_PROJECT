@@ -30,7 +30,7 @@
 #SBATCH --time=24:00:00                 # 20 h paper budget + 4 h buffer
 #SBATCH --mem=16384M                    # per-cell peak ≈ 8-12 GB (vision CNN + N policies)
 #SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:h100:1               # H100 default ; override to h200:1 if available
+#SBATCH --gpus-per-node=h100:4          # Tamia H100 = whole-node allocation ; we scope to GPU 0 in-script
 #SBATCH --requeue                       # survive pre-emption (checkpoint WIP — see below)
 #SBATCH --output=logs/slurm/marl-array-%A_%a.out
 #SBATCH --error=logs/slurm/marl-array-%A_%a.err
@@ -75,6 +75,10 @@ export PYTHONUNBUFFERED=1
 # HyPyP / some deps require these on compute nodes with no internet.
 export TOKENIZERS_PARALLELISM=false
 
+# Tamia H100 allocates whole-node (4 GPUs). Scope each cell to GPU 0 so
+# in-run `torch.cuda.current_device()` stays deterministic.
+export CUDA_VISIBLE_DEVICES=0
+
 # ── Task → (substrate, setting, seed) decode ────────────────────────────
 SUBSTRATES=(commons_harvest_closed commons_harvest_partnership chemistry territory_inside_out)
 SETTINGS=(baseline cascade_1st_no_meta meta_no_cascade maps meta_cascade_2nd meta_cascade_both)
@@ -105,7 +109,7 @@ echo "[marl-array] task=${TASK_ID} substrate=${SUBSTRATE} setting=${SETTING} see
 # ── GPU sanity ───────────────────────────────────────────────────────────
 if [[ "${DEVICE}" == "cuda" ]]; then
     if [[ -z "${SLURM_GPUS_ON_NODE:-}" && -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
-        echo "[marl-array] DEVICE=cuda but no GPU visible — submit with --gres=gpu:h100:1" >&2
+        echo "[marl-array] DEVICE=cuda but no GPU visible — submit with --gpus-per-node=h100:4" >&2
         exit 64
     fi
     nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv || true
