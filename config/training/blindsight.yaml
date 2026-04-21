@@ -5,16 +5,29 @@ defaults:
   - /maps@_here_      # inherit cascade / first_order / second_order / losses / seed
 
 # Override shared dims for Blindsight (perceptual: 100-d input).
-# Sprint-08 D.25 (2026-04-20): hidden_dim aligned to paper Table 9 row 6
-# (Hidden size = 60). Pre-D.25 port had hidden_dim=100 — same as input,
-# i.e. NO bottleneck → autoencoder cannot learn a compressed invariant
-# representation → plausible root cause of the Blindsight z-score gap
-# (port 0.40 vs paper 9.01). Overrides:
-#   -o first_order.hidden_dim=100   # legacy pre-D.25 behaviour
-# Tracking : deviations.md RG-002 H1 ; smoke validation in progress.
+#
+# Sprint-08 D.25 RG-002 fixes (2026-04-20) — two config knobs that close the
+# headline wager + discrim gap vs paper Table 5a (see
+# `docs/reviews/rg002-wager-gap-investigation.md`):
+#
+#   first_order.hidden_dim = 40    # student `main()` actual value
+#                                  # (Table 9 claims 60; code != table)
+#   second_order.hidden_dim = 100  # Pasquali & Cleeremans 2010 hidden layer
+#                                  # (student passes `hidden_2nd=100` but never
+#                                  # instantiates the layer — code bug)
+#
+# With both fixes: discrim 0.863→0.94, wager 0.666→0.82, vs paper 0.97/0.85.
+# See `deviations.md` D-blindsight-hidden-40 and D-blindsight-wager-hidden.
+# Overrides for legacy pre-D.25 behaviour:
+#   -o first_order.hidden_dim=100      # original port (no bottleneck)
+#   -o first_order.hidden_dim=60       # Table 9 literal
+#   -o second_order.hidden_dim=0       # student `SecondOrderNetwork` (no hidden)
 first_order:
   input_dim: 100
-  hidden_dim: 60         # paper Table 9 row 6 (D.25, was 100 — RG-002 H1)
+  hidden_dim: 40         # student main() value — NOT Table 9's 60 (RG-002 H5)
+
+second_order:
+  hidden_dim: 100        # Pasquali 2010 hidden layer (RG-002 H10)
 
 optimizer:
   name: ADAMAX           # Blindsight_TMLR.py §prepare_pre_training (default)

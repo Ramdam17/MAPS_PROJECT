@@ -47,6 +47,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from omegaconf import DictConfig
 from torch.optim.lr_scheduler import StepLR
 
@@ -202,6 +203,7 @@ class BlindsightTrainer:
             input_dim=int(so_cfg.input_dim),
             dropout=float(so_cfg.dropout),
             n_wager_units=int(so_cfg.n_wager_units),
+            hidden_dim=int(so_cfg.get("hidden_dim", 0)),
             weight_init_range=tuple(so_cfg.wager_weight_init_range),
         ).to(self.device)
 
@@ -316,9 +318,16 @@ class BlindsightTrainer:
                     )
                 assert wager is not None
 
-                # BCE(sum) against the high-wager target (reference eq. §wagering).
-                target = batch.order_2_target[:, 0]
-                loss_2 = wagering_bce_loss(wager.squeeze(-1), target, reduction="sum")
+                # Wager loss. 1-unit path = student code (sigmoid output + BCE on
+                # high-wager target column). 2-unit path = paper eq.3 + eq.5 (raw
+                # logits, per-unit BCE-with-logits on 2-D 1-hot target). See D-001.
+                if int(self.cfg.second_order.n_wager_units) == 1:
+                    target = batch.order_2_target[:, 0]
+                    loss_2 = wagering_bce_loss(wager.squeeze(-1), target, reduction="sum")
+                else:
+                    loss_2 = F.binary_cross_entropy_with_logits(
+                        wager, batch.order_2_target, reduction="sum"
+                    )
 
                 self.optim_2.zero_grad()
                 loss_2.backward(retain_graph=True)  # grads flow into first_order too
@@ -440,7 +449,12 @@ class BlindsightTrainer:
                         )
                     assert wager is not None
                     # high-wager > threshold vs. binary presence (target[:,0] is high-wager).
-                    high_w = wager[delta:, 0].cpu().numpy()
+                    # 1-unit path: already sigmoid. 2-unit path: raw logits → sigmoid here
+                    # (paper eq.5 per-unit sigmoid at inference). See D-001.
+                    if int(self.cfg.second_order.n_wager_units) == 1:
+                        high_w = wager[delta:, 0].cpu().numpy()
+                    else:
+                        high_w = torch.sigmoid(wager[delta:, 0]).cpu().numpy()
                     tgt = batch.order_2_target[delta:, 0].detach().cpu().numpy()
                     pred_bin = (high_w > threshold).astype(int)
                     tgt_bin = (tgt > threshold).astype(int)

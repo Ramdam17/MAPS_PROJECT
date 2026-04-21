@@ -117,6 +117,11 @@ def main(
         "-o",
         help="Hydra-style override, e.g. `-o train.n_epochs=10`. Repeatable.",
     ),
+    output_dir: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--output-dir",
+        help="Override base output dir. Default: $SCRATCH/maps/outputs/blindsight/ (or ./outputs/blindsight/... when $SCRATCH unset). The <setting>/seed-<seed>/ tail is appended automatically.",
+    ),
     log_level: str = typer.Option("INFO", help="Python logging level"),
 ) -> None:
     configure_logging(level=log_level)
@@ -126,7 +131,9 @@ def main(
     paths = get_paths()
     paths.ensure_dirs()
 
-    base_out = paths.scratch_root / "maps" / "outputs" / "blindsight"
+    base_out = (
+        output_dir if output_dir is not None else paths.scratch_root / "maps" / "outputs" / "blindsight"
+    )
 
     if all_settings:
         seed_pool = (

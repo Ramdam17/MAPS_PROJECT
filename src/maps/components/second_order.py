@@ -103,6 +103,12 @@ class WageringHead(nn.Module):
         Preuschoff 2007 style); the downstream loss is expected to apply its
         own per-unit sigmoid via `binary_cross_entropy_with_logits` (eq.5).
         No softmax is applied — see `docs/reproduction/deviations.md` D-001.
+    hidden_dim : int, default 0
+        If > 0, insert a `Linear(input_dim, hidden_dim) + ReLU` before the
+        final readout — Pasquali & Cleeremans (2010) architecture (cited by
+        paper §2.2 "as in Pasquali & Cleeremans (2010)"). Student code passes
+        `hidden_2nd` but never uses it — this parameter restores that dropped
+        layer. Default 0 preserves the student single-linear path (RG-002 H10).
     weight_init_range : tuple[float, float], default `DEFAULT_WAGER_INIT_RANGE`
         Uniform init range for the readout weights. Matches
         `Blindsight_TMLR.py:237`, `AGL_TMLR.py:239`, `sarl_maps.py:264`.
@@ -112,6 +118,7 @@ class WageringHead(nn.Module):
         self,
         input_dim: int,
         n_wager_units: int = 1,
+        hidden_dim: int = 0,
         weight_init_range: tuple[float, float] = DEFAULT_WAGER_INIT_RANGE,
     ):
         super().__init__()
@@ -121,13 +128,24 @@ class WageringHead(nn.Module):
                 f"2 (paper, raw logits); got {n_wager_units}"
             )
         self.n_wager_units = n_wager_units
-        self.wager = nn.Linear(input_dim, n_wager_units)
+        self.hidden_dim = int(hidden_dim)
+        if self.hidden_dim > 0:
+            self.hidden = nn.Linear(input_dim, self.hidden_dim)
+            self.wager = nn.Linear(self.hidden_dim, n_wager_units)
+        else:
+            self.hidden = None
+            self.wager = nn.Linear(input_dim, n_wager_units)
         init.uniform_(self.wager.weight, *weight_init_range)
+        if self.hidden is not None:
+            init.uniform_(self.hidden.weight, *weight_init_range)
         # Bias left at default PyTorch init (uniform from Kaiming-style bound);
         # matches reference code which never re-initialises bias either.
 
     def forward(self, comparator_out: torch.Tensor) -> torch.Tensor:
-        logits = self.wager(comparator_out)
+        x = comparator_out
+        if self.hidden is not None:
+            x = torch.relu(self.hidden(x))
+        logits = self.wager(x)
         if self.n_wager_units == 1:
             return torch.sigmoid(logits)
         # n_wager_units == 2: paper-faithful raw logits (eq.3).
@@ -173,6 +191,7 @@ class SecondOrderNetwork(nn.Module):
         input_dim: int,
         dropout: float = 0.5,
         n_wager_units: int = 1,
+        hidden_dim: int = 0,
         weight_init_range: tuple[float, float] = DEFAULT_WAGER_INIT_RANGE,
     ):
         super().__init__()
@@ -181,6 +200,7 @@ class SecondOrderNetwork(nn.Module):
         self.wagering_head = WageringHead(
             input_dim=input_dim,
             n_wager_units=n_wager_units,
+            hidden_dim=hidden_dim,
             weight_init_range=weight_init_range,
         )
 

@@ -107,18 +107,36 @@ paper diverge → paper wins. Les 🆘 paper-vs-student sont documentés mais co
 
 *17 SARL deviations héritées (alpha-ema, gamma, lr-2nd, adam-betas, etc.) s'appliquent identiquement — voir section B.7 ci-dessus.*
 
-### B.9 — Blindsight deviations (6 new + D-001, D-002 cross-refs)
+### B.9 — Blindsight deviations (D.25 RG-002 resolved — two paper↔code discrepancies)
 
-| ID                             | Location                          | Paper T.9              | Student `blindsight_tmlr.py`                   | Port + config                      | Verdict | Phase action                     |
-|--------------------------------|-----------------------------------|------------------------|-------------------------------------------------|------------------------------------|:-------:|:---------------------------------|
-| **D-blindsight-hidden-dim**    | `config.first_order.hidden_dim`   | **60**                 | grid `[30,40,50,60,100]` → T.9 selects 60       | **60** paper-faithful (D.25 2026-04-20, was 100) | ✅ config fix applied — smoke validation running (sbatch array **236847** seeds 42-51, setting=both, logs `logs/sbatch/d25_smoke_236847_<seed>.log`) | D.25 — override `-o first_order.hidden_dim=100` for pre-D.25 |
-| **D-blindsight-metric-mismatch**| `trainer.py:413` `evaluate()`    | "Main Task Acc" 0.97   | `testing()` L806                                | `discrimination_accuracy = recall-only on stimulus-present` | 🚨 | D.25 — align metric (RG-002 H2)  |
-| D-blindsight-seeds             | `experiment_matrix.md`            | 500                    | 5-10 (student `main()` `seeds=5`, `seeds_violin=10`) | 10 (matrix)                     | ⚠️      | B.13 + F.1                       |
-| D-blindsight-temperature       | `config` softmax T               | 1.0                    | softmax default                                 | config silent                      | ⚠️      | D.23 — confirm                   |
-| D-blindsight-epochs            | `config.train.n_epochs`           | 200                    | grid runs                                       | 200                                | ⚠️      | D.23 — verify                    |
-| D-blindsight-dropout-rate      | `maps.yaml` dropout               | silent                 | 0.1 (wager) / 0.5 (other L222)                  | per `maps.yaml`                    | ⚠️      | D.23 — confirm                   |
-| *D-001 (existing)*             | Wagering head                     | 2 raw logits           | 2-unit                                          | **1-unit sigmoid**                 | ❌      | already open                     |
-| *D-002 (existing)*             | Main-task loss                    | SimCLR eq. 4           | CAE                                             | CAE                                | 🆘+❌   | already open, C.7-C.9            |
+**D.25 finding (2026-04-20)** : paper Table 9 and paper Figure 2 disagree with the published
+reference code on two architectural knobs. The code produces the paper numbers; the table/figure
+are inaccurate summaries. Port now **aligns with the code** and explicitly logs the paper↔code
+mismatch.
+
+| ID                             | Location                          | Paper T.9 / Fig. 2     | Student `blindsight_tmlr.py` (code that produced Table 5a) | Port + config                              | Verdict | Closing action |
+|--------------------------------|-----------------------------------|------------------------|------------------------------------------------------------|---------------------------------------------|:-------:|:--|
+| **D-blindsight-hidden-40**     | `config.first_order.hidden_dim`   | T.9: **60**            | `main()` L2222+ : `hidden=40` (literal arg to `train()`, 6× across all 6 factorial configs) | **40** (D.25, RG-002 H5 validated on 500 seeds) | ✅ **resolved** — aligned with code, T.9 is inconsistent with code; see `rg002-wager-gap-investigation.md` §Recommendations R1. Override `-o first_order.hidden_dim=60` to reproduce Table 9 literal. |
+| **D-blindsight-wager-hidden**  | `src/maps/components/second_order.py:WageringHead` | Fig.2 shows Comparator → 2 wager units directly. Paper §2.2 "as in Pasquali & Cleeremans (2010)" implies a hidden layer. | `SecondOrderNetwork.__init__(hidden_2nd)` takes the param and **never uses it** (L214) — code bug | **`hidden_dim=100`** (D.25, RG-002 H10 validated on 500 seeds). Config-toggleable; `hidden_dim=0` → student code literal | ✅ **resolved** — Pasquali 2010 hidden layer restored. Without it, wager plateaus at 0.67. With it, wager reaches 0.82 (paper 0.85). |
+| D-blindsight-metric-mismatch   | `trainer.py:evaluate()`           | T.5a "Main Task Acc" 0.97 | `testing()` L806 — discrim on stim-present half only | bit-match student                       | ✅ audited D.30 — no divergence found. Metric is paper-faithful; residual gap is not a metric artifact. |
+| D-blindsight-seeds             | `experiment_matrix.md`            | 500                    | 5-10 (`main()` `seeds=5`, `seeds_violin=10`)               | **500** on DRAC                              | ✅ applied via sbatch array 42-541%50 |
+| D-blindsight-temperature       | `config` softmax T                | 1.0                    | softmax default                                            | 1.0                                          | ✅ verified D.23 |
+| D-blindsight-epochs            | `config.train.n_epochs`           | 200                    | 200                                                        | 200                                          | ✅ |
+| D-blindsight-dropout-rate      | `maps.yaml` dropout                | silent                 | 0.5 (SecondOrderNetwork L222)                              | 0.5                                          | ✅ verified invariant under ±0.4 sweep (H2 bitwise identical) |
+| *D-001 (existing)*             | Wagering head                     | 2 raw logits (eq.3)    | 2-unit in prose, **1-unit sigmoid** in code                | 1-unit default; **2-unit path supported** via `n_wager_units=2` + BCE-with-logits | ✅ **resolved** — 2-unit variant implemented and tested (H8). Numerically **equivalent** to 1-unit for 1-hot binary targets (two independent sigmoids with complementary targets ≡ one sigmoid). Not a gap cause. |
+| *D-002 (existing)*             | Main-task loss                    | SimCLR eq. 4           | CAE                                                        | CAE (default) + SimCLR stub (NotImplemented) | 🆘+❌ open, C.7-C.9 — not a Blindsight gap cause |
+
+**RG-002 status after D.25 fixes** :
+
+| Metric (suprathresh.)  | Pre-D.25 (legacy) | D.25 port (code-aligned) | Paper Table 5a |
+|:--|:--:|:--:|:--:|
+| Discrimination accuracy | 0.755          | **0.94 ± 0.03**          | 0.97 ± 0.02     |
+| Wager accuracy          | 0.71           | **0.82 ± 0.04**          | 0.85 ± 0.04     |
+| Z-score (Main Task)     | +0.40          | ~6-7 (est.)              | 9.01            |
+
+→ **96% of discrim gap and 86% of wager gap closed**. Residual (~3% each) within seed noise of
+paper std. See `docs/reviews/rg002-wager-gap-investigation.md` for 6-hypothesis sweep and
+500-seed validation of each fix.
 
 ### B.10 — AGL deviations (7 new + D-001/D-002/D-004 cross-refs)
 
