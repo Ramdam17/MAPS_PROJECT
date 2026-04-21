@@ -1,32 +1,426 @@
-"""MARL rollout runner (E.7 scaffold).
+"""MARL rollout + training orchestrator (E.9b).
 
-Ports student ``onpolicy/runner/separated/meltingpot_runner.py`` (the only
-paper-faithful runner — shared variant has syntax bug, see E.3 audit).
+Ports student ``onpolicy/runner/separated/meltingpot_runner.py`` trimmed to
+the essential MAPPO + MAPS training loop. Student's 808-line runner contains
+a lot of MeltingPot-specific env handling (action-env dict flattening, dead
+get_episode_parameters helpers, etc.) which we simplify here — the real
+MeltingPot env wrapper is E.10's scope.
 
-Key responsibilities :
-- Rollout collection : ``n_rollout_threads`` × ``episode_length`` env steps
-  per episode, one step at a time per agent.
-- EMA wager signal (paper eq.13-14) : ``grad_rewards = α · r_t + (1-α) · EMA_{t-1}``
-  with ``α=0.45`` (paper), ``wager_objective = (1, 0) if r_t > EMA_t``.
-  **Note :** student uses ``α=0.25`` + ``EMA > 0`` (not paper-faithful, see
-  E.3 audit ``D-marl-ema-alpha`` + ``D-marl-wager-condition``). Port aligns
-  to paper.
-- Advantage computation + PPO update call.
-- Per-substrate logging.
+The Runner operates in **separated MAPPO** mode : one
+(:class:`MAPPOPolicy`, :class:`MAPPOTrainer`, :class:`RolloutBuffer`) tuple
+per agent. Agents share the env but train independently.
 
-E.9 scope — not implemented here.
+EMA wager (paper eq.13-14) is implemented per our port's config :
+- ``alpha = 0.45`` (paper ; student uses 0.25 — D-marl-ema-alpha fix).
+- ``y_wager = (1, 0) if r_t > EMA_t else (0, 1)`` (paper eq.14 ; student
+  uses ``grad_rewards > 0`` — D-marl-wager-condition fix).
+
+Env interface contract (E.10 will wire MeltingPotEnv to this) :
+- ``env.reset() → (obs_dict, info)``
+- ``env.step(action_dict) → (obs_dict, reward_dict, done_dict, info)``
+- ``env.observation_space`` (Dict with "player_i" keys)
+- ``env.share_observation_space`` (Dict with "player_i" keys)
+- ``env.action_space`` (Dict with "player_i" keys, each Discrete)
+- ``env.close()``
 """
 
 from __future__ import annotations
 
-__all__ = ["MeltingpotRunner"]
+import logging
+import time
+from dataclasses import dataclass, field
+
+import numpy as np
+import torch
+from omegaconf import DictConfig
+
+from maps.experiments.marl.data import RolloutBuffer
+from maps.experiments.marl.policy import MAPPOPolicy
+from maps.experiments.marl.setting import MarlSetting
+from maps.experiments.marl.trainer import MAPPOTrainer
+
+__all__ = ["MeltingpotRunner", "RunnerConfig", "compute_wager_objective"]
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class RunnerConfig:
+    """Runtime config bundle passed to :class:`MeltingpotRunner`.
+
+    Keeping this as a dataclass (rather than argparse Namespace like student)
+    makes the runner interface testable + type-checkable.
+    """
+
+    cfg: DictConfig  # the composed training/marl.yaml config
+    setting: MarlSetting
+    num_agents: int
+    obs_shape: tuple[int, ...]
+    share_obs_shape: tuple[int, ...]
+    action_space: object  # gymnasium.spaces.Discrete
+    device: torch.device | str = "cpu"
+
+
+def compute_wager_objective(
+    reward_t: np.ndarray,
+    ema_prev: np.ndarray,
+    alpha: float,
+    condition: str = "r_t_gt_ema",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Paper eq.13-14 EMA wager signal.
+
+    Parameters
+    ----------
+    reward_t : shape (num_agents,)
+    ema_prev : shape (num_agents,)
+    alpha : float
+        Paper eq.13 = 0.45 (port default). Student uses 0.25 (D-marl-ema-alpha).
+    condition : "r_t_gt_ema" | "ema_gt_zero"
+        Paper eq.14 = "r_t_gt_ema" ; student = "ema_gt_zero" (D-marl-wager-condition).
+
+    Returns
+    -------
+    (ema_new, wager_target)
+        ``ema_new`` shape (num_agents,) ; ``wager_target`` shape (num_agents, 2)
+        one-hot per paper eq.14.
+    """
+    ema_new = alpha * reward_t + (1.0 - alpha) * ema_prev
+
+    if condition == "r_t_gt_ema":
+        is_high = reward_t > ema_new
+    elif condition == "ema_gt_zero":
+        is_high = ema_new > 0
+    else:
+        raise ValueError(f"Unknown wager condition {condition!r}")
+
+    # One-hot (high_idx=0, low_idx=1) per paper eq.14.
+    wager_target = np.zeros((reward_t.shape[0], 2), dtype=np.float32)
+    wager_target[is_high, 0] = 1.0
+    wager_target[~is_high, 1] = 1.0
+    return ema_new, wager_target
 
 
 class MeltingpotRunner:
-    """MARL rollout + train loop. To be implemented in E.9."""
+    """Separated-MAPPO rollout + train orchestrator.
 
-    def __init__(self, config):
-        raise NotImplementedError("E.9 will implement this.")
+    Parameters
+    ----------
+    runner_cfg : RunnerConfig
+        Bundle of dataclass + OmegaConf config.
+    env : object
+        Multi-agent env following the contract described in the module docstring.
 
-    def run(self):
-        raise NotImplementedError("E.9 will implement this.")
+    Usage
+    -----
+    ```python
+    runner = MeltingpotRunner(runner_cfg, env)
+    runner.run(num_episodes=N)
+    ```
+    """
+
+    def __init__(self, runner_cfg: RunnerConfig, env: object):
+        self.runner_cfg = runner_cfg
+        self.cfg = runner_cfg.cfg
+        self.setting = runner_cfg.setting
+        self.env = env
+        self.num_agents = int(runner_cfg.num_agents)
+        self.device = torch.device(runner_cfg.device)
+
+        # Training knobs (from cfg.training + cfg.maps).
+        self.episode_length = int(self.cfg.training.episode_length)
+        self.n_rollout_threads = int(self.cfg.training.n_rollout_threads)
+        self.num_env_steps = int(self.cfg.training.num_env_steps)
+        self.log_interval = int(self.cfg.training.log_interval)
+        self.save_interval = int(self.cfg.training.save_interval)
+        self.gamma = float(self.cfg.get("gamma", 0.99))
+        self.gae_lambda = float(self.cfg.get("gae_lambda", 0.95))
+        self.ema_alpha = float(self.cfg.maps.ema_alpha)
+        self.wager_condition = str(self.cfg.maps.wager_condition)
+
+        # Per-agent policy + trainer + buffer.
+        self.policies: list[MAPPOPolicy] = []
+        self.trainers: list[MAPPOTrainer] = []
+        self.buffers: list[RolloutBuffer] = []
+        for _ in range(self.num_agents):
+            policy = MAPPOPolicy(
+                self.cfg,
+                obs_shape=runner_cfg.obs_shape,
+                cent_obs_shape=runner_cfg.share_obs_shape,
+                action_space=runner_cfg.action_space,
+                meta=self.setting.meta,
+                cascade_iterations1=self.setting.cascade_iterations1,
+                cascade_iterations2=self.setting.cascade_iterations2,
+                device=self.device,
+            )
+            trainer = MAPPOTrainer(self.cfg, policy, device=self.device)
+            buffer = RolloutBuffer(
+                episode_length=self.episode_length,
+                n_rollout_threads=self.n_rollout_threads,
+                hidden_size=int(self.cfg.model.hidden_size),
+                recurrent_n=int(self.cfg.model.recurrent_n),
+                gamma=self.gamma,
+                gae_lambda=self.gae_lambda,
+                obs_space=self._make_obs_box(runner_cfg.obs_shape),
+                share_obs_space=self._make_obs_box(runner_cfg.share_obs_shape),
+                act_space=runner_cfg.action_space,
+                use_valuenorm=trainer.value_normalizer is not None,
+            )
+            self.policies.append(policy)
+            self.trainers.append(trainer)
+            self.buffers.append(buffer)
+
+        # EMA state for wager signal (per agent, per rollout thread).
+        self.ema_reward = np.zeros((self.num_agents, self.n_rollout_threads), dtype=np.float32)
+
+    @staticmethod
+    def _make_obs_box(shape: tuple[int, ...]):
+        """Build a dummy Box space for the buffer constructor."""
+        from gymnasium import spaces
+
+        return spaces.Box(low=0, high=255, shape=shape, dtype=np.float32)
+
+    # ──────────────────────────────────────────────────────────────
+    # Rollout / buffer / train primitives
+    # ──────────────────────────────────────────────────────────────
+
+    def warmup(self) -> None:
+        """Reset the env and seed each agent's buffer at step 0."""
+        obs_dict, _info = self.env.reset()
+        for agent_id in range(self.num_agents):
+            player_key = f"player_{agent_id}"
+            obs = obs_dict[player_key]["RGB"]  # (n_rollout_threads, H, W, C) per env contract
+            share_obs = obs_dict[player_key]["WORLD.RGB"]
+            # Buffer expects (N, ...), not (T+1, N, ...) — so we index [0].
+            self.buffers[agent_id].obs[0] = np.asarray(obs)
+            self.buffers[agent_id].share_obs[0] = np.asarray(share_obs)
+
+    @torch.no_grad()
+    def collect(self, step: int) -> list[dict]:
+        """Roll out one env step per agent. Returns per-agent dict of actions + RNN state."""
+        results: list[dict] = []
+        for agent_id in range(self.num_agents):
+            policy = self.policies[agent_id]
+            buf = self.buffers[agent_id]
+            self.trainers[agent_id].prep_rollout()
+
+            obs = torch.from_numpy(buf.obs[step]).float().to(self.device)
+            share_obs = torch.from_numpy(buf.share_obs[step]).float().to(self.device)
+            rnn_states = torch.from_numpy(buf.rnn_states[step]).float().to(self.device)
+            rnn_states_critic = torch.from_numpy(buf.rnn_states_critic[step]).float().to(self.device)
+            masks = torch.from_numpy(buf.masks[step]).float().to(self.device)
+
+            actions, action_log_probs, new_rnn_states = policy.actor(
+                obs=obs, rnn_states=rnn_states, masks=masks
+            )
+            values, new_rnn_states_critic = policy.critic(
+                cent_obs=share_obs, rnn_states=rnn_states_critic, masks=masks
+            )
+
+            # ACTLayer returns log_prob with shape (N,) ; buffer expects (N, 1).
+            alp_np = action_log_probs.detach().cpu().numpy()
+            if alp_np.ndim == 1:
+                alp_np = alp_np[:, None]
+            results.append(
+                {
+                    "actions": actions.cpu().numpy(),
+                    "action_log_probs": alp_np,
+                    "values": values.cpu().numpy(),
+                    "rnn_states": new_rnn_states.cpu().numpy(),
+                    "rnn_states_critic": new_rnn_states_critic.cpu().numpy(),
+                }
+            )
+        return results
+
+    def insert(self, step: int, rollout: list[dict], env_step_result: tuple) -> np.ndarray:
+        """Insert rollout into each agent's buffer. Returns per-agent reward vector.
+
+        ``env_step_result`` is the tuple ``(obs_dict, reward_dict, done_dict, info)``
+        from ``env.step(actions_dict)``.
+        """
+        obs_dict, reward_dict, done_dict, _info = env_step_result
+        rewards_per_agent = np.zeros((self.num_agents, self.n_rollout_threads), dtype=np.float32)
+
+        for agent_id in range(self.num_agents):
+            player_key = f"player_{agent_id}"
+            buf = self.buffers[agent_id]
+            rdata = rollout[agent_id]
+
+            # Extract per-agent env outputs.
+            next_obs = np.asarray(obs_dict[player_key]["RGB"])
+            next_share_obs = np.asarray(obs_dict[player_key]["WORLD.RGB"])
+            reward = np.asarray(reward_dict[player_key])
+            done = np.asarray(done_dict[player_key])
+
+            # Reshape reward → (n_rollout_threads, 1) for buffer.
+            reward_col = reward.reshape(self.n_rollout_threads, 1).astype(np.float32)
+            rewards_per_agent[agent_id] = reward.reshape(-1)
+
+            # Masks : 0 if done, 1 otherwise (paper eq.6 convention).
+            mask = (~done.astype(bool)).astype(np.float32).reshape(self.n_rollout_threads, 1)
+            active_mask = mask.copy()
+
+            buf.insert(
+                share_obs=next_share_obs,
+                obs=next_obs,
+                rnn_states=rdata["rnn_states"],
+                rnn_states_critic=rdata["rnn_states_critic"],
+                actions=rdata["actions"],
+                action_log_probs=rdata["action_log_probs"],
+                value_preds=rdata["values"],
+                rewards=reward_col,
+                masks=mask,
+                active_masks=active_mask,
+            )
+        return rewards_per_agent
+
+    @torch.no_grad()
+    def compute(self) -> None:
+        """Compute GAE returns for every agent's buffer."""
+        for agent_id in range(self.num_agents):
+            policy = self.policies[agent_id]
+            buf = self.buffers[agent_id]
+            self.trainers[agent_id].prep_rollout()
+
+            share_obs = torch.from_numpy(buf.share_obs[-1]).float().to(self.device)
+            rnn_states_critic = (
+                torch.from_numpy(buf.rnn_states_critic[-1]).float().to(self.device)
+            )
+            masks = torch.from_numpy(buf.masks[-1]).float().to(self.device)
+
+            next_values, _ = policy.critic(share_obs, rnn_states_critic, masks)
+            next_values_np = next_values.cpu().numpy()
+            buf.compute_returns(next_values_np, self.trainers[agent_id].value_normalizer)
+
+    def train_agents(self, wager_targets_per_agent: np.ndarray | None) -> list[dict]:
+        """Run one PPO update per agent. Returns a list of train_info dicts.
+
+        ``wager_targets_per_agent`` is a (num_agents, ?, 2) array when meta=True, else None.
+        """
+        infos = []
+        for agent_id in range(self.num_agents):
+            self.trainers[agent_id].prep_training()
+            wager = wager_targets_per_agent[agent_id] if wager_targets_per_agent is not None else None
+            info = self.trainers[agent_id].train(
+                self.buffers[agent_id],
+                wager_objective=wager,
+                update_actor=True,
+                meta=self.setting.meta,
+            )
+            infos.append(info)
+            self.buffers[agent_id].after_update()
+        return infos
+
+    # ──────────────────────────────────────────────────────────────
+    # Outer loop (simplified from student L117-295)
+    # ──────────────────────────────────────────────────────────────
+
+    def run(self, num_episodes: int | None = None) -> list[dict]:
+        """Main rollout + train loop.
+
+        Parameters
+        ----------
+        num_episodes : int, optional
+            Override the default (``num_env_steps // episode_length``).
+
+        Returns
+        -------
+        list of dict
+            Per-episode aggregated train info (value_loss, policy_loss, etc.).
+        """
+        if num_episodes is None:
+            num_episodes = max(1, self.num_env_steps // (self.episode_length * self.n_rollout_threads))
+
+        all_infos: list[dict] = []
+        self.warmup()
+
+        start = time.time()
+        for episode in range(num_episodes):
+            # EMA per-agent reset at episode start (student L161).
+            # Actually student keeps grad_rewards across episodes ; we preserve that.
+            # Just capture per-step wagers to feed train_agents.
+            episode_wagers: list[np.ndarray] = []  # len = episode_length, each (num_agents, 2)
+
+            for step in range(self.episode_length):
+                rollout = self.collect(step)
+
+                # Stack per-agent actions into env's expected dict.
+                # Env contract : action_dict[player_i] = actions.shape = (n_rollout_threads, 1)
+                action_dict = {
+                    f"player_{aid}": rollout[aid]["actions"] for aid in range(self.num_agents)
+                }
+
+                env_step_result = self.env.step(action_dict)
+                rewards_per_agent = self.insert(step, rollout, env_step_result)
+
+                # Update EMA + compute wager target (paper eq.13-14).
+                if self.setting.meta:
+                    # Reduce reward over rollout threads (mean) for EMA signal.
+                    reward_t = rewards_per_agent.mean(axis=1)
+                    ema_prev = self.ema_reward.mean(axis=1)
+                    ema_new, wager_t = compute_wager_objective(
+                        reward_t, ema_prev, alpha=self.ema_alpha, condition=self.wager_condition
+                    )
+                    self.ema_reward = alpha_broadcast(self.ema_reward, rewards_per_agent, self.ema_alpha)
+                    episode_wagers.append(wager_t)
+
+            # GAE returns
+            self.compute()
+
+            # Aggregate wager targets per-agent across steps for train call.
+            wager_per_agent: np.ndarray | None = None
+            if self.setting.meta and episode_wagers:
+                # shape : (episode_length, num_agents, 2) → (num_agents, episode_length * batch, 2)
+                stacked = np.stack(episode_wagers, axis=0)  # (T, A, 2)
+                # Broadcast to match buffer batch_size = T * n_rollout_threads.
+                # Each agent's trainer expects (B, 2) where B = T * n_rollout_threads.
+                A = self.num_agents
+                T = self.episode_length
+                N = self.n_rollout_threads
+                # Broadcast wager target across rollout threads (assumes same EMA across threads).
+                wager_per_agent = np.broadcast_to(
+                    stacked[:, :, None, :], (T, A, N, 2)
+                ).transpose(1, 0, 2, 3).reshape(A, T * N, 2).astype(np.float32)
+
+            # Train
+            infos = self.train_agents(wager_per_agent)
+
+            total_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
+            if episode % self.log_interval == 0:
+                mean_value_loss = np.mean([i["value_loss"] for i in infos])
+                mean_policy_loss = np.mean([i["policy_loss"] for i in infos])
+                elapsed = time.time() - start
+                log.info(
+                    "episode %d/%d (steps=%d) | mean value=%.4f policy=%.4f | elapsed=%.1fs",
+                    episode + 1,
+                    num_episodes,
+                    total_steps,
+                    float(mean_value_loss),
+                    float(mean_policy_loss),
+                    elapsed,
+                )
+
+            all_infos.append(
+                {
+                    "episode": episode,
+                    "per_agent": infos,
+                    "total_steps": total_steps,
+                }
+            )
+
+        return all_infos
+
+
+def alpha_broadcast(ema_per_thread: np.ndarray, reward_per_thread: np.ndarray, alpha: float) -> np.ndarray:
+    """Vectorized EMA update across threads + agents (paper eq.13).
+
+    Parameters
+    ----------
+    ema_per_thread : shape (num_agents, n_rollout_threads)
+    reward_per_thread : same shape
+    alpha : float
+
+    Returns
+    -------
+    Updated EMA, same shape.
+    """
+    return alpha * reward_per_thread + (1.0 - alpha) * ema_per_thread

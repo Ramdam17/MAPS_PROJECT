@@ -97,13 +97,5 @@ def test_marl_factorial_all_3_seeds():
     assert len(factorial.substrates) == 4
 
 
-# E.9b+ stubs : ensure remaining stubs raise NotImplementedError.
-# (E.8 networks in test_networks.py ; E.9a trainer in test_trainer.py ;
-#  E.10 env wrappers remain stubbed.)
-
-
-def test_runner_stub_raises():
-    from maps.experiments.marl.runner import MeltingpotRunner
-
-    with pytest.raises(NotImplementedError):
-        MeltingpotRunner(config=None)
+# E.10+ : env wrappers remain stubbed. Networks / trainer / buffer / runner
+# covered in test_networks.py / test_trainer.py / test_buffer.py / test_runner.py.

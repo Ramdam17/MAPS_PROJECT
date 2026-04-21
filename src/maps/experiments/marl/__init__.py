@@ -38,13 +38,15 @@ Exports
 - :class:`MAPPOActor`, :class:`MAPPOCritic`, :class:`MAPSActor`,
   :class:`MAPSCritic`, :class:`MarlSecondOrderNetwork`, :class:`MAPPOPolicy` (E.8)
 - :class:`MAPPOTrainer`, :class:`TrainInfo`, :class:`ValueNorm` (E.9a)
+- :class:`RolloutBuffer`, :class:`MeltingpotRunner`, :class:`RunnerConfig`,
+  :func:`compute_wager_objective` (E.9b)
 
-:class:`MeltingpotRunner` / env wrappers raise ``NotImplementedError`` until
-E.9b / E.10.
+Env wrappers raise ``NotImplementedError`` until E.10.
 """
 
 from __future__ import annotations
 
+from maps.experiments.marl.data import RolloutBuffer
 from maps.experiments.marl.policy import (
     MAPPOActor,
     MAPPOCritic,
@@ -52,6 +54,11 @@ from maps.experiments.marl.policy import (
     MAPSActor,
     MAPSCritic,
     MarlSecondOrderNetwork,
+)
+from maps.experiments.marl.runner import (
+    MeltingpotRunner,
+    RunnerConfig,
+    compute_wager_objective,
 )
 from maps.experiments.marl.setting import MarlSetting
 from maps.experiments.marl.trainer import MAPPOTrainer, TrainInfo
@@ -66,6 +73,10 @@ __all__ = [
     "MAPSCritic",
     "MarlSecondOrderNetwork",
     "MarlSetting",
+    "MeltingpotRunner",
+    "RolloutBuffer",
+    "RunnerConfig",
     "TrainInfo",
     "ValueNorm",
+    "compute_wager_objective",
 ]
