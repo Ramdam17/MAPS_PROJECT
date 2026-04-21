@@ -7,7 +7,15 @@
 #   - hidden_size : 100 (paper) vs 144 (student config.py)
 #   - actor_lr    : 7e-5 (paper) vs 2e-5 (student shell --lr override)
 #   - entropy_coef: 0.01 (paper) vs 0.004 (student shell override)
-#   - num_env_steps: 15e6 (paper T.12) vs 40e6 (student config) / 300k (paper text)
+#   - num_env_steps: **300k** (paper §4 text p.15, "due to computational constraints")
+#       vs 15e6 (paper Table 12, appears to be an un-updated template value —
+#       same table also lists Critic lr=100 which is a typo) vs 40e6 (student
+#       config default, never actually reached). We use the §4 text value as
+#       source of truth since (a) the paper explicitly says this is what they
+#       ran, (b) Table 12 contains at least one other typo, and (c) §4 matches
+#       our 3-seed validation (E.17b3) at 300k reproducing paper Table 7's
+#       baseline ``commons_harvest_closed`` = 19.52 ± 0.71 within 1.4σ.
+#       Documented in docs/reproduction/deviations.md.
 #   - EMA wager α : 0.45 (paper eq.13) vs 0.25 (student runner L197)
 #   - Wager cond : r_t > EMA_t (paper eq.14) vs EMA_t > 0 (student L338)
 #
@@ -57,7 +65,7 @@ ppo:
 
 # ── Training loop ───────────────────────────────────────────────────────
 training:
-  num_env_steps: 15_000_000       # paper T.12 = 15e6 (NOT student config 40e6 or text 300k)
+  num_env_steps: 300_000          # paper §4 p.15 (NOT T.12's 15e6 template, see header)
   n_rollout_threads: 1            # student default ; adjustable via --n-rollout-threads
   n_eval_rollout_threads: 1
   episode_length: 1000            # constant, student's get_episode_parameters is dead code

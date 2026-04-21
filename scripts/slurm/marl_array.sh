@@ -8,13 +8,13 @@
 #                 meta_cascade_2nd, meta_cascade_both}
 #   seeds      = {42, 43, 44}
 #
-# Wall-time budget : paper §B.4 reports ~16 h / seed on A100 for 15 M env
-# steps. Tamia H100 / H200 is faster → 20 h cap with 4 h buffer = 24 h wall.
-# If setting 4-6 (meta + cascade_1st=50) bust wall, split into a 2nd array
-# with shorter num_env_steps per cell (see D-marl-scope notes).
+# Wall-time budget : num_env_steps = 300k (paper §4 p.15). Bench E.17b
+# measured 1 M steps = 5h22 on baseline H100 → 300k ≈ 1h35 baseline, up to
+# ~4-6 h for cascade×50 settings. 24 h wall leaves ample margin ; plus
+# checkpoint / resume (E.17a) survives any requeue.
 #
-# Concurrency : aip-gdumas85 is lab-shared (Guillaume + Rémy + MARL). Cap
-# at %3 simultaneous jobs per saved feedback (feedback_shared_queue_dependencies.md).
+# Concurrency : 4 parallel tasks is the lab-negotiated cap
+# (feedback_shared_queue_dependencies.md).
 #
 # Submission :
 #   sbatch scripts/slurm/marl_array.sh                              # full 72 cells, GPU
@@ -26,7 +26,7 @@
 
 #SBATCH --job-name=marl-array
 #SBATCH --account=aip-gdumas85
-#SBATCH --array=0-71%3                  # 72 cells ; shared queue cap ≤ 3 concurrent
+#SBATCH --array=0-71%4                  # 72 cells ; shared queue cap = 4 concurrent
 #SBATCH --time=24:00:00                 # 20 h paper budget + 4 h buffer
 #SBATCH --mem=16384M                    # per-cell peak ≈ 8-12 GB (vision CNN + N policies)
 #SBATCH --cpus-per-task=4
@@ -35,14 +35,9 @@
 #SBATCH --output=logs/slurm/marl-array-%A_%a.out
 #SBATCH --error=logs/slurm/marl-array-%A_%a.err
 
-# ┌─────────────────────────────────────────────────────────────────────────┐
-# │ ⚠  MARL checkpoint resume is NOT implemented yet (E.13+).               │
-# │                                                                         │
-# │ A requeue after pre-emption will restart the cell from episode 0. For   │
-# │ short smoke runs that's fine ; for the full 15 M-step run we need       │
-# │ checkpoint save/load to survive. Track this in docs/TODO.md under       │
-# │ "MARL : resume from checkpoint" before launching the full array.        │
-# └─────────────────────────────────────────────────────────────────────────┘
+# Checkpoint save/load (E.17a) is wired : the CLI's --resume flag is a
+# silent no-op if no checkpoint exists, so a requeued task picks up from
+# the last save_interval automatically. No action needed at the script level.
 
 set -euo pipefail
 
@@ -134,7 +129,8 @@ python scripts/run_marl.py \
     --setting "${SETTING}" \
     --seed "${SEED}" \
     --device "${DEVICE}" \
-    --output-dir "${OUT_DIR}"
+    --output-dir "${OUT_DIR}" \
+    --resume
 
 if [[ ! -s "${OUT_DIR}/metrics.json" ]]; then
     echo "[marl-array] FAIL: ${OUT_DIR}/metrics.json missing or empty" >&2

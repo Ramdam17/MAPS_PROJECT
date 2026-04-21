@@ -19,7 +19,7 @@ def test_marl_training_config_loads_with_paper_T12_defaults():
     assert cfg.ppo.clip_param == 0.2
     assert cfg.ppo.ppo_epoch == 15
     assert cfg.ppo.entropy_coef == 0.01
-    assert cfg.training.num_env_steps == 15_000_000
+    assert cfg.training.num_env_steps == 300_000  # paper §4 p.15 ; see yaml header
     # Paper eq.13-14 MAPS wager knobs.
     assert cfg.maps.ema_alpha == 0.45
     assert cfg.maps.wager_condition == "r_t_gt_ema"
