@@ -175,6 +175,27 @@ def test_load_checkpoint_rejects_mismatched_num_agents(runner_cfg, tmp_path):
         runner_b.load_checkpoint(ck)
 
 
+def test_load_checkpoint_coerces_rng_state_dtype(runner_cfg, tmp_path):
+    """Regression (E.17c) : torch.load with map_location may ship the RNG
+    state to a non-uint8 device/dtype — load_checkpoint must coerce back to
+    CPU+uint8 so torch.set_rng_state doesn't reject it."""
+    runner_a = _make_runner(runner_cfg)
+    ck = tmp_path / "ckpt.pt"
+    runner_a.save_checkpoint(ck, next_episode=0, all_infos=[])
+
+    # Manually corrupt the dtype to mimic what torch.load + map_location
+    # does on GPU transfer (would arrive as int32 or similar under some
+    # backends) — the load path must tolerate it.
+    payload = torch.load(ck, weights_only=False)
+    payload["rng"]["torch"] = payload["rng"]["torch"].to(dtype=torch.int32)
+    torch.save(payload, ck)
+
+    runner_b = _make_runner(runner_cfg)
+    # Must not raise — the coercion inside load_checkpoint handles it.
+    next_ep, infos = runner_b.load_checkpoint(ck)
+    assert next_ep == 0
+
+
 def test_load_checkpoint_rejects_mismatched_setting(runner_cfg, tmp_path):
     runner_a = _make_runner(runner_cfg)
     ck = tmp_path / "ckpt.pt"

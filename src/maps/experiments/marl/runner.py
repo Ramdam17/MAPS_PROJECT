@@ -672,13 +672,19 @@ class MeltingpotRunner:
         self.ema_reward = np.asarray(payload["ema_reward"], dtype=np.float32)
 
         rng = payload["rng"]
-        torch.set_rng_state(rng["torch"])
+        # torch.set_rng_state requires a CPU ByteTensor. torch.load with
+        # map_location=self.device ships the RNG state to GPU — force it
+        # back to cpu+uint8 here so resume works on the compute node too.
+        torch_state = rng["torch"].to(device="cpu", dtype=torch.uint8)
+        torch.set_rng_state(torch_state)
         np.random.set_state(rng["numpy"])
         random.setstate(rng["python"])
         if rng["cuda"] is not None and torch.cuda.is_available():
             for i, state in enumerate(rng["cuda"]):
                 if i < torch.cuda.device_count():
-                    torch.cuda.set_rng_state(state, device=i)
+                    torch.cuda.set_rng_state(
+                        state.to(device="cpu", dtype=torch.uint8), device=i
+                    )
 
         next_episode = int(ck_meta["next_episode"])
         all_infos = list(payload["all_infos"])
