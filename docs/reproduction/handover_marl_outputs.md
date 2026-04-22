@@ -11,12 +11,24 @@ and any downstream statistical analysis.
 
 ## 1. Directory layout
 
-Each training cell writes one directory under a fixed root. On DRAC the
-root is `$SCRATCH/maps/outputs/marl/` ; once the array finishes the tree
-is rsync'd to the project-local `outputs/marl/`.
+Each training cell writes one directory under a fixed root. The root
+differs depending on where you're reading from :
+
+| location | root path |
+|---|---|
+| **DRAC Tamia compute / login node** (during + just after the run) | `$SCRATCH/maps/outputs/marl/` |
+| **Project-local** (post-rsync, what ends up in the git-tracked tree) | `outputs/marl/` |
+
+The extra `maps/` level on `$SCRATCH` is intentional — it namespaces MARL
+outputs away from the other MAPS domains (`sarl`, `blindsight`, `agl`,
+`sarl_cl`) that also write under `$SCRATCH/maps/outputs/`. Once rsync'd
+into the repo, `outputs/` is the project root and the `maps/` level
+disappears.
+
+**Per-cell structure** (identical in both roots) :
 
 ```
-outputs/marl/
+<root>/
 └── <substrate>/
     └── setting-<setting_id>/
         └── seed-<N>/
