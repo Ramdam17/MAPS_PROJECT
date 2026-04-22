@@ -15,6 +15,8 @@ htmlcov/
 # Environments — match both directory and symlink (Sprint-08 A.2 moves .venv → $SCRATCH)
 .venv
 .venv/
+.venv-marl
+.venv-marl/
 venv
 venv/
 env/
