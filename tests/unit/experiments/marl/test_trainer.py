@@ -235,3 +235,75 @@ def test_train_with_meta_false_skips_wager_optimizers(cfg, policy):
     # actor_meta parameters should not have moved.
     for k, v in policy.actor_meta.named_parameters():
         assert torch.allclose(snapshot[k], v), f"actor_meta param {k} changed under meta=False"
+
+
+# ──────────────────────────────────────────────────────────────
+# E.17c regression : meta=True with asymmetric obs vs share_obs shapes
+# ──────────────────────────────────────────────────────────────
+
+
+def test_train_meta_path_handles_asymmetric_obs_share_obs(cfg):
+    """Regression : actor_meta is built with ``obs_shape`` (per-agent RGB,
+    e.g. 11×11×3). Previously the critic-side wager forward passed
+    ``share_obs_batch`` (centralised WORLD.RGB, e.g. 24×18×3) which blew up
+    the CNN→Linear matmul on any substrate with obs ≠ share_obs. Caught at
+    E.17c launch on commons_harvest_closed. This test mirrors the shape
+    asymmetry with a minimal setup."""
+    obs_shape = (11, 11, 3)
+    share_obs_shape = (24, 18, 3)
+
+    action_space = spaces.Discrete(8)
+    policy = MAPPOPolicy(
+        cfg,
+        obs_shape=obs_shape,
+        cent_obs_shape=share_obs_shape,  # asymmetric with obs_shape
+        action_space=action_space,
+        meta=True,
+        cascade_iterations1=1,
+        cascade_iterations2=1,
+    )
+    trainer = MAPPOTrainer(cfg, policy, device="cpu")
+    trainer.prep_training()
+
+    # Build a fake buffer whose obs is (11, 11, 3) and share_obs is (24, 18, 3).
+    T, N = EPISODE_LEN, N_AGENTS
+
+    class _AsymBuffer:
+        def __init__(self):
+            np.random.seed(42)
+            self.returns = np.random.randn(T + 1, N, 1).astype(np.float32)
+            self.value_preds = np.random.randn(T + 1, N, 1).astype(np.float32)
+            self.active_masks = np.ones((T + 1, N, 1), dtype=np.float32)
+
+        def recurrent_generator(self, advantages, num_mini_batch, chunk_length):
+            obs = np.random.randn(T * N, *obs_shape).astype(np.float32)
+            share_obs = np.random.randn(T * N, *share_obs_shape).astype(np.float32)
+            actions = np.zeros((T * N, 1), dtype=np.int64)
+            rnn = np.zeros((T * N, 1, HIDDEN), dtype=np.float32)
+            vp = np.zeros((T * N, 1), dtype=np.float32)
+            ret = np.zeros((T * N, 1), dtype=np.float32)
+            masks = np.ones((T * N, 1), dtype=np.float32)
+            alp = np.zeros((T * N, 1), dtype=np.float32)
+            adv = np.zeros((T * N, 1), dtype=np.float32)
+            yield (
+                torch.from_numpy(share_obs).float(),
+                torch.from_numpy(obs).float(),
+                torch.from_numpy(rnn).float(),
+                torch.from_numpy(rnn).float(),
+                torch.from_numpy(actions).long(),
+                vp,
+                ret,
+                torch.from_numpy(masks).float(),
+                masks,
+                alp,
+                adv,
+                None,
+            )
+
+    B = T * N
+    wager_obj = np.zeros((B, 2), dtype=np.float32)
+    wager_obj[:, 0] = 1.0
+
+    info = trainer.train(_AsymBuffer(), wager_objective=wager_obj, meta=True)
+    assert info["wager_loss_actor"] > 0
+    assert info["wager_loss_critic"] > 0

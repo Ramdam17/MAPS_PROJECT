@@ -347,11 +347,18 @@ class MAPPOTrainer:
 
         # Re-forward meta for critic-side wager (student L211-218) — this creates
         # a FRESH graph after actor_meta.step() invalidated the previous one.
+        # NOTE : ``actor_meta`` is built with the per-agent ``obs_shape`` (e.g.
+        # 11×11×3) not the centralised ``share_obs_shape`` (e.g. 24×18×3 for
+        # commons_harvest_closed). Passing ``share_obs_batch`` here blew up the
+        # CNN flatten → Linear matmul (E.17c first-launch failure). The wager
+        # is a second-order predictor over the actor's own obs stream — feed
+        # ``obs_batch`` but keep ``rnn_states_critic_batch`` to align the
+        # gradient with the critic-side loss path.
         if meta:
             assert wager_objective is not None
             wager_objective_t = check(wager_objective).to(**self.tpdv)
             values_meta_critic = self.policy.actor_meta.evaluate_actions(
-                obs=share_obs_batch,
+                obs=obs_batch,
                 rnn_states=rnn_states_critic_batch,
                 action=actions_batch,
                 masks=masks_batch,
