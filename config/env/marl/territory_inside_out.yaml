@@ -5,7 +5,8 @@
 # (per-player done), but episode continues until truncation for global done.
 
 id: territory_inside_out
-substrate_name: territory_inside_out
+substrate_name: territory__inside_out      # MeltingPot uses double-underscore : <family>__<variant>
+                                           # ; bug found at E.17c launch (262127 — 18 territory cells failed)
 num_agents: 5                     # paper §A.4
 roles: ["default", "default", "default", "default", "default"]
 downsample_scale: 8
