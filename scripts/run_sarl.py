@@ -23,8 +23,13 @@ Paper settings reminder
     4: meta + cascade on first-order
     5: meta + cascade on second-order
     6: full MAPS (meta + cascade on both)
+    7: ACB — Actor-Critic Baseline with eligibility traces (Young & Tian 2019,
+       λ=0.8). Structurally distinct from settings 1-6 (no DQN, no replay
+       buffer). Loads ``config/training/sarl_acb.yaml`` and dispatches to
+       :class:`maps.experiments.sarl.ACBTrainer`.
 
-See ``config/training/sarl.yaml`` and the setting table in
+See ``config/training/sarl.yaml`` (settings 1-6) and
+``config/training/sarl_acb.yaml`` (setting 7). The 1-6 setting table lives in
 ``maps.experiments.sarl.training_loop.setting_to_config``.
 
 Reproduction
@@ -46,6 +51,7 @@ from omegaconf import OmegaConf
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from maps.experiments.sarl import ACBConfig, ACBTrainer
 from maps.experiments.sarl.training_loop import (
     SarlTrainingConfig,
     run_training,
@@ -143,9 +149,9 @@ def main(
     game: str = typer.Option("space_invaders", help="MinAtar game name."),
     setting: int = typer.Option(
         6,
-        help="Paper setting 1-6 (see module docstring).",
+        help="Paper setting 1-7 (see module docstring). Setting 7 = ACB.",
         min=1,
-        max=6,
+        max=7,
     ),
     seed: int | None = typer.Option(None, help="Override seed (falls back to config default 42)."),
     num_frames: int | None = typer.Option(
@@ -187,7 +193,11 @@ def main(
 ) -> None:
     configure_logging(level=log_level)
 
-    cfg = load_config("training/sarl", overrides=list(override))
+    # Setting 7 is a structurally different algorithm (ACB, Young & Tian 2019)
+    # — load its own YAML so the DQN-specific keys in training/sarl.yaml don't
+    # leak into the ACB config.
+    cfg_name = "training/sarl_acb" if setting == 7 else "training/sarl"
+    cfg = load_config(cfg_name, overrides=list(override))
     paths = get_paths()
     paths.ensure_dirs()
 
@@ -225,6 +235,53 @@ def main(
                 "--resume requested but no checkpoint at %s; starting fresh", candidate
             )
 
+    if setting == 7:
+        # ── ACB branch (Setting 7) ──────────────────────────────────────────
+        if resolved_resume is not None:
+            raise typer.BadParameter(
+                "--resume / --resume-from are not supported for Setting 7 (ACB) — "
+                "the algorithm has no checkpointing path yet. Re-run from frame 0.",
+                param_hint="--resume",
+            )
+
+        acb_num_frames = num_frames if num_frames is not None else int(cfg.training.num_frames)
+        acb_cfg = ACBConfig.for_game(
+            game=game,
+            seed=effective_seed,
+            num_frames=acb_num_frames,
+            output_dir=out_dir,
+            alpha=float(cfg.alpha),
+            lambda_=float(cfg["lambda"]),
+            gamma=float(cfg.gamma),
+            beta=float(cfg.beta),
+            gamma_rms=float(cfg.gamma_rms),
+            eps_rms=float(cfg.eps_rms),
+            min_denom=float(cfg.min_denom),
+            validation_every_episodes=int(cfg.validation.every_episodes),
+            validation_episodes=int(cfg.validation.n_episodes),
+            device=str(cfg.device),
+            log_every_episodes=int(cfg.logging.every_episodes),
+        )
+        log.info(
+            "SARL Setting 7 (ACB) : game=%s seed=%d frames=%d device=%s",
+            acb_cfg.game, acb_cfg.seed, acb_cfg.num_frames, acb_cfg.device,
+        )
+        log.info("Effective config:\n%s", OmegaConf.to_yaml(cfg))
+
+        set_all_seeds(effective_seed)
+        env = _build_env(game)
+
+        t0 = time.perf_counter()
+        summary = ACBTrainer(acb_cfg, env).train()
+        elapsed = time.perf_counter() - t0
+        log.info(
+            "done: ACB %s seed=%d frames=%d elapsed=%.1fs final_G=%.2f val=%.2f",
+            game, effective_seed, summary["num_frames"], elapsed,
+            summary["final_return"], summary["last_validation_mean"],
+        )
+        return
+
+    # ── Settings 1-6 branch (existing DQN + meta + cascade pipeline) ────────
     training_cfg = _build_training_config(
         cfg,
         game=game,
