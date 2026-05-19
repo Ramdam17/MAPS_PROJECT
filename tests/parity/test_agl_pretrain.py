@@ -101,8 +101,13 @@ def cfg():
     ],
 )
 def test_agl_pretrain_matches_reference(cfg, setting_id, cascade, second_order):
+    # Legacy 2×2 parity: cascade_1st = cascade_2nd = cascade (symmetric).
     setting = AGLSetting(
-        id=setting_id, label=setting_id, cascade=cascade, second_order=second_order
+        id=setting_id,
+        label=setting_id,
+        cascade_1st=cascade,
+        cascade_2nd=cascade,
+        second_order=second_order,
     )
 
     # --- Reference side ---------------------------------------------------

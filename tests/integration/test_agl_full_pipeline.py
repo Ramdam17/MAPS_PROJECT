@@ -23,12 +23,12 @@ from maps.experiments.agl import (
 from maps.utils import load_config, set_all_seeds
 
 
-# All 4 factorial settings.
+# All 4 legacy factorial settings (symmetric cascade — paper settings 1/2/3/6).
 SETTINGS = [
-    AGLSetting(id="neither", label="", cascade=False, second_order=False),
-    AGLSetting(id="cascade_only", label="", cascade=True, second_order=False),
-    AGLSetting(id="second_order_only", label="", cascade=False, second_order=True),
-    AGLSetting(id="both", label="", cascade=True, second_order=True),
+    AGLSetting(id="neither", label="", cascade_1st=False, cascade_2nd=False, second_order=False),
+    AGLSetting(id="cascade_only", label="", cascade_1st=True, cascade_2nd=True, second_order=False),
+    AGLSetting(id="second_order_only", label="", cascade_1st=False, cascade_2nd=False, second_order=True),
+    AGLSetting(id="both", label="", cascade_1st=True, cascade_2nd=True, second_order=True),
 ]
 
 

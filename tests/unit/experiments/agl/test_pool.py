@@ -17,8 +17,8 @@ from maps.utils import load_config, set_all_seeds
 
 
 SETTINGS = [
-    AGLSetting(id="neither", label="", cascade=False, second_order=False),
-    AGLSetting(id="both", label="", cascade=True, second_order=True),
+    AGLSetting(id="neither", label="", cascade_1st=False, cascade_2nd=False, second_order=False),
+    AGLSetting(id="both", label="", cascade_1st=True, cascade_2nd=True, second_order=True),
 ]
 
 

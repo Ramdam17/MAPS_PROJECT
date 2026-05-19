@@ -87,19 +87,47 @@ except ImportError:
 
 @dataclass(frozen=True)
 class AGLSetting:
-    """One entry of the 2×2 factorial ablation (same semantics as Blindsight)."""
+    """One entry of the paper Table 5b/5c factorial ablation (6 cells).
+
+    Same dimensions as :class:`maps.experiments.blindsight.BlindsightSetting`:
+
+    - ``cascade_1st`` : cascade applied to the 1st-order encoder.
+    - ``cascade_2nd`` : cascade applied to the 2nd-order wager path.
+    - ``second_order`` : whether the 2nd-order network is trained.
+
+    Legacy YAML (``cascade: bool``) is accepted and mapped to the symmetric
+    ``cascade_1st = cascade_2nd = cascade`` interpretation, matching
+    pre-refactor :class:`AGLTrainer` behavior (= paper Setting 6 when both on).
+    """
 
     id: str
     label: str
-    cascade: bool
+    cascade_1st: bool
+    cascade_2nd: bool
     second_order: bool
+
+    @property
+    def cascade(self) -> bool:
+        """Legacy 2×2 alias — True iff either side has cascade on."""
+        return self.cascade_1st or self.cascade_2nd
 
     @classmethod
     def from_dict(cls, d: DictConfig | dict) -> AGLSetting:
+        if "cascade_1st" in d or "cascade_2nd" in d:
+            return cls(
+                id=str(d["id"]),
+                label=str(d.get("label", d["id"])),
+                cascade_1st=bool(d["cascade_1st"]),
+                cascade_2nd=bool(d["cascade_2nd"]),
+                second_order=bool(d["second_order"]),
+            )
+        # Legacy 2×2 — cascade=T → cascade_1st = cascade_2nd = T (symmetric).
+        legacy_cascade = bool(d["cascade"])
         return cls(
             id=str(d["id"]),
             label=str(d.get("label", d["id"])),
-            cascade=bool(d["cascade"]),
+            cascade_1st=legacy_cascade,
+            cascade_2nd=legacy_cascade,
             second_order=bool(d["second_order"]),
         )
 
@@ -122,8 +150,10 @@ def _evaluate_single_cell(
     patterns: torch.Tensor,
     bits_per_letter: int,
     setting_second_order: bool,
-    cascade_iters: int,
-    cascade_rate: float,
+    cascade_iters_1: int,
+    cascade_iters_2: int,
+    cascade_rate_1: float,
+    cascade_rate_2: float,
     threshold: float,
 ) -> dict[str, float]:
     """Per-network evaluation on a concatenated (Grammar-A + Grammar-B) batch.
@@ -147,9 +177,9 @@ def _evaluate_single_cell(
     with torch.no_grad():
         h1: torch.Tensor | None = None
         h2: torch.Tensor | None = None
-        for _ in range(cascade_iters):
+        for _ in range(cascade_iters_1):
             h1, h2 = first_order(
-                patterns, prev_h1=h1, prev_h2=h2, cascade_rate=cascade_rate
+                patterns, prev_h1=h1, prev_h2=h2, cascade_rate=cascade_rate_1
             )
         assert h2 is not None
 
@@ -170,9 +200,9 @@ def _evaluate_single_cell(
         if setting_second_order:
             comparison: torch.Tensor | None = None
             wager: torch.Tensor | None = None
-            for _ in range(cascade_iters):
+            for _ in range(cascade_iters_2):
                 wager, comparison = second_order(
-                    patterns, h2, comparison, cascade_rate
+                    patterns, h2, comparison, cascade_rate_2
                 )
             assert wager is not None
             wager = wager.squeeze()
@@ -261,8 +291,10 @@ def _run_training_loop(
     bits_per_letter: int,
     meta_frozen: bool,
     setting_second_order: bool,
-    cascade_iters: int,
-    cascade_rate: float,
+    cascade_iters_1: int,
+    cascade_iters_2: int,
+    cascade_rate_1: float,
+    cascade_rate_2: float,
     device: torch.device,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Shared Grammar-A training loop used by ``AGLTrainer.training`` and
@@ -292,9 +324,9 @@ def _run_training_loop(
 
         h1: torch.Tensor | None = None
         h2: torch.Tensor | None = None
-        for _ in range(cascade_iters):
+        for _ in range(cascade_iters_1):
             h1, h2 = first_order(
-                batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=cascade_rate
+                batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=cascade_rate_1
             )
 
         batch.patterns.requires_grad_(True)
@@ -308,9 +340,9 @@ def _run_training_loop(
             # Second-order cascade pass — forward always runs (logs loss_2).
             # Backward gated by ``meta_frozen``.
             wager: torch.Tensor | None = None
-            for _ in range(cascade_iters):
+            for _ in range(cascade_iters_2):
                 wager, comparison = second_order(
-                    batch.patterns, h2, comparison, cascade_rate
+                    batch.patterns, h2, comparison, cascade_rate_2
                 )
             assert wager is not None
             wager = wager.squeeze()
@@ -384,12 +416,15 @@ class AGLTrainer:
         self.setting = setting
         self.device = torch.device(device)
 
-        if setting.cascade:
-            self.cascade_rate = float(cfg.cascade.alpha)
-            self.cascade_iters = int(cfg.cascade.n_iterations)
-        else:
-            self.cascade_rate = 1.0
-            self.cascade_iters = 1
+        # Asymmetric cascade schedule (paper Table 5b/5c — settings 1-6).
+        # Legacy YAML maps cascade=True → cascade_1st=cascade_2nd=True (symmetric)
+        # so pre-refactor behavior is preserved bit-for-bit.
+        alpha = float(cfg.cascade.alpha)
+        n_iters = int(cfg.cascade.n_iterations)
+        self.cascade_rate_1 = alpha if setting.cascade_1st else 1.0
+        self.cascade_iters_1 = n_iters if setting.cascade_1st else 1
+        self.cascade_rate_2 = alpha if setting.cascade_2nd else 1.0
+        self.cascade_iters_2 = n_iters if setting.cascade_2nd else 1
 
         self.first_order: FirstOrderMLP | None = None
         self.second_order: SecondOrderNetwork | None = None
@@ -518,12 +553,12 @@ class AGLTrainer:
                     device=self.device,
                 )
 
-            # First-order cascade pass.
+            # First-order cascade pass (depth = cascade_iters_1, paper settings 2/4/6).
             h1: torch.Tensor | None = None
             h2: torch.Tensor | None = None
-            for _ in range(self.cascade_iters):
+            for _ in range(self.cascade_iters_1):
                 h1, h2 = self.first_order(
-                    batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate
+                    batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate_1
                 )
 
             # Reference re-enables autograd on these here; harmless in eval mode.
@@ -535,11 +570,11 @@ class AGLTrainer:
 
             comparison: torch.Tensor | None = None
             if self.setting.second_order:
-                # Second-order cascade pass.
+                # Second-order cascade pass (depth = cascade_iters_2, paper settings 5/6).
                 wager: torch.Tensor | None = None
-                for _ in range(self.cascade_iters):
+                for _ in range(self.cascade_iters_2):
                     wager, comparison = self.second_order(
-                        batch.patterns, h2, comparison, self.cascade_rate
+                        batch.patterns, h2, comparison, self.cascade_rate_2
                     )
                 assert wager is not None
                 wager = wager.squeeze()
@@ -558,10 +593,12 @@ class AGLTrainer:
                 self.optim_2.zero_grad()
                 losses_2[epoch] = float(loss_2.item())
             else:
+                # Throwaway pass — preserves reference RNG consumption (see
+                # Blindsight trainer comment for the legacy-vs-new semantics).
                 with torch.no_grad():
-                    for _ in range(self.cascade_iters):
+                    for _ in range(self.cascade_iters_2):
                         _, comparison = self.second_order(
-                            batch.patterns, h2, comparison, self.cascade_rate
+                            batch.patterns, h2, comparison, self.cascade_rate_2
                         )
 
             # First-order CAE loss — reconstruction target is the input patterns.
@@ -659,8 +696,10 @@ class AGLTrainer:
             bits_per_letter=int(self.cfg.get("bits_per_letter", BITS_PER_LETTER)),
             meta_frozen=bool(self.cfg.train.get("train_meta_frozen_in_training", True)),
             setting_second_order=self.setting.second_order,
-            cascade_iters=self.cascade_iters,
-            cascade_rate=self.cascade_rate,
+            cascade_iters_1=self.cascade_iters_1,
+            cascade_iters_2=self.cascade_iters_2,
+            cascade_rate_1=self.cascade_rate_1,
+            cascade_rate_2=self.cascade_rate_2,
             device=self.device,
         )
 
@@ -709,8 +748,10 @@ class AGLTrainer:
             patterns=patterns,
             bits_per_letter=bits_per_letter,
             setting_second_order=self.setting.second_order,
-            cascade_iters=self.cascade_iters,
-            cascade_rate=self.cascade_rate,
+            cascade_iters_1=self.cascade_iters_1,
+            cascade_iters_2=self.cascade_iters_2,
+            cascade_rate_1=self.cascade_rate_1,
+            cascade_rate_2=self.cascade_rate_2,
             threshold=thr,
         )
 
@@ -782,8 +823,10 @@ class AGLTrainer:
                 patterns=patterns,
                 bits_per_letter=bits_per_letter,
                 setting_second_order=self.setting.second_order,
-                cascade_iters=self.cascade_iters,
-                cascade_rate=self.cascade_rate,
+                cascade_iters_1=self.cascade_iters_1,
+                cascade_iters_2=self.cascade_iters_2,
+                cascade_rate_1=self.cascade_rate_1,
+                cascade_rate_2=self.cascade_rate_2,
                 threshold=thr,
             )
             per_cell.append(cell_metrics)

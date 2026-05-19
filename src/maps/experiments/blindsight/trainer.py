@@ -76,25 +76,72 @@ _OPTIMIZERS = {
 
 @dataclass(frozen=True)
 class BlindsightSetting:
-    """One entry of the 2×2 factorial ablation.
+    """One entry of the paper Table 5 factorial ablation (6 cells).
 
-    Use ``BlindsightSetting.from_dict`` to build from a YAML entry:
+    The factorial dimensions are:
 
-        for s in cfg.settings:
-            setting = BlindsightSetting.from_dict(s)
+    - ``cascade_1st`` : cascade applied to the 1st-order encoder.
+    - ``cascade_2nd`` : cascade applied to the 2nd-order wager path.
+    - ``second_order`` : whether the 2nd-order network is trained at all.
+
+    The 6 paper cells map as follows
+    (per ``docs/reproduction/experiment_matrix.md`` §Settings factorial):
+
+    ===================  ==========  ==========  =============
+    Setting              cascade_1st cascade_2nd second_order
+    ===================  ==========  ==========  =============
+    1 Baseline           False       False       False
+    2 Cascade 1st only   True        False       False
+    3 2nd-order only     False       False       True
+    4 MAPS               True        False       True
+    5 Cascade 2nd only   False       True        True
+    6 Full MAPS          True        True        True
+    ===================  ==========  ==========  =============
+
+    Use ``BlindsightSetting.from_dict`` to build from a YAML entry. The
+    classmethod accepts both the new 6-cell schema (``cascade_1st`` /
+    ``cascade_2nd``) and the legacy 2×2 schema (``cascade``) for backward
+    compatibility — legacy ``cascade=True`` is interpreted as the symmetric
+    paper Setting 6 (cascade on both networks), matching the pre-refactor
+    behavior of ``BlindsightTrainer``.
     """
 
     id: str
     label: str
-    cascade: bool
+    cascade_1st: bool
+    cascade_2nd: bool
     second_order: bool
+
+    @property
+    def cascade(self) -> bool:
+        """Legacy 2×2 alias — True iff either side has cascade on.
+
+        Kept for callers that still read the boolean ``cascade`` attribute.
+        Equivalent to ``cascade_1st or cascade_2nd``.
+        """
+        return self.cascade_1st or self.cascade_2nd
 
     @classmethod
     def from_dict(cls, d: DictConfig | dict) -> BlindsightSetting:
+        # New 6-cell schema — explicit per-side flags.
+        if "cascade_1st" in d or "cascade_2nd" in d:
+            return cls(
+                id=str(d["id"]),
+                label=str(d.get("label", d["id"])),
+                cascade_1st=bool(d["cascade_1st"]),
+                cascade_2nd=bool(d["cascade_2nd"]),
+                second_order=bool(d["second_order"]),
+            )
+        # Legacy 2×2 schema — map cascade=T to cascade_1st=cascade_2nd=T
+        # (matches pre-refactor symmetric-cascade behavior; legacy `both` cell
+        # was effectively paper Setting 6, not Setting 4 — see plan
+        # docs/plans/plan-20260519-blindsight-agl-settings-4-5-6.md §Problem).
+        legacy_cascade = bool(d["cascade"])
         return cls(
             id=str(d["id"]),
             label=str(d.get("label", d["id"])),
-            cascade=bool(d["cascade"]),
+            cascade_1st=legacy_cascade,
+            cascade_2nd=legacy_cascade,
             second_order=bool(d["second_order"]),
         )
 
@@ -145,13 +192,19 @@ class BlindsightTrainer:
         self.device = torch.device(device)
         self.env_cfg = env_cfg or self._load_env_cfg(cfg)
 
-        # Cascade schedule — symmetric across both networks (paper convention).
-        if setting.cascade:
-            self.cascade_rate = float(cfg.cascade.alpha)
-            self.cascade_iters = int(cfg.cascade.n_iterations)
-        else:
-            self.cascade_rate = 1.0
-            self.cascade_iters = 1
+        # Asymmetric cascade schedule (paper Table 5 — settings 1-6).
+        # Each network's cascade depth is controlled by its own flag in
+        # `BlindsightSetting`. Legacy YAML (`cascade: bool`) maps via
+        # `BlindsightSetting.from_dict` to `cascade_1st = cascade_2nd = cascade`,
+        # preserving pre-refactor behavior exactly (= paper Setting 6 when
+        # `cascade=True, second_order=True`; = paper Setting 1/2/3 for the
+        # other legacy combinations).
+        alpha = float(cfg.cascade.alpha)
+        n_iters = int(cfg.cascade.n_iterations)
+        self.cascade_rate_1 = alpha if setting.cascade_1st else 1.0
+        self.cascade_iters_1 = n_iters if setting.cascade_1st else 1
+        self.cascade_rate_2 = alpha if setting.cascade_2nd else 1.0
+        self.cascade_iters_2 = n_iters if setting.cascade_2nd else 1
 
         self.first_order: FirstOrderMLP | None = None
         self.second_order: SecondOrderNetwork | None = None
@@ -293,12 +346,12 @@ class BlindsightTrainer:
                     device=self.device,
                 )
 
-            # First-order cascade pass.
+            # First-order cascade pass (depth = cascade_iters_1, paper settings 2/4/6).
             h1: torch.Tensor | None = None
             h2: torch.Tensor | None = None
-            for _ in range(self.cascade_iters):
+            for _ in range(self.cascade_iters_1):
                 h1, h2 = self.first_order(
-                    batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate
+                    batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate_1
                 )
 
             # The reference re-enables autograd on these here; harmless.
@@ -310,11 +363,11 @@ class BlindsightTrainer:
 
             comparison: torch.Tensor | None = None
             if self.setting.second_order:
-                # Second-order cascade pass.
+                # Second-order cascade pass (depth = cascade_iters_2, paper settings 5/6).
                 wager: torch.Tensor | None = None
-                for _ in range(self.cascade_iters):
+                for _ in range(self.cascade_iters_2):
                     wager, comparison = self.second_order(
-                        batch.patterns, h2, comparison, self.cascade_rate
+                        batch.patterns, h2, comparison, self.cascade_rate_2
                     )
                 assert wager is not None
 
@@ -336,10 +389,15 @@ class BlindsightTrainer:
                 losses_2[epoch] = float(loss_2.item())
             else:
                 # Throwaway pass — preserves reference RNG consumption.
+                # Uses cascade_iters_2 / cascade_rate_2: when second_order=False,
+                # legacy YAML coerces cascade_2nd = cascade_1st (symmetric), so
+                # this matches pre-refactor 50-iter throwaway behavior for legacy
+                # `cascade_only`; new schema can opt into 1-iter throwaway via
+                # `cascade_1st=True, cascade_2nd=False, second_order=False`.
                 with torch.no_grad():
-                    for _ in range(self.cascade_iters):
+                    for _ in range(self.cascade_iters_2):
                         _, comparison = self.second_order(
-                            batch.patterns, h2, comparison, self.cascade_rate
+                            batch.patterns, h2, comparison, self.cascade_rate_2
                         )
 
             # First-order CAE loss — BCE(sum) reconstruction + λ·||J||².
@@ -423,9 +481,9 @@ class BlindsightTrainer:
 
                 h1: torch.Tensor | None = None
                 h2: torch.Tensor | None = None
-                for _ in range(self.cascade_iters):
+                for _ in range(self.cascade_iters_1):
                     h1, h2 = self.first_order(
-                        batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate
+                        batch.patterns, prev_h1=h1, prev_h2=h2, cascade_rate=self.cascade_rate_1
                     )
                 assert h2 is not None
 
@@ -443,9 +501,9 @@ class BlindsightTrainer:
                 if self.setting.second_order:
                     comparison: torch.Tensor | None = None
                     wager: torch.Tensor | None = None
-                    for _ in range(self.cascade_iters):
+                    for _ in range(self.cascade_iters_2):
                         wager, comparison = self.second_order(
-                            batch.patterns, h2, comparison, self.cascade_rate
+                            batch.patterns, h2, comparison, self.cascade_rate_2
                         )
                     assert wager is not None
                     # high-wager > threshold vs. binary presence (target[:,0] is high-wager).

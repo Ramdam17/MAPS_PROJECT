@@ -203,8 +203,10 @@ class AGLNetworkPool:
                 bits_per_letter=int(cfg.get("bits_per_letter", BITS_PER_LETTER)),
                 meta_frozen=bool(cfg.train.get("train_meta_frozen_in_training", True)),
                 setting_second_order=trainer.setting.second_order,
-                cascade_iters=trainer.cascade_iters,
-                cascade_rate=trainer.cascade_rate,
+                cascade_iters_1=trainer.cascade_iters_1,
+                cascade_iters_2=trainer.cascade_iters_2,
+                cascade_rate_1=trainer.cascade_rate_1,
+                cascade_rate_2=trainer.cascade_rate_2,
                 device=trainer.device,
             )
             losses_1[idx] = l1
