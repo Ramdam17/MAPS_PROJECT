@@ -17,13 +17,23 @@ Output goes under
 ``$SCRATCH/maps/outputs/agl/<setting>/seed-<seed>/``
 (or ``./outputs/agl/...`` when ``$SCRATCH`` is unset).
 
+Two factorial configs are shipped:
+
+- ``experiments/factorial_6cell`` (default) — paper Table 5b/5c settings 1-6,
+  including the headline Setting 4 (MAPS) and the asymmetric Setting 5.
+- ``experiments/factorial_2x2`` — legacy 4-cell schema (paper settings 1/2/3/6
+  via symmetric cascade). Retained for reproducibility of pre-2026-05 archives.
+
 Usage
 -----
-    uv run python scripts/run_agl.py --setting both
-    uv run python scripts/run_agl.py --setting both --seed 43
-    uv run python scripts/run_agl.py --setting both -o train.n_epochs_pretrain=30
+    uv run python scripts/run_agl.py --setting setting-4-maps
+    uv run python scripts/run_agl.py --setting setting-5-cascade-2nd --seed 43
+    uv run python scripts/run_agl.py --setting setting-6-full-maps -o train.n_epochs_pretrain=30
     uv run python scripts/run_agl.py --all-settings
-    uv run python scripts/run_agl.py --setting both --output-dir /scratch/xxx/expA
+
+    # Legacy 4-cell config (pre-2026-05 archive parity):
+    uv run python scripts/run_agl.py \\
+        --factorial-config experiments/factorial_2x2 --setting both
 
 Notes
 -----
@@ -188,11 +198,41 @@ def _setting_from_cfg(factorial_cfg, setting_id: str) -> AGLSetting:
     raise typer.BadParameter(f"Unknown setting {setting_id!r}. Valid: {valid}")
 
 
+def _resolve_seed_pool(factorial, *, seeds_cli: str | None) -> list[int]:
+    """Resolve the seed pool from CLI > YAML explicit list > YAML n_seeds count.
+
+    Falls back to ``range(n_seeds)`` when the YAML omits an explicit ``seeds``
+    list, which keeps the 6-cell config compact (500-seed pools as range
+    rather than 500 literal entries).
+    """
+    if seeds_cli is not None:
+        return [int(x) for x in seeds_cli.split(",")]
+    explicit = factorial.get("seeds", None)
+    if explicit is not None:
+        return [int(x) for x in explicit]
+    return list(range(int(factorial.n_seeds)))
+
+
 @app.command()
 def main(
     setting: str = typer.Option(
-        "both",
-        help="Factorial setting id: neither | cascade_only | second_order_only | both",
+        "setting-6-full-maps",
+        help=(
+            "Factorial setting id. New 6-cell schema (default factorial): "
+            "setting-1-baseline | setting-2-cascade-1st | setting-3-second-order-only | "
+            "setting-4-maps | setting-5-cascade-2nd | setting-6-full-maps. "
+            "Legacy 2×2 schema (--factorial-config experiments/factorial_2x2): "
+            "neither | cascade_only | second_order_only | both."
+        ),
+    ),
+    factorial_config: str = typer.Option(
+        "experiments/factorial_6cell",
+        "--factorial-config",
+        help=(
+            "Experiment YAML defining the factorial settings and seed pool. "
+            "Default: experiments/factorial_6cell (paper Table 5b/5c 6 cells). "
+            "Use experiments/factorial_2x2 for pre-2026-05 archive parity."
+        ),
     ),
     all_settings: bool = typer.Option(
         False, "--all-settings", help="Loop over every factorial setting × seed."
@@ -201,7 +241,7 @@ def main(
     seeds: str | None = typer.Option(
         None,
         "--seeds",
-        help="Comma-separated seed list overriding factorial.seeds in --all-settings mode (e.g. '42,43,...,51').",
+        help="Comma-separated seed list overriding the factorial seed pool in --all-settings mode (e.g. '42,43,...,51').",
     ),
     override: list[str] = typer.Option(  # noqa: B008
         [],
@@ -221,7 +261,7 @@ def main(
     configure_logging(level=log_level)
 
     cfg = load_config("training/agl", overrides=list(override))
-    factorial = load_config("experiments/factorial_2x2")
+    factorial = load_config(factorial_config)
     paths = get_paths()
     paths.ensure_dirs()
 
@@ -230,9 +270,7 @@ def main(
     )
 
     if all_settings:
-        seed_pool = (
-            [int(x) for x in seeds.split(",")] if seeds is not None else list(factorial.seeds)
-        )
+        seed_pool = _resolve_seed_pool(factorial, seeds_cli=seeds)
         runs = [(AGLSetting.from_dict(s), s_idx) for s_idx in seed_pool for s in factorial.settings]
         log.info(
             "Running %d cells (%d settings × %d seeds): seeds=%s",

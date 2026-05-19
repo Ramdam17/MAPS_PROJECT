@@ -2,19 +2,31 @@
 
 Loads the composed config (config/training/blindsight.yaml ← config/maps.yaml),
 seeds every RNG, builds the networks described by ``cfg``, runs pre-training
-for one of the four 2×2 factorial settings, and saves loss curves + final
+for one paper Table 5 factorial setting, and saves loss curves + final
 model state under ``$SCRATCH/maps/outputs/blindsight/<setting>/seed-<seed>/`` (falls
 back to ``./outputs/blindsight/...`` when ``$SCRATCH`` is unset — dev boxes).
 
+Two factorial configs are shipped:
+
+- ``experiments/factorial_6cell`` (default) — paper Table 5 settings 1-6,
+  including the headline Setting 4 (MAPS) and the asymmetric Setting 5.
+- ``experiments/factorial_2x2`` — legacy 4-cell schema (paper settings 1/2/3/6
+  via symmetric cascade). Retained for reproducibility of pre-2026-05 archives.
+
 Usage
 -----
-    uv run python scripts/run_blindsight.py --setting both
-    uv run python scripts/run_blindsight.py --setting neither --seed 43
-    uv run python scripts/run_blindsight.py --setting both -o train.n_epochs=20
+    uv run python scripts/run_blindsight.py --setting setting-4-maps
+    uv run python scripts/run_blindsight.py --setting setting-5-cascade-2nd --seed 43
+    uv run python scripts/run_blindsight.py --setting setting-6-full-maps -o train.n_epochs=20
 
-The ``--all-settings`` flag loops over the factorial_2x2 experiment config
-and runs every (setting × seed) cell sequentially. Use SLURM array jobs in
-production (see docs/install_linux.md) rather than the single-process loop.
+    # Legacy 4-cell config (pre-2026-05 archive parity):
+    uv run python scripts/run_blindsight.py \\
+        --factorial-config experiments/factorial_2x2 --setting both
+
+The ``--all-settings`` flag loops over the loaded factorial's settings and
+runs every (setting × seed) cell sequentially. Use SLURM array jobs in
+production (see ``scripts/slurm/blindsight_array.sh``) rather than the
+single-process loop.
 """
 
 from __future__ import annotations
@@ -96,11 +108,41 @@ def _setting_from_cfg(factorial_cfg, setting_id: str) -> BlindsightSetting:
     raise typer.BadParameter(f"Unknown setting {setting_id!r}. Valid: {valid}")
 
 
+def _resolve_seed_pool(factorial, *, seeds_cli: str | None) -> list[int]:
+    """Resolve the seed pool from CLI > YAML explicit list > YAML n_seeds count.
+
+    Falls back to ``range(n_seeds)`` when the YAML omits an explicit ``seeds``
+    list, which keeps the 6-cell config compact (500-seed pools as range
+    rather than 500 literal entries).
+    """
+    if seeds_cli is not None:
+        return [int(x) for x in seeds_cli.split(",")]
+    explicit = factorial.get("seeds", None)
+    if explicit is not None:
+        return [int(x) for x in explicit]
+    return list(range(int(factorial.n_seeds)))
+
+
 @app.command()
 def main(
     setting: str = typer.Option(
-        "both",
-        help="Factorial setting id: neither | cascade_only | second_order_only | both",
+        "setting-6-full-maps",
+        help=(
+            "Factorial setting id. New 6-cell schema (default factorial): "
+            "setting-1-baseline | setting-2-cascade-1st | setting-3-second-order-only | "
+            "setting-4-maps | setting-5-cascade-2nd | setting-6-full-maps. "
+            "Legacy 2×2 schema (--factorial-config experiments/factorial_2x2): "
+            "neither | cascade_only | second_order_only | both."
+        ),
+    ),
+    factorial_config: str = typer.Option(
+        "experiments/factorial_6cell",
+        "--factorial-config",
+        help=(
+            "Experiment YAML defining the factorial settings and seed pool. "
+            "Default: experiments/factorial_6cell (paper Table 5 6 cells). "
+            "Use experiments/factorial_2x2 for pre-2026-05 archive parity."
+        ),
     ),
     all_settings: bool = typer.Option(
         False, "--all-settings", help="Loop over every factorial setting × seed."
@@ -109,7 +151,7 @@ def main(
     seeds: str | None = typer.Option(
         None,
         "--seeds",
-        help="Comma-separated seed list overriding factorial.seeds in --all-settings mode (e.g. '42,43,...,51').",
+        help="Comma-separated seed list overriding the factorial seed pool in --all-settings mode (e.g. '42,43,...,51').",
     ),
     override: list[str] = typer.Option(  # noqa: B008
         [],
@@ -127,7 +169,7 @@ def main(
     configure_logging(level=log_level)
 
     cfg = load_config("training/blindsight", overrides=list(override))
-    factorial = load_config("experiments/factorial_2x2")
+    factorial = load_config(factorial_config)
     paths = get_paths()
     paths.ensure_dirs()
 
@@ -136,9 +178,7 @@ def main(
     )
 
     if all_settings:
-        seed_pool = (
-            [int(x) for x in seeds.split(",")] if seeds is not None else list(factorial.seeds)
-        )
+        seed_pool = _resolve_seed_pool(factorial, seeds_cli=seeds)
         runs = [
             (BlindsightSetting.from_dict(s), s_idx)
             for s_idx in seed_pool
