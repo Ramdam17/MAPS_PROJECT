@@ -195,11 +195,15 @@ class ACBConfig:
         """Build a config with per-game defaults applied.
 
         Freeway has very long episodes (one game = many minutes of env time),
-        so the reference validates every 15 episodes instead of 500. Mirror
-        that override automatically.
+        so the reference validates every 15 episodes instead of 500. Apply
+        the override unconditionally — using ``setdefault`` here was a bug
+        because ``run_sarl.py`` always passes ``validation_every_episodes``
+        from the YAML, masking the per-game default. The 2026-05-19 ACB
+        production run hit n_validation_points=0 on all 3 freeway seeds for
+        that reason.
         """
         if game == "freeway":
-            kwargs.setdefault("validation_every_episodes", 15)
+            kwargs["validation_every_episodes"] = 15
         return cls(game=game, **kwargs)
 
 
