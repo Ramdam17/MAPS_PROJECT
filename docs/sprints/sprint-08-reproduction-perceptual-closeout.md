@@ -220,3 +220,86 @@ gaps (RG-002 Blindsight, RG-003 AGL) resolved with paper-faithful port
 configurations and 500-seed validation on DRAC. Ready for next sprint work
 (potentially Phase E : MARL / MeltingPot reproduction, or Phase F : full
 experiment matrix regeneration).**
+
+---
+
+## D.31 — Setting 4 (MAPS) + Setting 5 (Cascade 2nd) closure (2026-05-19/20)
+
+**Trigger** : Natalie Kastel flagged that the `knowyourself_outputs_20260501.tar.gz`
+archive only ships 4 cells (`neither`, `cascade_only`, `second_order_only`, `both`),
+while paper Table 5 has 6 cells per Know-Thyself domain.
+
+**Diagnostic.** The legacy `BlindsightTrainer` / `AGLTrainer` applied cascade
+symmetrically to both networks. Mapping the 4 legacy cells to paper settings :
+
+| Legacy id | cascade | second_order | = paper Setting |
+|:--|:-:|:-:|:-:|
+| `neither` | F | F | 1 |
+| `cascade_only` | T | F | 2 |
+| `second_order_only` | F | T | 3 |
+| `both` | T | T | **6** (cascade applied to both nets), **not 4** |
+
+The D.25 RG-002 closeout (0.94 ± 0.03 disc, 0.82 ± 0.04 wager) was reproducing
+**Setting 6**, not the headline **Setting 4 (MAPS)**. The comparison happened to
+pass against paper Setting 4 numbers by coincidence (Setting 4 and Setting 6 are
+numerically close on Table 5a). Settings 4 (MAPS) and 5 (cascade on 2nd only)
+were structurally absent from the port.
+
+**Resolution.**
+- **Port refactor** (`7f6aee7`) : `BlindsightSetting` and `AGLSetting` now expose
+  3 booleans `(cascade_1st, cascade_2nd, second_order)`, mirroring `MarlSetting`.
+  Back-compat `.cascade` property + `from_dict` legacy schema acceptance.
+  All trainer helpers (`_run_training_loop`, `_evaluate_single_cell`, pool
+  `train_range`) thread `cascade_iters_1/2` and `cascade_rate_1/2`.
+  Parity preserved at atol=1e-5 for all 4 legacy cells.
+- **YAML + CLI** (`6e5ef76`) : `config/experiments/factorial_6cell.yaml` ships
+  the 6 paper cells with canonical ids from `experiment_matrix.md`.
+  `run_blindsight.py`, `run_agl.py`, `aggregate_perceptual.py` accept
+  `--factorial-config`. 22 new unit tests in `test_setting_dataclasses.py`.
+- **Sbatch** (`263a437`) : `blindsight_settings_4_5.sh` + `agl_settings_4_5.sh`
+  array=0-1%2, seeds 42-541 (500 each). 4 hours BS + 6 hours AGL time budget,
+  ran in ~3 h total with AGL chained `--dependency=afterok` after BS.
+- **500-seed validation** (`e75ffb3`) : all 12 metrics within ±2σ of paper
+  Table 5a/5b/5c. Full breakdown in
+  `docs/reports/phase-gamma-settings-4-5.md`.
+
+| Domain | Setting 4 | Setting 5 |
+|---|---|---|
+| Blindsight | disc 0.937 ± 0.034 ; wager 0.800 ± 0.045 | disc 0.918 ± 0.037 ; wager 0.815 ± 0.043 |
+| AGL high | prec 0.649 ± 0.028 ; wager 0.591 ± 0.032 | prec 0.625 ± 0.027 ; wager 0.612 ± 0.031 |
+| AGL low | prec 0.615 ± 0.049 ; wager 0.833 ± 0.046 | prec 0.548 ± 0.054 ; wager 0.856 ± 0.045 |
+
+Blindsight residuals -1.2 to -1.7σ (consistent with the D.25 noise-floor finding).
+AGL residuals all < 0.25σ — essentially noise-floor reproduction.
+
+**Also in this sub-sprint :**
+- **SARL Setting 7 (ACB) port** (`3df5e33` + `10eb8bb`) : `D-sarl-setting-7`
+  closed. AC(λ) from Young & Tian 2019 ported as
+  `src/maps/experiments/sarl/actor_critic.py` with bit-identical parity to the
+  vendored reference at atol=0 over 30 update steps × 3 seeds. CLI dispatch on
+  `--setting 7` loads `config/training/sarl_acb.yaml`. Production run on Tamia
+  (`sbatch 300335`, 5 games × 3 seeds = 15 cells). Freeway-validation-cadence
+  bug found post-hoc (`setdefault` masked by YAML-supplied 500-episode value),
+  fixed in `10eb8bb` with 4 regression tests ; freeway 3 seeds re-ran as
+  `300460` after the fix.
+- **MARL Setting 7 (ACB)** — deferred. The paper's MARL ACB is *not* Young & Tian
+  but Espeholt 2018 IMPALA + Oord 2018 CPC auxiliary (Agapiou et al. 2023,
+  Melting Pot 2.0 paper p.7-8). DeepMind's public meltingpot repo only ships
+  the substrates + an RLlib PPO example ; no public ACB training code is
+  available, and no Setting-7 code path is present in any of Juan Vargas's
+  18 public GitHub repos (verified 2026-05-20). Awaiting clarification from
+  Juan / Zahra Sheikhbahaee on which code produced the MARL Table 7 Setting-7
+  numbers. Tracked as plan `docs/plans/plan-20260519-acb-setting-7.md` §Sub-plan B.
+
+**Sprint takeaways added :**
+- *Cell labels are not algorithmic guarantees.* The legacy `both` produced
+  Setting 6 numbers ; we believed it was Setting 4. Always cross-check the
+  factorial mapping table against paper Figure 6 before declaring reproduction.
+- *Autograd graph determinism matters at ULP level.* In `actor_critic.py`,
+  caching `s = sigmoid(x)` vs calling `sigmoid(x)` twice produced a 1-ULP
+  float32 divergence per backward pass against the vendored reference. Comment
+  pinned in `dsilu` to prevent re-introduction.
+- *`setdefault` doesn't override existing keys.* The freeway validation cadence
+  override (`kwargs.setdefault(...)`) was masked by the YAML-supplied default
+  in `run_sarl.py`. Use direct assignment for per-game overrides, and write
+  unit tests that pass the masking value explicitly.

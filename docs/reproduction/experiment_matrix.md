@@ -64,12 +64,19 @@ plan disait aussi N=10 → superseded par ce fichier + `deviations.md` entrées 
 
 **Headline target** — Setting 4 : Main Task Acc 0.97 ± 0.02 (±2σ : [0.93, 1.01]), Main Z = 9.01.
 
-**Current reproduction status (Sprint-06, N=10)** :
-- Main Task Acc mesuré **0.755** (discrimination recall-only) vs paper **0.97** → z = **+0.40** vs
-  paper 9.01.
-- Wager Acc mesuré 0.71 vs paper 0.85 → gap secondaire.
-- **Gap = RG-002**. Causes confirmées B.9 : `D-blindsight-hidden-dim` (port 100 vs paper 60) +
-  `D-blindsight-metric-mismatch` (recall vs overall accuracy). Fix Phase D.25.
+**Current reproduction status (Sprint-08 D.31, N=500, commit `e75ffb3`)** :
+
+| Setting | Metric | Ours (500 seeds) | Paper | Δ |
+|---|---|:---:|:---:|---:|
+| 4 (MAPS) | disc | **0.937 ± 0.034** | 0.97 ± 0.02 | -1.65σ ✓ |
+| 4 (MAPS) | wager | **0.800 ± 0.045** | 0.85 ± 0.04 | -1.24σ ✓ |
+| 5 (Cascade 2nd) | disc | **0.918 ± 0.037** | 0.96 ± 0.03 | -1.39σ ✓ |
+| 5 (Cascade 2nd) | wager | **0.815 ± 0.043** | 0.87 ± 0.04 | -1.36σ ✓ |
+
+All within ±2σ of paper Table 5a. Residual (~3%) consistent with the D.25 RG-002 finding
+*"within seed noise of paper std"*. Settings 1, 2, 3, 6 archived as the legacy
+``{neither, cascade_only, second_order_only, both}`` directories — Setting 6 was the
+original D.25 closeout cell (mis-labelled as Setting 4 pre-D.31 ; see `deviations.md §D.31`).
 
 *Paper §A.1 définit aussi les conditions subthreshold + low vision, mais Table 5 ne reporte que
 suprathreshold — c'est la target canonique.*
@@ -104,11 +111,22 @@ suprathreshold — c'est la target canonique.*
 - High Awareness Setting 4 : Main Task Acc 0.66 ± 0.05 (±2σ : [0.56, 0.76]), Main Z = **8.20**.
 - Low Awareness  Setting 4 : Main Task Acc 0.62 ± 0.07 (±2σ : [0.48, 0.76]), Main Z = **15.7**.
 
-**Current reproduction status (Sprint-06, N=10)** :
-- High Awareness Main Task Acc mesuré **0.073** vs paper 0.66 → z ≈ 0.
-- Low Awareness Main Task Acc mesuré **0.093** vs paper 0.62 → z ≈ 0.
-- **Gap = RG-003**. Cause structurelle B.10 : `D-agl-training-missing` — la phase 2 supervised
-  training sur grammar A (post-pretrain) **n'est pas portée**. Fix Phase D.28.
+**Current reproduction status (Sprint-08 D.31, N=500, commit `e75ffb3`)** :
+
+| Setting | Tier | Metric | Ours (500 seeds) | Paper | Δ |
+|---|---|---|:---:|:---:|---:|
+| 4 (MAPS) | High | prec | **0.649 ± 0.028** | 0.66 ± 0.05 | -0.21σ ✓ |
+| 4 (MAPS) | High | wager | **0.591 ± 0.032** | 0.58 ± 0.06 | +0.18σ ✓ |
+| 4 (MAPS) | Low | prec | **0.615 ± 0.049** | 0.62 ± 0.07 | -0.07σ ✓ |
+| 4 (MAPS) | Low | wager | **0.833 ± 0.046** | 0.82 ± 0.07 | +0.19σ ✓ |
+| 5 (Cascade 2nd) | High | prec | **0.625 ± 0.027** | 0.63 ± 0.04 | -0.13σ ✓ |
+| 5 (Cascade 2nd) | High | wager | **0.612 ± 0.031** | 0.61 ± 0.06 | +0.04σ ✓ |
+| 5 (Cascade 2nd) | Low | prec | **0.548 ± 0.054** | 0.56 ± 0.07 | -0.17σ ✓ |
+| 5 (Cascade 2nd) | Low | wager | **0.856 ± 0.045** | 0.87 ± 0.07 | -0.21σ ✓ |
+
+All within ±2σ of paper Table 5b/5c. All residuals < 0.25σ — essentially noise-floor
+reproduction. Settings 1, 2, 3, 6 archived as the legacy
+``{neither, cascade_only, second_order_only, both}`` directories.
 
 ---
 

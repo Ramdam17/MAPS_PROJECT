@@ -84,7 +84,7 @@ paper diverge → paper wins. Les 🆘 paper-vs-student sont documentés mais co
      and row 9 is step_size=0.0003 (not 0.00025). Both values were ALREADY
      paper-faithful in the port pre-D.9; D.9 introduced regressions that D.12
      reverts. No deviation exists on either parameter. -->
-| D-sarl-setting-7             | factorial settings                           | ACB (Young & Tian 2019, λ=0.8) | `AC_lambda.py` in MinAtar examples | not in `setting_to_config`        | ❌      | E.1-E.5 — port ACB  |
+| D-sarl-setting-7             | factorial settings                           | ACB (Young & Tian 2019, λ=0.8) | `AC_lambda.py` in MinAtar examples | **ported as `src/maps/experiments/sarl/actor_critic.py` ; routed via `--setting 7` in `run_sarl.py` ; bit-identical parity to vendored reference (4/4 tests in `tests/parity/sarl/test_acb_parity.py`)** | ✅ resolved (2026-05-19, commit `3df5e33`) | done — D.31 SARL sub-phase. 5 games × 3 seeds × `setting-7` complete (D.31 freeway re-run after validation-cadence bugfix `10eb8bb`). |
 | D-sarl-seeds                 | `experiment_matrix.md` + sprint plan         | 3                          | N/A                             | 10 (matrix)                            | ❌      | B.13 — correct matrix|
 | D-sarl-bce-shape             | `trainer.py:194` `binary_cross_entropy_with_logits` | scalar `y` (eq. 5)  | `wager[B,2]` + `targets[B,2]`   | same                                   | ⚠️     | keep, doc note       |
 | D-sarl-dropout-rate          | `model.py:135` `Dropout(p=?)`                | paper silent               | 0.1                             | 0.1                                    | ⚠️     | keep                 |
@@ -137,6 +137,35 @@ mismatch.
 → **96% of discrim gap and 86% of wager gap closed**. Residual (~3% each) within seed noise of
 paper std. See `docs/reviews/rg002-wager-gap-investigation.md` for 6-hypothesis sweep and
 500-seed validation of each fix.
+
+### D.31 narrative correction — D.25 was reproducing Setting 6, not Setting 4
+
+**Finding (2026-05-19, plan `docs/plans/plan-20260519-blindsight-agl-settings-4-5-6.md`).**
+The legacy `BlindsightTrainer` applied cascade **symmetrically** to both the 1st-order and
+2nd-order networks. Consequently the legacy `both` cell (paper's "Full MAPS") was producing
+**paper Setting 6 numbers**, not the headline **Setting 4 (MAPS)** numbers (where cascade is
+applied to the 1st-order network only). The D.25 table above (0.94/0.82) reflects Setting 6,
+which numerically happens to be very close to Setting 4 on Table 5a — the comparison passed
+by coincidence.
+
+Sprint-08 D.31 (`refactor/clean-rerun` commits `7f6aee7` + `6e5ef76` + `263a437` + `e75ffb3`)
+ported the asymmetric cascade and re-ran the missing Settings 4 (MAPS) and 5 (cascade 2nd
+only) over 500 seeds each. Final numbers vs paper Table 5a/5b/5c, **all 12 metrics within
+±2σ** (full breakdown in `docs/reports/phase-gamma-settings-4-5.md`) :
+
+| Metric | Setting 4 (MAPS) ours | Paper S4 | Setting 5 ours | Paper S5 |
+|:--|:--:|:--:|:--:|:--:|
+| Blindsight disc | 0.937 ± 0.034 | 0.97 ± 0.02 | 0.918 ± 0.037 | 0.96 ± 0.03 |
+| Blindsight wager | 0.800 ± 0.045 | 0.85 ± 0.04 | 0.815 ± 0.043 | 0.87 ± 0.04 |
+| AGL high prec | 0.649 ± 0.028 | 0.66 ± 0.05 | 0.625 ± 0.027 | 0.63 ± 0.04 |
+| AGL high wager | 0.591 ± 0.032 | 0.58 ± 0.06 | 0.612 ± 0.031 | 0.61 ± 0.06 |
+| AGL low prec | 0.615 ± 0.049 | 0.62 ± 0.07 | 0.548 ± 0.054 | 0.56 ± 0.07 |
+| AGL low wager | 0.833 ± 0.046 | 0.82 ± 0.07 | 0.856 ± 0.045 | 0.87 ± 0.07 |
+
+The Setting 6 archive (`knowyourself_outputs_20260501.tar.gz`) under its legacy
+``both`` name remains valid — `BlindsightSetting.from_dict` maps the legacy
+``cascade: bool`` YAML to ``cascade_1st = cascade_2nd = cascade`` (symmetric),
+preserving bitwise reproducibility (parity test `test_blindsight_pretrain.py` green).
 
 ### B.10 — AGL deviations (D.28 RG-003 resolved)
 
