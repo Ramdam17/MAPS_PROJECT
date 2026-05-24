@@ -34,14 +34,24 @@ cl:
   # Accepts a relative path resolved against the project root.
   teacher_load_path: null
 
+  # Curriculum order — paper p.9, §Continual Learning :
+  # "Our training curriculum progresses through the following environments
+  # in sequence: Breakout, Space Invaders, Seaquest, and Freeway."
+  # Order figé pour repro Figure 7 ; ne pas modifier sans deviation logged.
+  curriculum_order: [breakout, space_invaders, seaquest, freeway]
+
   # Loss mixing — applied AFTER DynamicLossWeighter running-max normalization.
-  # Paper Table 11 CL rows 21-23: (0.3, 0.6, 0.1). Paper text p.17 says
-  # "optimal weights (0.4, 0.4, 0.2)" — 3-way disagreement with student
-  # (1.0, 1.0, 1.0). Appendix Table 11 wins per TMLR convention. See
-  # D-cl-weights for the full history.
-  weight_task: 0.3
-  weight_distillation: 0.6
-  weight_feature: 0.1
+  # Paper text p.17 §CL Results: "optimal weights (task=0.4, reg=0.4,
+  # feature=0.2)" — these are the parameters used to produce Figure 7.
+  # Paper Table 11 (appendix) lists (0.3, 0.6, 0.1) ; student baseline
+  # uses (1.0, 1.0, 1.0). 3-way divergence tracked in D-cl-weights.
+  # Decision 2026-05-19 (Sprint-08 Phase F.4 reproduction) : use Figure 7
+  # weights for paper-faithful CL curriculum reproduction. Override with
+  # `-o cl.weight_task=0.3 -o cl.weight_distillation=0.6 -o cl.weight_feature=0.1`
+  # to test the Table 11 variant, or `1.0/1.0/1.0` for student baseline.
+  weight_task: 0.4
+  weight_distillation: 0.4
+  weight_feature: 0.2
 
 # ── DQN hyperparameters (paper Table 11) ───────────────────────────────────
 # Sprint-08 D.9+D.12+D.20 (2026-04-20): paper-faithful alignment, same as
