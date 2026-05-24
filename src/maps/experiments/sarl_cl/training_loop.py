@@ -545,9 +545,16 @@ def _restore_from_checkpoint_cl(
     buffer.buffer = payload["buffer_buffer"]
     buffer.location = payload["buffer_location"]
 
-    torch.set_rng_state(payload["rng_torch"])
+    # `.cpu().byte()` is required: torch.load(map_location=cfg.device) above
+    # ships every tensor in the payload to CUDA when device='cuda', but
+    # torch.set_rng_state expects a CPU uint8 ByteTensor (the CPU generator's
+    # state). Same applies to per-device CUDA states which torch internally
+    # routes from a list of CPU ByteTensors.
+    torch.set_rng_state(payload["rng_torch"].cpu().byte())
     if payload.get("rng_torch_cuda") is not None and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(payload["rng_torch_cuda"])
+        torch.cuda.set_rng_state_all(
+            [s.cpu().byte() for s in payload["rng_torch_cuda"]]
+        )
     random.setstate(payload["rng_python"])
     np.random.set_state(payload["rng_numpy_legacy"])
 
