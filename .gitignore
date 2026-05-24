@@ -17,6 +17,8 @@ htmlcov/
 .venv/
 .venv-marl
 .venv-marl/
+.venv-narval
+.venv-narval/
 venv
 venv/
 env/
