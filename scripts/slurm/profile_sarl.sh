@@ -6,8 +6,9 @@
 #
 # Defaults: breakout 6 42 25000 (setting 6 at 7 fps CPU ≈ 1h wall).
 # Writes:
-#   outputs/bench/prof-<setting>-<seed>-<rev>.out   (cProfile binary dump)
-#   outputs/bench/prof-<setting>-<seed>-<rev>.txt   (top-40 cumulative+tottime)
+#   $SCRATCH/maps/bench/prof-<setting>-<seed>-<rev>.out   (cProfile binary dump)
+#   $SCRATCH/maps/bench/prof-<setting>-<seed>-<rev>.txt   (top-40 cumulative+tottime)
+#   (falls back to ./outputs/bench/... when $SCRATCH is unset — dev boxes).
 
 #SBATCH --job-name=sarl-profile
 #SBATCH --account=aip-gdumas85
@@ -28,7 +29,7 @@ N_FRAMES=${4:-25000}
 source "${SLURM_SUBMIT_DIR:-$(pwd)}/scripts/slurm/common.sh"
 
 REV=$(git -C "${REPO_ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)
-OUT_DIR="${REPO_ROOT}/outputs/bench"
+OUT_DIR="${SCRATCH:-${REPO_ROOT}/outputs}/maps/bench"
 mkdir -p "${OUT_DIR}"
 PROF_BIN="${OUT_DIR}/prof-${SETTING}-${SEED}-${REV}.out"
 PROF_TXT="${OUT_DIR}/prof-${SETTING}-${SEED}-${REV}.txt"

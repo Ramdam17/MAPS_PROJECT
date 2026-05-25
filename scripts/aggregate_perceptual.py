@@ -32,7 +32,6 @@ from maps.utils import configure_logging, get_paths, load_config
 app = typer.Typer(add_completion=False, help=__doc__)
 log = logging.getLogger("maps.aggregate_perceptual")
 
-BASELINE = "neither"
 # Which summary.json field is the "score" for each domain.
 # Nested paths use dot notation (resolved in `_extract_metric`).
 # For Blindsight, the paper's headline is wager accuracy under the
@@ -129,7 +128,9 @@ def _render_md(domain: str, stats: dict, zs: dict, field: str) -> str:
     return "\n".join(lines)
 
 
-def _aggregate_domain(domain: str, base_out: Path, settings: list[str], seeds: list[int]) -> dict:
+def _aggregate_domain(
+    domain: str, base_out: Path, settings: list[str], seeds: list[int], baseline: str
+) -> dict:
     dom_dir = base_out / domain
     if not dom_dir.exists():
         log.error("Domain dir missing: %s", dom_dir)
@@ -137,11 +138,11 @@ def _aggregate_domain(domain: str, base_out: Path, settings: list[str], seeds: l
     cells = _collect_cells(dom_dir, settings, seeds)
     field = METRIC_FIELD[domain]
     stats = _per_setting_stats(cells, field)
-    zs = _z_vs_baseline(stats, BASELINE, higher_is_better=HIGHER_IS_BETTER[domain])
+    zs = _z_vs_baseline(stats, baseline, higher_is_better=HIGHER_IS_BETTER[domain])
     result = {
         "domain": domain,
         "field": field,
-        "baseline": BASELINE,
+        "baseline": baseline,
         "seeds": seeds,
         "settings": settings,
         "stats": stats,
@@ -161,10 +162,12 @@ def _aggregate_domain(domain: str, base_out: Path, settings: list[str], seeds: l
             "high": {
                 "seeds": hi_seeds,
                 "stats": _per_setting_stats(hi_cells, field),
+                "baseline": baseline,
             },
             "low": {
                 "seeds": lo_seeds,
                 "stats": _per_setting_stats(lo_cells, field),
+                "baseline": baseline,
             },
         }
     return result
@@ -174,12 +177,24 @@ def _aggregate_domain(domain: str, base_out: Path, settings: list[str], seeds: l
 def main(
     domain: str = typer.Option("both", help="'blindsight', 'agl', or 'both'."),
     seeds: str = typer.Option(..., "--seeds", help="Comma-separated seed list."),
+    factorial_config: str = typer.Option(
+        "experiments/factorial_6cell",
+        "--factorial-config",
+        help=(
+            "Experiment YAML defining the settings + baseline. Default: "
+            "experiments/factorial_6cell (paper Table 5). Use "
+            "experiments/factorial_2x2 for legacy 4-cell archives."
+        ),
+    ),
     log_level: str = typer.Option("INFO", help="Python logging level."),
 ) -> None:
     configure_logging(level=log_level)
     paths = get_paths()
-    factorial = load_config("experiments/factorial_2x2")
+    factorial = load_config(factorial_config)
     settings = [s.id for s in factorial.settings]
+    # Baseline = first setting in the factorial YAML (paper convention :
+    # Setting 1 = no cascade, no 2nd-order).
+    baseline = settings[0]
     seed_list = [int(x) for x in seeds.split(",")]
 
     domains = ["blindsight", "agl"] if domain == "both" else [domain]
@@ -189,15 +204,16 @@ def main(
     payload = {}
     md_sections = []
     for d in domains:
-        log.info("Aggregating %s (%d settings × %d seeds)", d, len(settings), len(seed_list))
-        result = _aggregate_domain(d, paths.outputs, settings, seed_list)
+        log.info("Aggregating %s (%d settings × %d seeds, baseline=%s)",
+                 d, len(settings), len(seed_list), baseline)
+        result = _aggregate_domain(d, paths.outputs, settings, seed_list, baseline)
         payload[d] = result
         md_sections.append(_render_md(d, result["stats"], result["z_vs_baseline"], result["field"]))
         if "awareness_split" in result:
             for tier in ("high", "low"):
                 sub = result["awareness_split"][tier]
                 sub_zs = _z_vs_baseline(
-                    sub["stats"], BASELINE, higher_is_better=HIGHER_IS_BETTER[d]
+                    sub["stats"], baseline, higher_is_better=HIGHER_IS_BETTER[d]
                 )
                 md_sections.append(
                     _render_md(

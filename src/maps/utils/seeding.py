@@ -4,9 +4,17 @@ Seed control is mandatory (CLAUDE.md: "at every entry point"). Calling
 ``set_all_seeds(seed)`` touches every RNG a MAPS run may consume:
 
 - Python ``random``
-- NumPy
+- NumPy **legacy global RNG** (``np.random.seed``) — covers all
+  ``np.random.normal/randint/...`` calls used in the paper code.
 - PyTorch CPU + CUDA (if available) + MPS (if available)
 - ``PYTHONHASHSEED`` env var (affects dict iteration in some code paths)
+
+Known gap
+---------
+``np.random.default_rng()`` (the new PCG64-based Generator API) is **not**
+seeded by ``np.random.seed`` — it holds its own internal state. No code in
+the current port uses ``default_rng()``; if future work does, that Generator
+must be seeded independently (pass ``seed`` to its constructor).
 
 Call this once at the top of every script/notebook — *before* importing
 data, building models, or constructing datasets.

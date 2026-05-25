@@ -22,9 +22,10 @@ def test_composition_inherits_and_overrides():
     # Inherited verbatim:
     assert cfg.cascade.alpha == 0.02
     assert cfg.second_order.input_dim == 100
-    # Overridden by blindsight.yaml:
+    # Overridden by blindsight.yaml (D.25 RG-002 defaults):
     assert cfg.first_order.input_dim == 100
-    assert cfg.first_order.hidden_dim == 100
+    assert cfg.first_order.hidden_dim == 40  # D.25 : student main() value
+    assert cfg.second_order.hidden_dim == 100  # D.25 : Pasquali 2010 restored
     # Domain-specific:
     assert cfg.optimizer.name == "ADAMAX"
     assert cfg.scheduler.step_size == 25

@@ -32,4 +32,16 @@ losses:
   distillation_alpha: 0.5
   distillation_temperature: 2.0
 
+# Sprint-08 D.22b — paper eq.4 first-order loss family toggle.
+# Paper §2.2 prose describes a SimCLR/NT-Xent contrastive loss (Chen 2020).
+# The paper's own code and all known implementations use a Contractive
+# AutoEncoder (Rifai 2011) instead — naming collision, maths unrelated.
+# Decision 2026-04-20: keep CAE (reproduces paper Tables 5/6/7 numbers).
+# Flip to `simclr` to opt in to a paper-prose-faithful variant (not ported;
+# raising NotImplementedError until someone writes it + the tests to cover
+# it). See docs/reports/sprint-08-d22b-simclr-decision.md and deviations.md
+# D-002 for the full rationale + revisit conditions.
+first_order_loss:
+  kind: cae              # {'cae' | 'simclr'}. 'simclr' is stub-only.
+
 seed: 42                 # lab-wide convention

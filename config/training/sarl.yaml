@@ -18,30 +18,62 @@ game: space_invaders          # one of {space_invaders, breakout, seaquest, aste
 #      6: full MAPS (meta=True, cascade=50,50)
 setting: 6
 
-# ── DQN hyperparameters (paper constants — do not change without logging) ──
+# ── DQN hyperparameters (paper Table 11) ───────────────────────────────────
+# Sprint-08 D.9 (2026-04-20): 3 hyperparameters aligned to paper-faithful
+# values (lr_second_order, adam betas, scheduler.step_size).
+# Sprint-08 D.12 (2026-04-20): num_frames aligned to paper appendix Table 11
+# (500,000); main text mentions 1M — appendix wins per TMLR convention.
+# Also D.12 REVERTS 2 D.9 regressions (batch_size and lr_first_order were
+# already paper-faithful pre-D.9; see deviations.md note on D.8 misread).
+# For student-baseline reproduction override with:
+#   -o training.num_frames=5000000 -o optimizer.lr_second_order=0.00005 \
+#   -o optimizer.betas=[0.9,0.999] -o scheduler.step_size=1000
+# See docs/reproduction/deviations.md D-sarl-num-frames / -lr-2nd /
+#   -adam-beta1/2 / -sched-step.
 training:
-  num_frames: 5_000_000        # NUM_FRAMES (paper constant)
-  batch_size: 128              # BATCH_SIZE
+  num_frames: 500_000          # paper Table 11 row 5 (text says 1M — appendix wins). D-sarl-num-frames resolved D.12
+  batch_size: 128              # paper Table 11 row 1 (student 128 too) — paper-faithful, unchanged
   replay_buffer_size: 100_000  # REPLAY_BUFFER_SIZE
   replay_start_size: 5_000     # REPLAY_START_SIZE
   training_freq: 1             # TRAINING_FREQ (update every frame once warmed up)
-  target_update_freq: 1_000    # TARGET_NETWORK_UPDATE_FREQ (in update steps, not frames)
+  target_update_freq: 1_000    # TARGET_NETWORK_UPDATE_FREQ (paper; student used 100 — D-sarl-target-update resolved port-side)
+  # Paper Table 11 prescribes γ=0.999 (effective horizon ~1000 steps). Student
+  # sarl_maps.py:104 uses 0.99 (horizon ~100) — a student-vs-paper divergence
+  # (D-sarl-gamma). Aligned to paper-faithful 2026-04-20 (Sprint-08 D.7).
+  # Override with `--override training.gamma=0.99` to reproduce student baseline.
+  gamma: 0.999                 # GAMMA (DQN discount)
 
-# ── Optimizer — paper uses Adam (NOT Adamax like blindsight/agl) ────────────
+# ── Optimizer — paper uses Adam with custom betas (NOT Adamax like blindsight/agl) ──
 optimizer:
   name: Adam
-  lr_first_order: 0.0003       # step_size1
-  lr_second_order: 0.00005     # step_size2
+  lr_first_order: 0.0003       # step_size1 — paper Table 11 row 9 (student 0.0003 too) — paper-faithful, unchanged
+  lr_second_order: 0.0002      # step_size2 (paper Table 11; port was 0.00005 — D-sarl-lr-2nd resolved D.9)
   eps: 0.01                    # MIN_SQUARED_GRAD (Adam numerical-stability eps)
+  # Paper Table 11: betas=(0.95, 0.95). Student omits `betas=...` arg so Adam
+  # falls back to PyTorch defaults (0.9, 0.999) — silent divergence from paper
+  # (D-sarl-adam-beta1/2). Aligned to paper-faithful 2026-04-20 (Sprint-08 D.9).
+  betas: [0.95, 0.95]
 
 # ── Scheduler — StepLR (NOT the Blindsight 25/0.98 schedule) ────────────────
+# Paper Table 11: step_size=1 (lr decays every update). Student sarl_maps.py
+# uses step_size=1000 (lr decays every 1000 updates). Port previously matched
+# student. The paper value is extreme (lr → 0 after ~5k updates for 5M frames)
+# and may be a paper typo; _build_optimizers emits a log.warning when
+# step_size=1 so the behaviour is discoverable. Override with
+# `-o scheduler.step_size=1000` to reproduce student. D-sarl-sched-step
+# resolved paper-as-written 2026-04-20 (Sprint-08 D.9).
 scheduler:
   name: StepLR
-  step_size: 1_000             # scheduler_period
-  gamma: 0.999                 # scheduler_step
+  step_size: 1                 # scheduler_period (paper Table 11)
+  gamma: 0.999                 # scheduler_step (paper silent — keep)
 
-# ── EMA for target_wager — paper passes alpha in PERCENT (e.g. alpha=1 → 0.01)
-alpha: 1.0
+# ── EMA for target_wager — paper passes alpha in PERCENT (alpha=45 → 0.45)
+# Paper Table 11 specifies α=0.45 (post-division). Student shell default was
+# `-ema 25` (→ 0.25), which itself diverged from paper; our prior value of 1.0
+# (→ 0.01) diverged from both. Aligned to paper-faithful value 2026-04-20
+# (D-sarl-alpha-ema fix, Sprint-08 D.2). To reproduce the student baseline
+# instead, override via `--override alpha=25` on the CLI.
+alpha: 45
 
 # ── Validation ──────────────────────────────────────────────────────────────
 validation:

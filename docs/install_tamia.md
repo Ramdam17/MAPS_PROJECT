@@ -88,7 +88,7 @@ module load StdEnv/2023 python/3.12 cuda/12.6
 
 ## uv + venv
 
-**Rule: `uv sync` runs on the login node only.** Compute nodes have no outbound internet — a bare `uv sync` on a compute node times out downloading wheels. The venv under `.venv/` lives on the shared FS and is visible to compute jobs offline.
+**Rule: `uv sync` runs on the login node only.** Compute nodes have no outbound internet — a bare `uv sync` on a compute node times out downloading wheels. The venv lives on `$SCRATCH` (not `/project`) per Guillaume's instruction and is visible to compute jobs offline.
 
 ```bash
 # one-time
@@ -102,6 +102,26 @@ uv sync --extra sarl --extra dev
 uv run --offline pytest ...
 uv run --offline python scripts/run_sarl.py ...
 ```
+
+### venv lives on `$SCRATCH`, symlinked from the repo (Sprint-08 A.2)
+
+Guillaume (2026-04-19) : *"TamIA est fait pour utiliser quasiment exclusivement scratch. Il n'y a pas grand chose en home/project. [...] pour le venv tu peux utiliser un symlink."*
+
+```bash
+# One-time migration (already done 2026-04-19):
+rsync -a .venv/ $SCRATCH/maps/venv/     # ~6 min for 7.2 GB / 36k files
+rm -rf .venv
+ln -s $SCRATCH/maps/venv .venv          # symlink from project tree
+
+# Verify:
+ls -la .venv                            # should show a symlink → /scratch/r/<user>/maps/venv
+uv run --offline python -c "import torch; print(torch.__file__)"
+# logical path shows /.venv/lib/... (via symlink) ; realpath is on scratch
+```
+
+The symlink keeps `uv run`, `python -m <module>`, and all tooling working without any code change — they see `.venv` as they always did. Nothing in the repo needs to know about scratch.
+
+**uv cache warning.** With venv on scratch and uv cache on `$HOME/.cache/uv`, the two filesystems are different → uv can't hardlink and falls back to full copy. Prints `Failed to hardlink files; falling back to full copy.` at each `uv run` if a package rebuild is triggered. Non-blocking, just slower. Moving the cache to scratch too is a possible future improvement.
 
 ### torch cu128 pin
 
@@ -139,11 +159,62 @@ Tamia pre-emption is rare on `aip-*` but possible; all production SARL sbatch sc
 
 **Never run `pytest`, `uv sync`, `torch` imports, or any script with measurable CPU on a login node.** The login nodes are shared by ~13 users; one pytest run at 48 % of a core takes the load average to 30 and makes everyone's shell laggy. Use `sbatch` or `salloc` for anything compute-ish, even a 10-second smoke test.
 
+**VSCode is forbidden on login nodes.** Wiki TamIA explicitly: *"the VSCode IDE is forbidden on the login nodes due to its heavy footprint. It is still authorized on the compute nodes."* Use Cursor / VSCode locally with remote SSH into a compute node obtained via `salloc`, never directly into the login node.
+
 For quick interactive debugging:
 
 ```bash
 salloc --account=aip-gdumas85 --time=01:00:00 --cpus-per-task=2 --mem=8000M
+# Or for GPU (whole node only):
+salloc --account=aip-gdumas85 --time=01:00:00 --cpus-per-task=4 --mem=16000M \
+       --gpus-per-node=h100:4
 ```
+
+---
+
+## Shared-queue discipline (≤ 2 jobs, chained)
+
+`aip-gdumas85` is **lab-shared** (Guillaume, Rémy, Nadine, MARL work). Running 6 concurrent jobs on it saturates the queue for everyone. Rule:
+
+- **Max 2 of my jobs active at once** (`squeue --me -h | wc -l` ≤ 2).
+- For series (bench batteries, profile runs, reproduction grids) : **chain with `--dependency=afterany`** — never submit them all in parallel.
+- Use the helper `scripts/slurm/submit_chained.sh` which does the chaining for you :
+
+  ```bash
+  # Three bench jobs in sequence; B starts only after A finishes (regardless
+  # of A's exit status — afterany, not afterok).
+  scripts/slurm/submit_chained.sh \
+      scripts/slurm/bench_sarl.sh cpu_4c breakout 1 42 500000 -- \
+      scripts/slurm/bench_sarl.sh cpu_4c breakout 6 42 50000 -- \
+      scripts/slurm/profile_sarl.sh breakout 6 42 25000
+
+  # Per-job extra sbatch flags via env var SBATCH_OPTS_<N>:
+  SBATCH_OPTS_2="--gpus-per-node=h100:4 --time=02:00:00" \
+    scripts/slurm/submit_chained.sh \
+      scripts/slurm/bench_sarl.sh cpu_4c breakout 1 42 500000 -- \
+      scripts/slurm/bench_sarl.sh gpu_full breakout 6 42 50000
+  ```
+
+- **Before submitting a batch**, check who else is running : `squeue -A aip-gdumas85`. If Guillaume or Nadine has heavy MARL jobs, hold off or reduce.
+- **Never use `--dependency=afterok`** for aggregation scripts — use `afterany` so the aggregate runs even when some cells fail and can document the gaps.
+- Tamia-wide cap : **1000 jobs max per user** (running + pending). Not a practical limit for us.
+
+---
+
+## Storage layout (2026-04-19 policy)
+
+Guillaume : *"le code reste en home [mais on a déjà le code en /project, Rémy : ça reste ici] ; les résultats et fichiers intermédiaires vont dans scratch ; le venv aussi"*. Résumé :
+
+| Emplacement | Usage | Quotas |
+|---|---|---|
+| `/project/6102289/rram17/Workspace/MAPS/MAPS_PROJECT` | code source, configs, docs (git-tracked) | 2 TB allocation partagée |
+| `$SCRATCH = /scratch/r/rram17` | venv (symlinked), outputs, logs, checkpoints, bench, profile | 1 TB user, auto-purge DRAC (~60 j inactive) |
+| `$SCRATCH/maps/` sous-arbo | `venv/`, `outputs/{sarl,sarl_cl,blindsight,agl,marl}/…`, `logs/`, `checkpoints/`, `bench/`, `reports/` | créée par `A.1` |
+| `$HOME = /home/r/rram17` | `~/.local/bin/uv`, `.cache/uv`, config shell | 25 GB user |
+
+Les sbatch scripts (`smoke/bench/array/profile/aggregate`) utilisent `${SCRATCH:-${REPO_ROOT}/outputs}` par défaut avec fallback project-tree quand `$SCRATCH` n'est pas défini (cas dev Mac / CI).
+
+Les CLIs `run_{sarl,sarl_cl,blindsight,agl}.py` font pareil via `paths.scratch_root / "maps" / "outputs" / <domain>`.
 
 ---
 

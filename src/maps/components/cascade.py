@@ -30,7 +30,7 @@ import torch
 def cascade_update(
     new_activation: torch.Tensor,
     prev_activation: torch.Tensor | None,
-    alpha: float,
+    cascade_rate: float,
 ) -> torch.Tensor:
     """Apply one step of the cascade recurrence.
 
@@ -41,9 +41,11 @@ def cascade_update(
     prev_activation : torch.Tensor | None
         The cascade state from the previous iteration. If None, the update
         degenerates to `new_activation` (bootstrap step).
-    alpha : float
-        Cascade rate in (0, 1]. `alpha=1` disables cascading (pure
-        feed-forward); `alpha=0` would freeze the state and is rejected.
+    cascade_rate : float
+        Cascade rate α in (0, 1]. `cascade_rate=1` disables cascading (pure
+        feed-forward); `cascade_rate=0` would freeze the state and is rejected.
+        **Distinct** from the EMA wagering α (= 0.45, paper Table 11); every
+        caller passes this positionally so renaming here does not break them.
 
     Returns
     -------
@@ -53,17 +55,17 @@ def cascade_update(
     Raises
     ------
     ValueError
-        If `alpha` is outside (0, 1].
+        If `cascade_rate` is outside (0, 1].
     """
-    if not (0.0 < alpha <= 1.0):
+    if not (0.0 < cascade_rate <= 1.0):
         raise ValueError(
-            f"cascade alpha must lie in (0, 1]; got {alpha}. "
-            "alpha=0 freezes the state (degenerate); negative/larger-than-1 "
+            f"cascade_rate must lie in (0, 1]; got {cascade_rate}. "
+            "cascade_rate=0 freezes the state (degenerate); negative/larger-than-1 "
             "values are not physically meaningful."
         )
     if prev_activation is None:
         return new_activation
-    return alpha * new_activation + (1.0 - alpha) * prev_activation
+    return cascade_rate * new_activation + (1.0 - cascade_rate) * prev_activation
 
 
 def n_iterations_from_alpha(alpha: float) -> int:

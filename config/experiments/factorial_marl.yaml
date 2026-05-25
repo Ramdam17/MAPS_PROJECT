@@ -1,0 +1,51 @@
+# MARL 6-cell factorial (paper §B.4 Table 12, settings 1-6).
+# Source : student train_meltingpot.py:112-142.
+
+settings:
+
+  - id: baseline
+    label: "Baseline MAPPO (no meta, no cascade)"
+    meta: false
+    cascade_iterations1: 1
+    cascade_iterations2: 1
+
+  - id: cascade_1st_no_meta
+    label: "Cascade on 1st-order only (no meta)"
+    meta: false
+    cascade_iterations1: 50
+    cascade_iterations2: 1
+
+  - id: meta_no_cascade
+    label: "Meta only (no cascade)"
+    meta: true
+    cascade_iterations1: 1
+    cascade_iterations2: 1
+
+  - id: maps
+    label: "MAPS (meta + cascade 1st-order)"
+    meta: true
+    cascade_iterations1: 50
+    cascade_iterations2: 1
+
+  - id: meta_cascade_2nd
+    label: "Meta + cascade 2nd-order"
+    meta: true
+    cascade_iterations1: 1
+    cascade_iterations2: 50
+
+  - id: meta_cascade_both
+    label: "Full (meta + cascade on both orders)"
+    meta: true
+    cascade_iterations1: 50
+    cascade_iterations2: 50
+
+# Per paper §A.4, each setting trains 3 seeds × 4 substrates.
+n_seeds: 3
+seeds: [42, 43, 44]
+
+# Substrates (ids match config/env/marl/*.yaml filenames).
+substrates:
+  - commons_harvest_closed
+  - commons_harvest_partnership
+  - chemistry
+  - territory_inside_out

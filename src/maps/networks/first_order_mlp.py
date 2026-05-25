@@ -40,6 +40,14 @@ def make_chunked_sigmoid(chunk_size: int) -> Callable[[torch.Tensor], torch.Tens
     """Return a decoder activation that applies sigmoid independently per `chunk_size` units.
 
     Used by AGL where each 6-bit chunk encodes one letter (bits_per_letter=6).
+
+    Implementation note
+    -------------------
+    The student AGL code modifies the tensor **in place** (`h2[:, i:i+n] = ...`).
+    We instead clone once and assign into the clone — this is numerically
+    identical but avoids PyTorch's in-place autograd pitfalls if `h` is used
+    upstream in the graph. Preserves parity with student outputs bit-for-bit
+    while being safer for future callers.
     """
 
     def _chunked(h: torch.Tensor) -> torch.Tensor:
@@ -60,7 +68,13 @@ class FirstOrderMLP(nn.Module):
         Blindsight = 100, AGL = 48. No default because it is always
         domain-dependent and we want explicit instantiation.
     hidden_dim : int, default 40
-        Reference AGL value (paper §2.3 default).
+        **AGL-specific default** (paper Table 10). Blindsight callers MUST
+        pass an explicit value: paper Table 9 specifies `hidden_dim=60` for
+        Blindsight, while `config/training/blindsight.yaml` currently sets
+        `hidden_dim=100` — a known divergence tracked as RG-002 H1
+        (`docs/reproduction/deviations.md`), to be resolved in Phase D.25.
+        Relying on the default here will silently give you an AGL-sized
+        Blindsight network.
     encoder_dropout : float, default 0.1
         Dropout after the ReLU, matching reference code.
     decoder_activation : Callable, default global sigmoid

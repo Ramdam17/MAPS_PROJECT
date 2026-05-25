@@ -12,6 +12,11 @@ Sprint 04b scope:
 
 from __future__ import annotations
 
+from maps.experiments.sarl.actor_critic import (
+    ACBConfig,
+    ACBTrainer,
+    ACNetwork,
+)
 from maps.experiments.sarl.data import (
     SarlReplayBuffer,
     Transition,
@@ -26,14 +31,15 @@ from maps.experiments.sarl.model import (
 )
 from maps.experiments.sarl.trainer import (
     CAE_LAMBDA,
-    GAMMA,
     SarlUpdateOutput,
     sarl_update_step,
 )
 
 __all__ = [
+    "ACBConfig",
+    "ACBTrainer",
+    "ACNetwork",
     "CAE_LAMBDA",
-    "GAMMA",
     "NUM_LINEAR_UNITS",
     "SarlQNetwork",
     "SarlReplayBuffer",

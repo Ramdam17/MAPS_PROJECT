@@ -29,6 +29,12 @@ Usage
     # Smoke test:
     uv run python scripts/run_sarl_cl.py --num-frames 20000 -o validation.every_episodes=10
 
+    # Resume from a pre-empted run (auto-detect output_dir/checkpoint.pt):
+    uv run python scripts/run_sarl_cl.py --game breakout --setting 6 --resume
+
+    # Resume from an explicit checkpoint path:
+    uv run python scripts/run_sarl_cl.py --resume-from /path/to/checkpoint.pt
+
 Paper settings reminder
 -----------------------
     1: vanilla DQN (no cascade, no meta)
@@ -103,6 +109,7 @@ def _build_training_config(
     curriculum: bool,
     adaptive: bool,
     teacher_load_path: Path | None,
+    resume_from: Path | None = None,
 ) -> SarlCLTrainingConfig:
     """Translate the OmegaConf YAML + CLI flags into a :class:`SarlCLTrainingConfig`.
 
@@ -111,6 +118,17 @@ def _build_training_config(
     buried in a config file. Setting (1-6) is applied LAST so it overrides
     any meta/cascade_* values that slipped into the YAML.
     """
+    # D.7/D.9 additions: plumb paper-faithful gamma + Adam betas from yaml.
+    gamma_val = float(getattr(cfg.training, "gamma", 0.999))
+    betas_cfg = getattr(cfg.optimizer, "betas", (0.95, 0.95))
+    betas_val = (float(betas_cfg[0]), float(betas_cfg[1]))
+    # Sprint-08 D.22b: pick up the first-order-loss toggle from yaml if present.
+    fo_loss_kind = str(
+        getattr(getattr(cfg, "first_order_loss", {}), "kind", "cae")
+        if hasattr(cfg, "first_order_loss")
+        else "cae"
+    )
+
     base = SarlCLTrainingConfig(
         game=game,
         seed=seed,
@@ -134,13 +152,17 @@ def _build_training_config(
         target_update_freq=int(cfg.training.target_update_freq),
         step_size_1=float(cfg.optimizer.lr_first_order),
         step_size_2=float(cfg.optimizer.lr_second_order),
+        adam_betas=betas_val,
         scheduler_period=int(cfg.scheduler.step_size),
         scheduler_gamma=float(cfg.scheduler.gamma),
+        gamma=gamma_val,
         alpha=float(cfg.alpha),
+        first_order_loss_kind=fo_loss_kind,
         validation_every_episodes=int(cfg.validation.every_episodes),
         validation_iterations=int(cfg.validation.n_episodes),
         device=str(cfg.device),
         output_dir=output_dir,
+        resume_from=resume_from,
     )
     return setting_to_config_cl(setting, base)
 
@@ -173,18 +195,44 @@ def main(
     teacher_load_path: Path | None = typer.Option(  # noqa: B008
         None,
         "--teacher-load-path",
-        help="Previous-task checkpoint.pt (required when --curriculum is set).",
+        help=(
+            "Previous-task checkpoint.pt (required when --curriculum is set). "
+            "Accepts D.13 canonical schema (policy_state_dict) or legacy schema "
+            "(policy_net_state_dict) — loader falls back automatically. "
+            "Typical source: the checkpoint.pt written at the end of a prior "
+            "stage in the same curriculum (D.19b dual-role checkpoint)."
+        ),
     ),
     output_dir: Path | None = typer.Option(  # noqa: B008
         None,
         "--output-dir",
-        help="Override output directory. Default: outputs/sarl_cl/<game>/setting-<N>/seed-<seed>/",
+        help="Override output directory. Default: $SCRATCH/maps/outputs/sarl_cl/<game>/setting-<N>/seed-<seed>/ (or ./outputs/sarl_cl/... when $SCRATCH unset).",
     ),
     override: list[str] = typer.Option(  # noqa: B008
         [],
         "--override",
         "-o",
         help="OmegaConf override, e.g. `-o training.batch_size=64`. Repeatable.",
+    ),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        "-r",
+        help=(
+            "Auto-detect a checkpoint at `<output_dir>/checkpoint.pt` and resume. "
+            "Missing file → warn + fresh start. Coexists with --resume-from "
+            "(explicit path wins). NOTE: --resume-from is the training-loop "
+            "checkpoint, distinct from --teacher-load-path which is a "
+            "previous-task reference for the CL distillation anchor."
+        ),
+    ),
+    resume_from: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--resume-from",
+        help=(
+            "Explicit checkpoint file to resume training from. Must exist "
+            "(raises if not). Distinct from --teacher-load-path."
+        ),
     ),
     log_level: str = typer.Option("INFO", help="Python logging level"),
 ) -> None:
@@ -198,8 +246,35 @@ def main(
     out_dir = (
         output_dir
         if output_dir is not None
-        else paths.outputs / "sarl_cl" / game / f"setting-{setting}" / f"seed-{effective_seed}"
+        else paths.scratch_root
+        / "maps"
+        / "outputs"
+        / "sarl_cl"
+        / game
+        / f"setting-{setting}"
+        / f"seed-{effective_seed}"
     )
+
+    # Resolve resume path (Sprint-08 D.14). Explicit --resume-from wins; then
+    # --resume auto-detect; then None (fresh start).
+    resolved_resume: Path | None = None
+    if resume_from is not None:
+        if not resume_from.is_file():
+            raise typer.BadParameter(
+                f"--resume-from path does not exist: {resume_from}",
+                param_hint="--resume-from",
+            )
+        resolved_resume = resume_from
+        log.info("resuming from explicit --resume-from=%s", resolved_resume)
+    elif resume:
+        candidate = out_dir / "checkpoint.pt"
+        if candidate.is_file():
+            resolved_resume = candidate
+            log.info("--resume auto-detected checkpoint: %s", resolved_resume)
+        else:
+            log.warning(
+                "--resume requested but no checkpoint at %s; starting fresh", candidate
+            )
 
     training_cfg = _build_training_config(
         cfg,
@@ -211,6 +286,7 @@ def main(
         curriculum=curriculum,
         adaptive=adaptive,
         teacher_load_path=teacher_load_path,
+        resume_from=resolved_resume,
     )
 
     # Sanity check: curriculum mode without a teacher path is a config error.

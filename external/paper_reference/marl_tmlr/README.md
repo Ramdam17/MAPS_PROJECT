@@ -18,7 +18,7 @@ If you have access to a Compute Canada environment, you can directly execute the
 
 1. Clone the repository to your Compute Canada workspace:
    ```bash
-   git clone https://github.com/neuronphysics/MAPPO-ATTENTIOAN.git developer
+   git clone https://github.com/neuronphysics/MAPPO-ATTENTION.git developer
    ```
 
 2. Navigate to the repository directory:

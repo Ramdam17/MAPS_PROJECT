@@ -96,7 +96,7 @@ Splitting them into `src/maps/experiments/{blindsight,agl}/` + `scripts/train_*.
 
 ### 4.8 — `except` cleanup ✅
 - [x] Audited `src/maps/`, `scripts/`, `tests/` — zero bare `except:` or `except Exception:` in managed code
-- [x] Ruff `BLE` rule added to prevent regressions (all remaining matches are in `external/` and `MARL/MAPPO-ATTENTIOAN/`, which are ruff-excluded)
+- [x] Ruff `BLE` rule added to prevent regressions (all remaining matches are in `external/` and `MARL/MAPPO-ATTENTION/`, which are ruff-excluded)
 
 ## Definition of Done
 
