@@ -181,6 +181,6 @@ uv run ruff check . && uv run ruff format --check
 | `docs/reproduction/deviations.md` | 52 paper↔code deviations tracked |
 | `docs/reproduction/experiment_matrix.md` | Paper z-score targets |
 | `config/maps.yaml` | Canonical MAPS component constants |
-| `pdf/MAPS_TMLR_Journal_Submission.pdf` | Full paper (reference) |
+| `docs/pdf/MAPS_TMLR_Journal_Submission.pdf` | Full paper (reference) |
 | `docs/28_11_25.pdf` | Project direction notes (Guillaume meeting) |
 | `external/paper_reference/` | Original Vargas code (44k LOC), numerical reference |

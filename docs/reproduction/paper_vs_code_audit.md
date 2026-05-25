@@ -2,7 +2,7 @@
 
 **Source documents (populated in Phase B) :**
 
-- **Paper :** `pdf/MAPS_TMLR_Journal_Submission.pdf` + extractions verbatim dans
+- **Paper :** `docs/pdf/MAPS_TMLR_Journal_Submission.pdf` + extractions verbatim dans
   `docs/reproduction/paper_{tables,equations,targets}_extracted.md`.
 - **Student monoliths :** `external/paper_reference/{sarl,sarl_cl,agl,blindsight}_*.py` +
   shell launchers récupérés de git history (`git show 8c38e4f^:SARL/*.sh`).

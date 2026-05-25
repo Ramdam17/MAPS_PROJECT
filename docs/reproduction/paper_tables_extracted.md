@@ -1,6 +1,6 @@
 # Paper tables — verbatim extractions
 
-**Source :** `pdf/MAPS_TMLR_Journal_Submission.pdf` — Vargas et al., TMLR submission (2025), 30 pages.
+**Source :** `docs/pdf/MAPS_TMLR_Journal_Submission.pdf` — Vargas et al., TMLR submission (2025), 30 pages.
 
 Règle : **tout ce qui est reporté ici est copié verbatim du papier.** Pas de paraphrase, pas
 d'arrondi, pas de réinterprétation. Quand le papier est ambigu ou incohérent avec lui-même (par

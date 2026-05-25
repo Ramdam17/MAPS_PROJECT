@@ -1,6 +1,6 @@
 # Paper equations 1-18 — verbatim extractions
 
-**Source :** `pdf/MAPS_TMLR_Journal_Submission.pdf` — Vargas et al., TMLR submission (2025), pp. 6-9.
+**Source :** `docs/pdf/MAPS_TMLR_Journal_Submission.pdf` — Vargas et al., TMLR submission (2025), pp. 6-9.
 
 Règle : équations copiées verbatim en notation paper. Description des variables citée du papier
 quand elle est donnée explicitement ; inférée depuis le contexte sinon (et alors clairement

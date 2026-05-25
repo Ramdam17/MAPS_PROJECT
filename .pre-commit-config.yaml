@@ -30,9 +30,9 @@ repos:
         args: ['--maxkb=1000']
         exclude: |
           (?x)^(
-              pdf/.*\.pdf|
+              docs/pdf/.*\.pdf|
               docs/.*\.pdf|
-              images/.*|
+              docs/figures/.*|
               uv\.lock
           )$
       - id: check-merge-conflict

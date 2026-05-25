@@ -1,6 +1,6 @@
 # Paper reproduction targets — Tables 5, 6, 7 verbatim
 
-**Source :** `pdf/MAPS_TMLR_Journal_Submission.pdf` — Vargas et al., TMLR submission (2025).
+**Source :** `docs/pdf/MAPS_TMLR_Journal_Submission.pdf` — Vargas et al., TMLR submission (2025).
 
 Règle : chiffres copiés **verbatim**, y compris les z-scores négatifs (quand MAPS ne bat pas le
 baseline), les "(No)" de non-significativité, et les `NA` de la table 7. **Aucune mise en forme

@@ -1,6 +1,6 @@
 # Reproduction Target Matrix
 
-**Source :** MAPS TMLR submission (Vargas et al., 2025) — `pdf/MAPS_TMLR_Journal_Submission.pdf`.
+**Source :** MAPS TMLR submission (Vargas et al., 2025) — `docs/pdf/MAPS_TMLR_Journal_Submission.pdf`.
 Z-scores papier extraits verbatim dans `docs/reproduction/paper_targets_extracted.md` (Phase B.6).
 
 **Baseline de comparaison :** Setting 1 (second-order OFF + cascade OFF). Les z-scores paper Tables
