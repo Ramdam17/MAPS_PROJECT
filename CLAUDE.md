@@ -100,6 +100,7 @@ docs/
 ├── pdf/                 # reference papers (Sprint 11.5: ex-/pdf/)
 └── learning/            # Sprint 10 pedagogical layer
     ├── structure-decision.md
+    ├── glossaire.md       # vocabulaire MAPS (Sprint 11.6)
     ├── reverse-prompts/   # one .md per module, mirror src/maps/ path
     ├── walkthroughs/      # narrative post-refactor
     └── chat-prompts/      # prompts ready to paste in Claude chat (web)
@@ -145,6 +146,17 @@ uv run pytest tests/reproduction -m slow          # reproduce paper z-scores
 uv run ruff check . && uv run ruff format --check
 ```
 
+Or via Makefile (Sprint 11.6, pattern emprunté à bilevel-fishery) :
+
+```bash
+make install      # uv sync + pre-commit install
+make test-core    # Sprint 11 core/ tests only
+make test         # full suite
+make check        # lint + format-check + test
+make clean        # purge .pyc / __pycache__ / .DS_Store / caches
+make help         # discoverable list of targets
+```
+
 ---
 
 ## Compute Targets
@@ -177,6 +189,8 @@ uv run ruff check . && uv run ruff format --check
 | `docs/TODO.md` | Technical debt register |
 | `docs/sprints/sprint-10-reappropriation-phase-0-and-1.md` | Current sprint spec |
 | `docs/learning/structure-decision.md` | Layout decisions Sprint 10 Phase 0 |
+| `docs/learning/glossaire.md` | Vocabulaire MAPS (Sprint 11.6) |
+| `Makefile` | Convenience targets — `make help` to discover |
 | `docs/learning/reverse-prompts/` | Reverse-prompt per Python module (Phase 1) |
 | `docs/reproduction/deviations.md` | 52 paper↔code deviations tracked |
 | `docs/reproduction/experiment_matrix.md` | Paper z-score targets |
