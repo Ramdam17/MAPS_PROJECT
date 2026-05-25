@@ -1,15 +1,13 @@
-"""MAPS runtime utilities: config, paths, seeding, logging."""
+"""Cross-cutting utilities.
 
-from maps.utils.config import CONFIG_ROOT, load_config
-from maps.utils.logging_setup import configure_logging
-from maps.utils.paths import Paths, get_paths
-from maps.utils.seeding import set_all_seeds
+Will hold:
 
-__all__ = [
-    "CONFIG_ROOT",
-    "Paths",
-    "configure_logging",
-    "get_paths",
-    "load_config",
-    "set_all_seeds",
-]
+- ``config.py`` — OmegaConf YAML loader + CLI override merger
+- ``logging_setup.py`` — stdlib logging configuration helper
+- ``seeding.py`` — ``set_all_seeds(seed)`` (random, numpy, torch, cuda)
+- ``device.py`` — NEW: auto-detect CPU / MPS (Apple Silicon) / CUDA
+- ``energy_tracker.py`` — Codecarbon-style energy wrapping (may move to
+  ``maps.domains.marl`` during Sprint 15 per DETTE-4)
+
+Empty during Sprint 10 — populated in Sprint 11+.
+"""

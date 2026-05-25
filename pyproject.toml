@@ -118,7 +118,7 @@ Paper = "https://arxiv.org/abs/2505.03770"
 packages = ["src/maps"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/maps", "config", "scripts", "README.md", "LICENSE"]
+include = ["src/maps", "config", "README.md", "LICENSE"]
 
 # Allow building before src/maps/ exists (Phase 3 refactor)
 [tool.hatch.build]
@@ -146,7 +146,7 @@ torch = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["src", "scripts", "tests"]
+src = ["src", "tests"]
 extend-exclude = [
     "external/",
     "METTA/",
@@ -189,16 +189,12 @@ ignore = [
 # Test files generate fake data with the legacy `np.random` global API; NPY002
 # migration to Generator would add ceremony without behavior benefit.
 "tests/**" = ["N802", "T201", "NPY002"]
-"scripts/**" = ["T201", "B008"]  # T201: prints OK in CLI; B008: typer.Option(...) in default args is the framework idiom
-# Seeding module & its test deliberately seed the legacy global np.random state.
+# CLI modules co-located in each domain : prints OK in user-facing CLI ;
+# typer.Option(...) in default args is the framework idiom.
+"src/maps/domains/*/cli.py" = ["T201", "B008"]
+"src/maps/cli/**" = ["T201", "B008"]
+# Seeding module deliberately seeds the legacy global np.random state.
 "src/maps/utils/seeding.py" = ["NPY002"]
-"tests/unit/utils/test_seeding.py" = ["NPY002"]
-# Training loops capture/restore the legacy global np.random state during
-# checkpoint round-trips for bit-exact resumability. Migrating these specific
-# call sites would require redesigning the checkpoint schema; out of Sprint-09 scope.
-"src/maps/experiments/sarl/training_loop.py" = ["NPY002"]
-"src/maps/experiments/sarl_cl/training_loop.py" = ["NPY002"]
-"src/maps/experiments/marl/runner.py" = ["NPY002"]
 
 [tool.black]
 line-length = 100
@@ -217,15 +213,14 @@ markers = [
 source = ["src/maps"]
 omit = [
     "tests/*",
-    "scripts/*",
-    # Legacy vendored energy tracker — print→log migration scheduled for Sprint 04b.
-    "src/maps/utils/energy_tracker.py",
-    # Experiment modules — covered by parity + reproduction tests (Sprint 06).
-    "src/maps/experiments/*",
+    # Per-domain modules — covered by parity + reproduction tests
+    # (per-domain sprints 11-16). Coverage gate targets core + utils + networks.
+    "src/maps/domains/*",
 ]
 
 [tool.coverage.report]
-# Coverage gate for the modules we target in Sprint 05 (components + utils core).
+# Coverage gate for the modules we target in Sprint 10+ (core + utils + networks).
+# To be re-evaluated as each domain is rebuilt and tested.
 fail_under = 80
 exclude_also = [
     "raise NotImplementedError",

@@ -1,5 +1,12 @@
-"""MAPS domain-agnostic network backbones."""
+"""Shared network architectures used across domains.
 
-from maps.networks.first_order_mlp import FirstOrderMLP, make_chunked_sigmoid
+This sub-package will hold:
 
-__all__ = ["FirstOrderMLP", "make_chunked_sigmoid"]
+- ``first_order_mlp.py`` — domain-agnostic MLP encoder/decoder shared
+  by Blindsight and AGL.
+
+Domain-specific networks (Q-networks for SARL, policy/value networks
+for MARL) live under ``maps.domains.<domain>``.
+
+Empty during Sprint 10 (Phase 0/1) — populated in Sprint 11+.
+"""
