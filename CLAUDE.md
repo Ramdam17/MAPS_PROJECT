@@ -20,11 +20,13 @@ Tested on 4 domains (2×2 factorial on/off → 6 settings per paper):
 
 ---
 
-## Current Status (Sprint 00 — Remise en route)
+## Current Status (Sprint 10 — Réappropriation)
 
-This is a fork being cleaned up for reproducibility after the original student left. See `docs/sprints/sprint-00-remise-en-route.md`.
+This is a fork being cleaned up for reproducibility after the original student left. Sprints 00-09 produced a modular, config-first port with parity tests. **Sprint 10 (in progress)** is a pedagogical rewrite — `refactor/main-rewrite` branch starts empty and is being rebuilt module-by-module after deep reverse-prompting of each existing module.
 
-**Branch:** `refactor/clean-rerun`
+**Branch:** `refactor/main-rewrite` (active rewrite). `main` keeps the Sprint 09 state as numerical reference.
+
+See `docs/sprints/sprint-10-reappropriation-phase-0-and-1.md` for the current sprint spec, and `docs/learning/structure-decision.md` for the layout decisions.
 
 ---
 
@@ -49,19 +51,53 @@ All of these live in `config/maps.yaml`. **Do not hardcode them in training scri
 
 ---
 
-## Target Folder Layout
+## Target Folder Layout (Sprint 10+ structure)
 
 ```
-src/maps/                # core package (components, networks, training, evaluation, utils, experiments)
-scripts/                 # CLI entry points (typer)
+src/maps/                # package — empty during Sprint 10, populated Sprint 11+
+├── __init__.py
+├── core/                # cascade.py, second_order.py, losses.py — shared math
+├── networks/            # first_order_mlp.py (shared Blindsight/AGL MLP)
+├── domains/             # one sub-package per evaluation domain
+│   ├── blindsight/      # data.py, trainer.py, cli.py
+│   ├── agl/             # data.py, pool.py, trainer.py, cli.py
+│   ├── sarl/            # data.py, model.py (v2), model_v1.py, training_loop.py,
+│   │                    #   trainer.py, actor_critic.py, cli.py
+│   ├── sarl_cl/         # model.py, loss_weighting.py, training_loop.py,
+│   │                    #   trainer.py, cli.py
+│   ├── marl/            # runner.py, trainer.py, policy.py, env.py, data.py,
+│   │                    #   encoder.py, act.py, rnn.py, valuenorm.py, setting.py,
+│   │                    #   util.py, cli.py
+│   └── metta/           # last (exploratory)
+├── utils/               # config.py, logging_setup.py, seeding.py, device.py,
+│                        #   energy_tracker.py
+└── cli/                 # optional global Typer app dispatching to each domain
+
 config/                  # YAML (maps.yaml, paths.yaml, training/*, env/*, experiments/*)
-notebooks/               # NN_snake_case.ipynb tutorials
-tests/                   # unit + numerical + reproduction
-external/                # vendored: METTA, MinAtar, meltingpot
-docs/                    # sprints, reports, specifications, reproduction
+external/                # vendored: METTA, MinAtar, paper_reference (numerical truth)
+tests/                   # unit + parity tier 1/2/3 + integration smoke + reproduction
+docs/
+├── sprints/             # sprint-00 .. sprint-10 specs
+├── plans/               # per-execution plans
+├── reproduction/        # deviations.md, experiment_matrix.md, paper audits
+├── reviews/             # technical reviews (Sprint-08 C.* sub-phases)
+├── reports/             # per-sprint closeouts
+└── learning/            # Sprint 10 pedagogical layer
+    ├── structure-decision.md
+    ├── reverse-prompts/   # one .md per module, mirror src/maps/ path
+    ├── walkthroughs/      # narrative post-refactor
+    └── chat-prompts/      # prompts ready to paste in Claude chat (web)
+
+notebooks/learning/      # executable tutorials (Jupyter)
 outputs/ logs/ models/ data/   # gitignored
 pdf/                     # reference papers
 ```
+
+**Naming conventions** :
+- `from __future__ import annotations` in every module
+- Imports absolute (`from maps.core.cascade import ...`)
+- NumPy-style docstrings with inline paper citations
+- Greek letters allowed (α, β, γ, λ — ruff RUF001/002/003 ignored)
 
 ---
 
@@ -124,8 +160,12 @@ uv run ruff check . && uv run ruff format --check
 | File | Role |
 |------|------|
 | `docs/TODO.md` | Technical debt register |
-| `docs/sprints/sprint-00-remise-en-route.md` | Current sprint spec |
+| `docs/sprints/sprint-10-reappropriation-phase-0-and-1.md` | Current sprint spec |
+| `docs/learning/structure-decision.md` | Layout decisions Sprint 10 Phase 0 |
+| `docs/learning/reverse-prompts/` | Reverse-prompt per Python module (Phase 1) |
+| `docs/reproduction/deviations.md` | 52 paper↔code deviations tracked |
 | `docs/reproduction/experiment_matrix.md` | Paper z-score targets |
 | `config/maps.yaml` | Canonical MAPS component constants |
 | `pdf/MAPS_TMLR_Journal_Submission.pdf` | Full paper (reference) |
 | `docs/28_11_25.pdf` | Project direction notes (Guillaume meeting) |
+| `external/paper_reference/` | Original Vargas code (44k LOC), numerical reference |

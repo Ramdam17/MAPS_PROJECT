@@ -1,10 +1,75 @@
 # Sprint 10 — Réappropriation : Phase 0 (structure) + Phase 1 (reverse-prompts)
 
-**Status:** 🟢 in-progress
+**Status:** ✅ done (2026-05-25)
 **Branch:** `refactor/main-rewrite` (créée 2026-05-25 depuis `main` @ 6b200ab)
 **Owner:** Rémy Ramadour
-**Estimated effort:** ~5-10 sessions Claude (Phase 0 décisions + Phase 1 reverse-prompts ~25 modules)
+**Effort réel :** 1 session intensive (40+ Claude exchanges)
 **Depends on:** méta-plan approuvé (`~/.claude/plans/yo-j-aimerais-que-abstract-sutton.md`)
+
+## Closeout (2026-05-25)
+
+**Phase 0 ✅ (commit `c05b2c6`)** :
+- 6 décisions structurelles actées dans `docs/learning/structure-decision.md`
+- `src/maps/` + `scripts/` wiped (~14k LOC)
+- Squelette `src/maps/{core,networks,domains/{6},utils,cli}/` créé
+- `docs/learning/` + `notebooks/learning/` scaffolded
+- `pyproject.toml` nettoyé (refs aux fichiers supprimés)
+
+**Phase 1 ✅ (commits `c13b632`, `2c3a1b8`, `0dea39f`, `dbd3da2`, `6a7c7f6`,
+`4995bd6`, `75696e5`, `8ead56a`)** :
+- 41 reverse-prompts produits, 7314 lignes au total
+- Couverture : core (3), networks (1), utils (5), Blindsight (3), AGL (4),
+  SARL (8), SARL+CL (5), MARL (12)
+- Skipped : 2 SARL auxiliaires (rollout, evaluate) — pas dans le scope user
+- Tous les insights critiques capturés : two-loss gradient pattern,
+  D-sarl-cascade-noop, AGL reference reset, ACB dSiLU double-sigmoid,
+  AdaptiveQNetwork channel padding, RNNLayerMeta norm position diff,
+  DETTE-1 triplon SecondOrderNetwork, h(1-h) on ReLU universal quirk.
+
+**Insights scientifiques majeurs identifiés pour Sprint 11+** :
+
+1. **D-002 SimCLR vs CAE** : divergence structurelle paper↔code la plus
+   importante. Le code student CAE ne peut pas avoir produit les Tables
+   5/6/7 paper avec la prose SimCLR. SimCLR stub `NotImplementedError`
+   exposed for future port.
+
+2. **No-op cascade sur path déterministe** : SARL Q-network n'a pas de
+   dropout → 50 iters cascade ≡ 1 iter math. Paper Table 6 Setting 2 ≠
+   Setting 1 doit donc être du bruit RNG (N=3 seeds sensible). Test
+   analytique à écrire Sprint 11+.
+
+3. **Reset first-order après AGL pretrain** est LE mécanisme de la
+   dissociation conscious/unconscious. Code-fragile (si on oublie le
+   `deepcopy(state_dict())` dans build, silent bug).
+
+4. **Two-loss gradient pattern** : `loss_2.backward → optim2.step →
+   loss_1.backward → optim.step`. Le 1st-order voit la SOMME des gradients.
+   Load-bearing. Documenter explicitement Sprint 11+.
+
+5. **D-sarl-wrong-variant Sprint-09 just resolved** : v1 canonical, mais
+   Phase F doit être re-run sur Narval avec v1 à 2M frames pour les
+   chiffres paper Table 6 réels.
+
+## Done when (final check)
+
+- [x] `docs/learning/structure-decision.md` écrit, validé, committé
+- [x] Squelette dossiers committé sur `refactor/main-rewrite`
+- [x] ~41 modules ont leur reverse-prompt en
+      `docs/learning/reverse-prompts/`
+- [x] CLAUDE.md project updated avec nouvelle structure (2026-05-25)
+- [x] Sprint doc 11 (Blindsight) **à ouvrir Phase 2** — pas inclus
+      dans Sprint 10
+- [x] Vision claire de la structure cible pour Sprint 11+ documentée
+
+## Next : Phase 2 — Décider la structure des sprints (collaborative)
+
+Méta-plan Phase 2 : sur la base des reverse-prompts, définir ensemble
+sprints 11-15 (par domaine). À démarrer en session séparée.
+
+**Ordre confirmé** : Blindsight → AGL → SARL → SARL+CL → MARL → METTA
+(en dernier). Une branche par domaine (`refactor/blindsight`, etc.).
+
+---
 
 ---
 
