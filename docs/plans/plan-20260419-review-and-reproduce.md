@@ -14,7 +14,7 @@
 Objectif non-négociable : **reproduire intégralement le papier MAPS (Vargas et al., TMLR submission)**. Le papier couvre 5 domaines (Blindsight, AGL, SARL, SARL+CL, MARL), 7 settings (1-6 MAPS factorial + setting 7 = ACB baseline), avec N=500 seeds pour les tâches perceptuelles et N=3 seeds pour les tâches RL.
 
 Audit 2026-04-19 a révélé les écarts suivants entre le working tree et ce que le papier exige :
-- **Code MARL absent** de `src/maps/` (jamais porté ; restauré dans `MARL/MAPPO-ATTENTIOAN/` depuis git).
+- **Code MARL absent** de `src/maps/` (jamais porté ; restauré dans `MARL/MAPPO-ATTENTION/` depuis git).
 - **Setting 7 (ACB) absent** de la factorielle courante (6 settings au lieu de 7).
 - **Hyperparams SARL/SARL+CL divergent du papier Table 11** sur 5-6 axes (num_frames, lr_second_order, alpha EMA, gamma DQN, scheduler step, poids CL).
 - **MeltingPot env non-installé.** Recipe existe (DeepMind open-source, dmlab2d Python 3.10 wheel) mais jamais exécutée.
@@ -31,7 +31,7 @@ Audit 2026-04-19 a révélé les écarts suivants entre le working tree et ce qu
 
 **Pourquoi papier > maps.py ?** Parce que l'objectif est de reproduire ce que dit **le papier**, pas ce que faisait le code du student. Quand ils divergent (et ils divergent), le papier doit gagner — sinon on ne reproduit pas le papier, on réplique le code. Les deux sont différents.
 
-**Pourquoi composante par composante et pas un big-bang ?** Parce qu'on a déjà vu ce qu'un plan trop macro donne (Sprint-07 Phase 1 a supprimé MAPPO-ATTENTIOAN sans port existant → mandat de restauration). La granularité atomique (1 sous-phase = 1 commit) force :
+**Pourquoi composante par composante et pas un big-bang ?** Parce qu'on a déjà vu ce qu'un plan trop macro donne (Sprint-07 Phase 1 a supprimé MAPPO-ATTENTION sans port existant → mandat de restauration). La granularité atomique (1 sous-phase = 1 commit) force :
 - Chaque décision à être examinée isolément.
 - Les tests de parité à passer vert à chaque étape (pas de régression cachée par d'autres changements).
 - La rollback facile si un pas casse quelque chose en aval.
@@ -265,7 +265,7 @@ Chaque sous-phase a : **titre · préambule court · ce qu'on fait · vérificat
 
 ### B.1 Extraire Table 11 du papier (hyperparams SARL/SARL+CL)
 - **Faire :** copier Table 11 du papier dans un nouveau `docs/reproduction/paper_tables_extracted.md` section "Table 11 — MinAtar hyperparams". Cite exacte + référence page.
-- **Vérifier :** 24 hyperparams retranscrits, zéro paraphrase.
+- **Vérifier :** 23 hyperparams retranscrits, zéro paraphrase (paper Table 11 p. 30 = 23 rows).
 - **DoD :** doc existe, Table 11 copiée intégralement.
 - **Effort :** 15 min.
 
@@ -283,7 +283,7 @@ Chaque sous-phase a : **titre · préambule court · ce qu'on fait · vérificat
 
 ### B.4 Extraire Table 12 du papier (MeltingPot hyperparams)
 - **Faire :** idem Table 12. Flagger les incohérences (critic_lr=100 est suspect, num_env_steps=15e6 vs texte 300k).
-- **Vérifier :** 12 hyperparams + flags.
+- **Vérifier :** 13 hyperparams + flags (paper Table 12 p. 30 = 13 rows).
 - **DoD :** Table 12 présente.
 - **Effort :** 10 min.
 
@@ -323,8 +323,8 @@ Chaque sous-phase a : **titre · préambule court · ce qu'on fait · vérificat
 - **DoD :** section complète.
 - **Effort :** 1 h.
 
-### B.11 Audit croisé MARL : paper Table 12 ↔ `MARL/MAPPO-ATTENTIOAN/` (pas de port à comparer)
-- **Faire :** section "MARL". Identifier structure modules MAPPO-ATTENTIOAN + mapping vers futur `src/maps/experiments/marl/`.
+### B.11 Audit croisé MARL : paper Table 12 ↔ `MARL/MAPPO-ATTENTION/` (pas de port à comparer)
+- **Faire :** section "MARL". Identifier structure modules MAPPO-ATTENTION + mapping vers futur `src/maps/experiments/marl/`.
 - **Vérifier :** map fonctionnelle documentée.
 - **DoD :** section complète.
 - **Effort :** 2 h.
@@ -352,9 +352,14 @@ Chaque sous-phase a : **titre · préambule court · ce qu'on fait · vérificat
 
 ---
 
-## Phase C — Review core MAPS components (3-5 j)
+## Phase C — Review core MAPS components (3-5 j) — ✅ **CLÔTURÉE 2026-04-20**
 
 **But :** relire les 5 composantes core `src/maps/` (cascade, second_order, losses, networks, utils) contre papier + monolithes restaurés. Un fichier = 1-3 sous-phases (review + fix + parité mise à jour).
+
+**Closeout :** `docs/reports/sprint-08-phase-c-summary.md`. 17 sub-phases exécutées en 2026-04-19 →
+2026-04-20 selon Orient→Do→Verify→Report→Commit→Wait discipline. 7 review docs produits
+(~1700 lignes), 25+ fixes appliqués à travers 5 batch commits (C.2, C.6, C.10, C.12, C.15, C.17).
+4 DETTEs ouverts + 1 nouvelle sub-phase D.22b (décision SimCLR vs CAE) blocante pour D.23/D.26.
 
 ### Méthode par composante
 
@@ -643,6 +648,25 @@ Chaque composante suit ce pattern :
 - **DoD :** commit.
 - **Effort :** 1 h.
 
+### D.22b Décision D-002 — SimCLR (paper eq.4) vs CAE (student) — blocking D.23-D.28
+- **Faire :** trancher avec Rémy si on implémente une variante paper-faithful de la loss 1st-order
+  (`components.losses.contrastive_simclr`) ou si on reste sur `cae_loss`. Produire :
+  1. Récap C.7 (`docs/reviews/losses.md §C.7` (a)(b)) — les 2 losses sont mathématiquement
+     distinctes, paper eq.4 = SimCLR/NT-Xent (Chen 2020).
+  2. Coût/bénéfice :
+     - **Option 1 (SimCLR)** : ~1-2j impl (module + pipeline augmentation
+       paires positives) + zéro parity possible avec student (losses différentes).
+     - **Option 2 (CAE statu quo)** : 0 coût, mais paper Tables 5/6/7 non-reproductibles sur ce
+       point (déjà le cas du student).
+  3. Recommandation rédigée dans `docs/reports/sprint-08-d22b-simclr-decision.md`.
+- **Vérifier :** décision signée par Rémy (ADR-style) dans le doc. Si Option 1 → créer
+  sub-phase D.22c d'implémentation. Si Option 2 → mettre à jour D-002 dans `deviations.md`
+  pour statuer "resolved — keep CAE as documented divergence".
+- **DoD :** doc décision + `deviations.md` D-002 mis à jour + (si impl) sub-phase D.22c créée.
+- **Effort :** 1-2 h (analyse + doc seulement ; impl Option 1 = sub-phase séparée).
+- **Blocking :** D.23 (Blindsight trainer), D.26 (AGL trainer) dépendent de cette décision pour
+  savoir quel chemin porter.
+
 ### Blindsight (2 fichiers)
 
 ### D.23 Review `src/maps/experiments/blindsight/trainer.py` (442 L)
@@ -765,15 +789,15 @@ Chaque composante suit ce pattern :
 - **DoD :** commit.
 - **Effort :** 2 h.
 
-### E.10 MARL — lecture complète `MARL/MAPPO-ATTENTIOAN/` + mapping functionnel
-- **Faire :** doc `docs/reviews/marl-mapping.md` : mapping module-by-module des ~188 fichiers MAPPO-ATTENTIOAN vers la cible `src/maps/experiments/marl/` (6 fichiers cible).
+### E.10 MARL — lecture complète `MARL/MAPPO-ATTENTION/` + mapping functionnel
+- **Faire :** doc `docs/reviews/marl-mapping.md` : mapping module-by-module des ~188 fichiers MAPPO-ATTENTION vers la cible `src/maps/experiments/marl/` (6 fichiers cible).
 - **Vérifier :** doc + diagramme structural.
 - **DoD :** doc.
 - **Effort :** 1 j.
 
 ### E.11 MARL — `src/maps/experiments/marl/model.py`
 - **Faire :** Encoder conv + positional encoding (sinusoïdal relatif) + linear + GRU + second-order. Paper fig 4 + Table 12 (hidden_size=100).
-- **Vérifier :** forward shapes match MAPPO-ATTENTIOAN sur une obs dummy.
+- **Vérifier :** forward shapes match MAPPO-ATTENTION sur une obs dummy.
 - **DoD :** commit.
 - **Effort :** 4 h.
 
@@ -826,7 +850,7 @@ Chaque composante suit ce pattern :
 - **Effort :** 1 h.
 
 ### E.20 MARL — `tests/parity/marl/` (Tier 1/2/3)
-- **Faire :** parity vs MAPPO-ATTENTIOAN : Tier 1 forward, Tier 2 buffer, Tier 3 update. `_reference_marl.py` extraits.
+- **Faire :** parity vs MAPPO-ATTENTION : Tier 1 forward, Tier 2 buffer, Tier 3 update. `_reference_marl.py` extraits.
 - **Vérifier :** atol=1e-6 sur chaque tier.
 - **DoD :** commit.
 - **Effort :** 4 h.
@@ -899,3 +923,5 @@ Chaque composante suit ce pattern :
 ## Changelog
 
 - 2026-04-19 (init) — plan créé en réponse au mandat Rémy "tout ce qui permet de refaire le papier doit rester + review composante par composante + intégrer MeltingPot/ACB/alignement hyperparams + respecter queue partagée + storage scratch". 82 sous-phases, séquentielles strict.
+- 2026-04-19 (B.1 correction) — B.1 Vérifier: `24 hyperparams` → `23 hyperparams`. Recomptage depuis paper Table 11 p. 30 = 23 data rows (19 SARL + 4 CL). Contenu extrait conforme verbatim.
+- 2026-04-19 (B.4 correction) — B.4 Vérifier: `12 hyperparams` → `13 hyperparams`. Recomptage depuis paper Table 12 p. 30 = 13 data rows (4 Num agents per substrate + 9 MAPPO hyperparams). Contenu extrait conforme verbatim avec 2 flags critiques (Critic lr=100 typo, Num env steps 15e6 vs 300k).

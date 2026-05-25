@@ -17,7 +17,7 @@ Sprint 04b a livré une parité architecturale SARL à atol=1e-6 (CPU). Sprint 0
 
 Blockers identifiés en discussion (2026-04-18) :
 
-1. **Consolidation repo** : dossiers legacy (`SARL/`, `SARL_CL/`, `MARL/MAPPO-ATTENTIOAN/`, `requirements-legacy.txt`) toujours trackés contrairement à ce que dit le rapport Sprint 04b. Constantes dupliquées (`training_loop.py:74-83` vs yaml). Scaffolding SLURM minimal, non calibré, pas de routage `$SCRATCH`.
+1. **Consolidation repo** : dossiers legacy (`SARL/`, `SARL_CL/`, `MARL/MAPPO-ATTENTION/`, `requirements-legacy.txt`) toujours trackés contrairement à ce que dit le rapport Sprint 04b. Constantes dupliquées (`training_loop.py:74-83` vs yaml). Scaffolding SLURM minimal, non calibré, pas de routage `$SCRATCH`.
 2. **Inconnus perf** : la branche "perf notes" qu'on espérait inspecter n'existe pas sur origin (les 3 branches `refactor/*` sont pre-Sprint-04b). On part donc sur **profiling-first** — Phase 2 produit la vérité terrain.
 3. **Cluster nouveau** : Tamia jamais utilisé dans ce repo. Le code n'a jamais tourné sur H100. Parité testée uniquement CPU.
 4. **Budget** : Tamia/aip-* devrait drastiquement réduire le wall-clock (priorité haute), mais à confirmer par mesure.
@@ -101,8 +101,8 @@ Phase 5  — aggregation + rapport                     [0.5 j]
 **But :** éliminer les dettes qui vont mordre en Phase 4. Aucune modif scientifique.
 
 **1.A — Legacy cleanup**
-- [ ] P1.1 — Confirmer avec Rémy : `SARL/`, `SARL_CL/`, `MARL/MAPPO-ATTENTIOAN/`, `requirements-legacy.txt` → suppression totale oui/non ?
-- [ ] P1.2 — Si go : `git rm -r SARL/ SARL_CL/ MARL/MAPPO-ATTENTIOAN/ requirements-legacy.txt` + corriger `docs/TODO.md` (supprimer entrées TD pointant sur ces fichiers : TD-003, TD-004, TD-007, TD-008, TD-009, TD-018, TD-022, TD-040, etc.) + corriger `docs/reports/sprint-04b-report.md` (la mention "10,509 LOC removed" est partielle — préciser ce qui reste).
+- [ ] P1.1 — Confirmer avec Rémy : `SARL/`, `SARL_CL/`, `MARL/MAPPO-ATTENTION/`, `requirements-legacy.txt` → suppression totale oui/non ?
+- [ ] P1.2 — Si go : `git rm -r SARL/ SARL_CL/ MARL/MAPPO-ATTENTION/ requirements-legacy.txt` + corriger `docs/TODO.md` (supprimer entrées TD pointant sur ces fichiers : TD-003, TD-004, TD-007, TD-008, TD-009, TD-018, TD-022, TD-040, etc.) + corriger `docs/reports/sprint-04b-report.md` (la mention "10,509 LOC removed" est partielle — préciser ce qui reste).
 - [ ] P1.3 — Grep de clôture : `rg -l "juan-david-vargas|ubunto|/home/ubunto"` → 0 résultat.
 
 **1.B — SLURM scaffolding Tamia-ready**
@@ -127,7 +127,7 @@ Phase 5  — aggregation + rapport                     [0.5 j]
 **DoD :**
 - `sbatch --test-only scripts/slurm/{smoke,bench,sarl_array}.sh` parsent sans erreur avec `--account=aip-gdumas85_gpu`.
 - `uv run pytest -q tests/unit/utils/test_paths.py` vert.
-- `rg "SARL/|SARL_CL/|MAPPO-ATTENTIOAN" --files` = 0 si P1.1 go.
+- `rg "SARL/|SARL_CL/|MAPPO-ATTENTION" --files` = 0 si P1.1 go.
 - `docs/install_tamia.md` couvre : clone, modules, uv, sbatch, compte, partitions, MIG si applicable.
 
 **Risques :**
@@ -338,7 +338,7 @@ Rationale : H100 active TF32 par défaut pour les matmul (10 bits de mantisse au
 
 | # | Décision | Verdict | Conséquence dans le plan |
 |---|----------|---------|-------------------------|
-| 1 | Suppression legacy (`SARL/`, `SARL_CL/`, `MARL/MAPPO-ATTENTIOAN/`, `requirements-legacy.txt`) | ✅ Go | Phase 1.A |
+| 1 | Suppression legacy (`SARL/`, `SARL_CL/`, `MARL/MAPPO-ATTENTION/`, `requirements-legacy.txt`) | ✅ Go | Phase 1.A |
 | 2 | Cluster cible Tamia, fallback Narval | ✅ Validé (Tamia first ; debug avant bascule, pas d'abandon immédiat) | Phase 0 primary, fallback documenté |
 | 3 | `torch.compile` (O-5) | ❌ Refusé (aucune dérivation tolérée) | O-5 retiré Phase 3 |
 | 4 | N seeds | ✅ **N=10** (conforme papier) — 300 cellules | Phase 4 array size |

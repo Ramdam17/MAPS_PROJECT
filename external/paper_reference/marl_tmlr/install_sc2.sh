@@ -7,7 +7,7 @@ then
 fi
 
 echo "EXP_DIR: $EXP_DIR"
-cd $EXP_DIR/Montreal/MPPO-ATTENTIOAN
+cd $EXP_DIR/Montreal/MPPO-ATTENTION
 
 mkdir 3rdparty
 cd 3rdparty
@@ -34,7 +34,7 @@ fi
 
 cd ..
 wget https://github.com/oxwhirl/smac/releases/download/v0.1-beta1/SMAC_Maps.zip
-unzip SMAC_Maps.zip -d ~/Montreal/MPPO-ATTENTIOAN/3rdparty/StarCraftII/Maps/
+unzip SMAC_Maps.zip -d ~/Montreal/MPPO-ATTENTION/3rdparty/StarCraftII/Maps/
 
 rm -rf SMAC_Maps.zip
 

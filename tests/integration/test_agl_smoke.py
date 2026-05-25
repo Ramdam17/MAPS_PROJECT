@@ -21,10 +21,10 @@ from maps.experiments.agl import AGLSetting, AGLTrainer
 from maps.utils import load_config, set_all_seeds
 
 SETTINGS = [
-    AGLSetting(id="neither", label="vanilla", cascade=False, second_order=False),
-    AGLSetting(id="cascade_only", label="c", cascade=True, second_order=False),
-    AGLSetting(id="second_order_only", label="so", cascade=False, second_order=True),
-    AGLSetting(id="both", label="full", cascade=True, second_order=True),
+    AGLSetting(id="neither", label="vanilla", cascade_1st=False, cascade_2nd=False, second_order=False),
+    AGLSetting(id="cascade_only", label="c", cascade_1st=True, cascade_2nd=True, second_order=False),
+    AGLSetting(id="second_order_only", label="so", cascade_1st=False, cascade_2nd=False, second_order=True),
+    AGLSetting(id="both", label="full", cascade_1st=True, cascade_2nd=True, second_order=True),
 ]
 
 
@@ -34,8 +34,8 @@ def tiny_cfg():
     return load_config(
         "training/agl",
         overrides=[
-            "train.n_epochs=10",
-            "train.batch_size=20",
+            "train.n_epochs_pretrain=10",
+            "train.batch_size_pretrain=20",
             "cascade.n_iterations=5",
             "cascade.alpha=0.2",
         ],
@@ -53,8 +53,8 @@ def test_agl_trainer_runs_all_settings(tiny_cfg, setting):
     losses_1, losses_2 = trainer.pre_train()
 
     # Shape.
-    assert losses_1.shape == (tiny_cfg.train.n_epochs,)
-    assert losses_2.shape == (tiny_cfg.train.n_epochs,)
+    assert losses_1.shape == (tiny_cfg.train.n_epochs_pretrain,)
+    assert losses_2.shape == (tiny_cfg.train.n_epochs_pretrain,)
 
     # No NaNs.
     assert np.all(np.isfinite(losses_1)), f"losses_1 has non-finite values: {losses_1}"

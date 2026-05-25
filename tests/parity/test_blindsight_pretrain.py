@@ -101,8 +101,16 @@ def cfg():
     ],
 )
 def test_blindsight_pretrain_matches_reference(cfg, setting_id, cascade, second_order):
+    # Legacy 2×2 parity: cascade_1st = cascade_2nd = cascade (symmetric, matches
+    # pre-refactor BlindsightTrainer behavior and the reference student loop).
+    # The 6-cell schema's settings 4 and 5 (asymmetric cascade) have separate
+    # parity coverage — they have no historical reference to compare against.
     setting = BlindsightSetting(
-        id=setting_id, label=setting_id, cascade=cascade, second_order=second_order
+        id=setting_id,
+        label=setting_id,
+        cascade_1st=cascade,
+        cascade_2nd=cascade,
+        second_order=second_order,
     )
 
     # --- Reference side ---------------------------------------------------

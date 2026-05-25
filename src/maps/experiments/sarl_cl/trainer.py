@@ -19,8 +19,19 @@ advances to task ≥ 2, we need THREE additional loss terms per network:
 
 These are normalized by a :class:`DynamicLossWeighter` (one per network)
 via running-max division, then mixed with fixed scalar weights
-(``task_weight``, ``distillation_weight``, ``feature_weight``). The paper
-uses (1.0, 1.0, 1.0) — captured here via the ``LossMixingWeights`` dataclass.
+(``task_weight``, ``distillation_weight``, ``feature_weight``). Three
+3-way-disagreeing sources on these weights:
+
+* **Paper Table 11** CL rows 21-23: (0.3, 0.6, 0.1) — appendix canonical.
+* **Paper text p.17**: "optimal weights (0.4, 0.4, 0.2)" — prose claim.
+* **Student `sarl_cl_maps.py:708-710`**: `WEIGHT1=WEIGHT2=WEIGHT3=1.0` —
+  actual code uses (1.0, 1.0, 1.0).
+
+Port adopts the Table 11 default ((0.3, 0.6, 0.1)) per the Sprint-08
+policy "paper = source of truth, appendix wins". Student-baseline
+reproduction remains a CLI override: ``-o cl.weight_task=1.0 -o
+cl.weight_distillation=1.0 -o cl.weight_feature=1.0``. See
+``docs/reproduction/deviations.md D-cl-weights``.
 
 Parity with the paper
 ---------------------
@@ -59,15 +70,14 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
-from maps.components.losses import weight_regularization
+from maps.components import weight_regularization
 from maps.experiments.sarl.data import Transition
 from maps.experiments.sarl.losses import cae_loss
 from maps.experiments.sarl_cl.loss_weighting import DynamicLossWeighter
 
-# Paper constant: DQN discount factor.
-GAMMA = 0.99
-
 # Paper constant: Jacobian regularizer weight inside CAE_loss (maps.py:704).
+# Paper silent on the value; student uses 1e-4 (= Rifai 2011 default). Hardcoded
+# since no caller varies it.
 CAE_LAMBDA = 1e-4
 
 
@@ -75,19 +85,22 @@ CAE_LAMBDA = 1e-4
 class LossMixingWeights:
     """Fixed scalar weights applied AFTER the DynamicLossWeighter.
 
-    The paper keeps these at (1, 1, 1) but exposes them as WEIGHT1/2/3 —
-    we surface them as a dataclass so ablations can vary them without
-    touching the function signature. Paper refs:
-    ``WEIGHT1`` = task mixing weight (``ce_loss_weight``), line 708.
-    ``WEIGHT2`` = distillation mixing weight (``soft_target_loss_weight``),
-    line 709.
-    ``WEIGHT3`` = feature preservation mixing weight (``feature_weight``),
-    line 710.
+    Defaults are the **paper Table 11 CL rows 21-23** values, not the
+    student values: appendix wins per Sprint-08 policy 2026-04-19. See
+    module docstring for the 3-way divergence (Table 11 vs text vs
+    student) and ``deviations.md D-cl-weights``.
+
+    Paper WEIGHT1/2/3 → task/distillation/feature mapping:
+    * ``WEIGHT1`` = task mixing weight (``ce_loss_weight``), student L708.
+    * ``WEIGHT2`` = distillation mixing weight (``soft_target_loss_weight``),
+      student L709.
+    * ``WEIGHT3`` = feature preservation mixing weight (``feature_weight``),
+      student L710.
     """
 
-    task: float = 1.0
-    distillation: float = 1.0
-    feature: float = 1.0
+    task: float = 0.3
+    distillation: float = 0.6
+    feature: float = 0.1
 
 
 @dataclass
@@ -134,6 +147,8 @@ def sarl_cl_update_step(
     cascade_iterations_1: int,
     cascade_iterations_2: int,
     target_wager_fn: Any,
+    *,
+    gamma: float = 0.999,
     train: bool = True,
     device: torch.device | str = "cpu",
 ) -> SarlCLUpdateOutput:
@@ -185,6 +200,10 @@ def sarl_cl_update_step(
     alpha : float
         Percent EMA coefficient for ``target_wager`` (paper passes percent
         and divides by 100 internally).
+    gamma : float
+        DQN discount factor. Paper Table 11 = 0.999; student = 0.99. Aligned
+        to 0.999 via ``SarlCLTrainingConfig.gamma`` (D.7, 2026-04-20). See
+        deviations.md D-sarl-gamma.
     cascade_iterations_1, cascade_iterations_2 : int
         Paper uses 1 when cascade is off, 50 when on.
     target_wager_fn : callable
@@ -259,11 +278,8 @@ def sarl_cl_update_step(
                 ) = teacher_first_net(states, main_task_out_teacher, cascade_rate_1)
 
     # ── TD target ─────────────────────────────────────────────────────────
-    non_terminal_idx = torch.tensor(
-        [i for i, done in enumerate(is_terminal) if done == 0],
-        dtype=torch.int64,
-        device=device,
-    )
+    # Vectorised non-terminal index (D.7, bit-parity with prior list-comp).
+    non_terminal_idx = (is_terminal.view(-1) == 0).nonzero(as_tuple=True)[0]
     non_terminal_next = next_states.index_select(0, non_terminal_idx)
     q_s_prime = torch.zeros(len(sample), 1, device=device)
     if len(non_terminal_next) != 0:
@@ -272,7 +288,7 @@ def sarl_cl_update_step(
                 non_terminal_next, target_task_out, cascade_rate_1
             )
         q_s_prime[non_terminal_idx] = q_target.detach().max(1)[0].unsqueeze(1)
-    td_target = rewards + GAMMA * q_s_prime
+    td_target = rewards + gamma * q_s_prime
 
     # Live weight view — gradients flow back through W via the Jacobian term.
     W = policy_net.state_dict()["fc_hidden.weight"]

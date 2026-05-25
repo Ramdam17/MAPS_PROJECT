@@ -73,7 +73,7 @@ We use **OmegaConf + Hydra-style composition** (already the convention in METTA)
 ### 3.4 — Shell scripts
 - [ ] Rewrite `scripts/slurm/*.sh` (keep 1 template) that reads `$MAPS_CONFIG` + `$MAPS_PATHS_CONFIG` and dispatches to the right `python -m` entry
 - [ ] Delete `SARL_Training_*.sh`, `meltingpot.sh`, `SARL_Plot_Results.sh` at end of sprint — their functionality is subsumed
-- [ ] Keep `MARL/MAPPO-ATTENTIOAN/{eval,train}_meltingpot.sh` for now (Sprint 07 problem)
+- [ ] Keep `MARL/MAPPO-ATTENTION/{eval,train}_meltingpot.sh` for now (Sprint 07 problem)
 
 ### 3.5 — Dotted-override CLI support
 - [ ] `uv run maps-train-blindsight --config config/training/blindsight.yaml \

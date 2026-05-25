@@ -1,0 +1,53 @@
+# SARL Setting 7 — ACB (Actor-Critic Baseline, Young & Tian 2019, λ=0.8).
+#
+# All algorithmic constants are *not* listed in the paper's Table 11 (which
+# only documents the DQN settings 1-6). The source of truth is the vendored
+# reference `external/paper_reference/sarl_ac_lambda.py` constants block
+# (lines 31-39). Each value below cites the reference line and the YT19
+# section it implements.
+
+algorithm: ACB  # routes scripts/run_sarl.py to ACBTrainer instead of SarlTrainer
+
+# ── Step sizes and trace dynamics (YT19 §5, "Algorithm 1") ──────────────────
+alpha: 0.00048828125   # 1/2048 ; ref L31
+lambda: 0.8            # trace decay ; ref L32
+gamma: 0.99            # discount ; ref L33
+beta: 0.01             # entropy bonus weight ; ref L34
+
+# ── Custom RMSprop with initialization debiasing (YT19 §5 eq. for ḡ²) ──────
+# Note : `torch.optim.RMSprop` does NOT implement the (1 - γ_rms^(t+1))
+# debiasing term — using it would diverge from the reference. ACBTrainer
+# applies the update rule manually.
+gamma_rms: 0.999       # ref L35
+eps_rms: 0.0001        # ref L36
+min_denom: 0.0001      # numerical floor in log(π+δ) ; ref L37
+                       # Logged as D-sarl-acb-min-denom in deviations.md
+                       # (constant absent from paper Table 11).
+
+# ── Training budget ────────────────────────────────────────────────────────
+# Paper Table 11 "Number of frames" = 500_000 (D-sarl-num-frames resolved).
+training:
+  num_frames: 500000
+
+# ── Validation cadence ─────────────────────────────────────────────────────
+# Reference main() L466-471 :
+#   freeway : CHECKPOINT_ITERATION = 15 (short games, long episodes)
+#   else    : CHECKPOINT_ITERATION = 500
+# ACBConfig.for_game() applies the freeway override automatically.
+validation:
+  every_episodes: 500
+  n_episodes: 2
+
+# ── Logging ────────────────────────────────────────────────────────────────
+# CLAUDE.md "Never silence console output" — verbose progress retained.
+logging:
+  every_episodes: 100
+
+# ── Device ──────────────────────────────────────────────────────────────────
+# ACNetwork is tiny (~1600 conv + ~131k FC params). CPU is sufficient on
+# Tamia — `tracker.log_point()` in the reference suggests A100 was used but
+# the gains over CPU are marginal at this network size.
+device: cpu
+
+# ── Seed (overridable via --seed on the CLI) ───────────────────────────────
+seed: 42

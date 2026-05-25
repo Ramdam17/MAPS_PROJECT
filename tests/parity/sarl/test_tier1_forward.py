@@ -59,7 +59,12 @@ def paired_q_networks() -> tuple[RefQNetwork, SarlQNetwork]:
     ref = RefQNetwork(IN_CHANNELS, NUM_ACTIONS).eval()
     set_all_seeds(42)
     ours = SarlQNetwork(IN_CHANNELS, NUM_ACTIONS).eval()
-    ours.load_state_dict(ref.state_dict())
+    # strict=False tolerates ours having the paper-faithful `b_recon` bias
+    # parameter (D.7 / D-sarl-recon-bias) which the student reference lacks.
+    # `b_recon` is zero-initialised in our port so the ReLU(W^T h + b_recon)
+    # reconstruction is numerically identical to the student's bias-less
+    # ReLU(W^T h) at init — forward parity tests remain meaningful.
+    ours.load_state_dict(ref.state_dict(), strict=False)
     return ref, ours
 
 

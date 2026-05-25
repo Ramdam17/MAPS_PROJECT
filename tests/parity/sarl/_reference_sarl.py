@@ -1,26 +1,33 @@
-"""Reference extracts from the paper's SARL MinAtar implementation.
+"""Paper-faithful reference for SARL parity tests.
 
-Source: ``external/MinAtar/examples/maps.py``
-Commit: ``ec5bcb7`` (refactor(external): consolidate MinAtar into external/)
-Authors: Juan David Vargas et al., MAPS TMLR submission (2025).
+Origin
+------
+Originally extracted verbatim from ``external/MinAtar/examples/maps.py``
+(commit ``ec5bcb7``; Vargas et al., MAPS TMLR submission 2025) for Sprint-04b
+parity tests. **Sprint-08 D.15 (2026-04-20)** updated this module to track
+**paper Table 11** instead of the student extract — policy locked 2026-04-19:
+"paper = source of truth".
 
-Verbatim copies of `size_linear_unit`, `num_linear_units`, `QNetwork`,
-`SecondOrderNetwork`, `replay_buffer` (+ `transition`), `get_state`, and
-`target_wager` used as the **ground truth** for Sprint 04b parity tests.
+What changed from the student extract (and why)
+-----------------------------------------------
+- ``GAMMA = 0.999`` (was 0.99). Paper Table 11 row 14. D-sarl-gamma.
+- ``step_size1 = 0.0003`` (unchanged; student = paper on this row). D8 retraction.
+- ``step_size2 = 0.0002`` (was 0.00005). Paper Table 11 row 10. D-sarl-lr-2nd.
+- ``QNetwork.forward`` reconstruction uses a learnable ``self.b_recon`` bias
+  (paper eq.12: ``Ŷ^(1) = ReLU(W^T·Hidden + b_recon)``). Student omitted it;
+  we add it zero-initialised so numerical parity at init is preserved while
+  training can learn the bias. D-sarl-recon-bias.
 
-These definitions are *immutable* — if the paper source changes, bump the
-commit SHA and re-extract. Do not refactor, rename, or simplify any identifier
-here even if ruff complains; that's what the per-file ignore at the bottom of
-`pyproject.toml` is for.
+Unchanged from the student extract (identifiers, comment layout, capitalisation,
+commented-out lines are preserved exactly for readable diffs against the paper
+source). The ``ruff: noqa`` block stays to tolerate the paper naming style.
 
-Stripped vs source:
-- No module-level ``NvidiaEnergyTracker`` instantiation (import side effect)
-- No module-level ``print("using ", device)``
-- ``device`` resolved to CPU (parity tests run on CPU; the paper device-switch
-  does not affect forward-pass math at atol=1e-6)
-
-Nothing else is altered — formatting, comment layout, variable capitalisation,
-and (commented-out) lines are preserved exactly.
+Stripped vs original source
+---------------------------
+- No module-level ``NvidiaEnergyTracker`` instantiation (import side effect).
+- No module-level ``print("using ", device)``.
+- ``device`` resolved to CPU (parity tests run on CPU; forward-pass math is
+  device-independent at atol=1e-6 for MinAtar sizes).
 """
 # ruff: noqa: N801, N802, N803, N806, E741, B007, SIM108, UP008, UP032, RUF001, E712, E711
 
@@ -41,12 +48,12 @@ from torch.autograd import Variable  # deprecated but present in paper source
 # but forward-pass math is device-independent at atol=1e-6 for the sizes here.
 device = torch.device("cpu")
 
-# Paper constants (source: external/MinAtar/examples/maps.py:92-107)
-# Kept as module-level Globals for faithful transcription of `train()`.
-GAMMA = 0.99
+# Paper Table 11 constants (D.15 alignment). Module-level globals are
+# preserved for faithful transcription of `train()`.
+GAMMA = 0.999  # paper Table 11 row 14 (student used 0.99 — D-sarl-gamma)
 MIN_SQUARED_GRAD = 0.01
-step_size1 = 0.0003
-step_size2 = 0.00005
+step_size1 = 0.0003  # paper Table 11 row 9 (student=paper on this row)
+step_size2 = 0.0002  # paper Table 11 row 10 (student used 0.00005 — D-sarl-lr-2nd)
 scheduler_step = 0.999
 
 
@@ -89,6 +96,12 @@ class QNetwork(nn.Module):
 
         #self.fc_comparison = nn.Linear(in_features=128, out_features=num_linear_units)
 
+        # Paper eq.12: reconstruction decoder is ReLU(fc_hidden.weight.T · Hidden + b_recon).
+        # Student extract omitted b_recon; D.15 adds it paper-faithful, zero-init so
+        # forward parity at init is preserved. torch.zeros does not consume the RNG →
+        # conv/fc_hidden/actions init draws stay aligned with the pre-D.15 stream.
+        self.b_recon = nn.Parameter(torch.zeros(num_linear_units))
+
 
     # As per implementation instructions according to pytorch, the forward function should be overwritten by all
     # subclasses
@@ -104,7 +117,8 @@ class QNetwork(nn.Module):
         # Returns the output from the fully-connected linear layer
         x=self.actions(Hidden) # torch.Size([32, 6])
 
-        Output_comparison = f.relu(f.linear(Hidden, self.fc_hidden.weight.t()))
+        # Paper eq.12 reconstruction with learnable bias (D.15).
+        Output_comparison = f.relu(f.linear(Hidden, self.fc_hidden.weight.t(), self.b_recon))
 
         #Output_comparison = f.relu(self.fc_comparison(Hidden))   # torch.Size([32, 1024])
 

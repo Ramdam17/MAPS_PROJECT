@@ -1,0 +1,59 @@
+# Paper Table 5 — 6-cell factorial for Know-Thyself (Blindsight + AGL).
+#
+# Reference: Vargas et al. TMLR §3.1 + Table 5a/5b/5c.
+# Setting labels and (cascade_1st, cascade_2nd, second_order) mapping
+# canonical per docs/reproduction/experiment_matrix.md §Settings factorial.
+#
+# Setting 4 = MAPS (headline result, paper §4 Blindsight Results).
+# Setting 6 = Full MAPS (cascade applied to both networks).
+#
+# Legacy file `factorial_2x2.yaml` (4-cell `cascade: bool` schema) remains for
+# backward compatibility — it maps to paper Settings 1/2/3/6 via symmetric
+# cascade, but cannot express Settings 4 and 5 (asymmetric).
+
+settings:
+
+  - id: setting-1-baseline
+    label: "Setting 1 — Baseline (no cascade, no 2nd-order)"
+    cascade_1st: false
+    cascade_2nd: false
+    second_order: false
+
+  - id: setting-2-cascade-1st
+    label: "Setting 2 — Cascade on 1st Net only"
+    cascade_1st: true
+    cascade_2nd: false
+    second_order: false
+
+  - id: setting-3-second-order-only
+    label: "Setting 3 — 2nd-order, no cascade"
+    cascade_1st: false
+    cascade_2nd: false
+    second_order: true
+
+  - id: setting-4-maps
+    label: "Setting 4 — MAPS (cascade 1st + 2nd-order)"
+    cascade_1st: true
+    cascade_2nd: false
+    second_order: true
+
+  - id: setting-5-cascade-2nd
+    label: "Setting 5 — Cascade on 2nd Net only + 2nd-order"
+    cascade_1st: false
+    cascade_2nd: true
+    second_order: true
+
+  - id: setting-6-full-maps
+    label: "Setting 6 — Full MAPS (cascade on both networks + 2nd-order)"
+    cascade_1st: true
+    cascade_2nd: true
+    second_order: true
+
+# Per-domain compute: n_seeds × n_settings runs.
+# Paper preamble Table 9: "training over the 500 seeds took roughly 12 hours"
+# for Blindsight (RTX3070); AGL Table 10 silent on seed count but same pool
+# applies per experiment_matrix.md §D-blindsight-seeds.
+#
+# Canonical seed pool = list(range(0, 500)). The loader fills `seeds` from
+# `n_seeds` when omitted; an explicit `seeds: [...]` list overrides.
+n_seeds: 500
