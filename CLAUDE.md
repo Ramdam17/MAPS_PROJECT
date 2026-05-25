@@ -20,13 +20,18 @@ Tested on 4 domains (2×2 factorial on/off → 6 settings per paper):
 
 ---
 
-## Current Status (Sprint 10 — Réappropriation)
+## Current Status (Sprint 11 ✅ closed — core rewritten ; Sprint 12 next)
 
-This is a fork being cleaned up for reproducibility after the original student left. Sprints 00-09 produced a modular, config-first port with parity tests. **Sprint 10 (in progress)** is a pedagogical rewrite — `refactor/main-rewrite` branch starts empty and is being rebuilt module-by-module after deep reverse-prompting of each existing module.
+This is a fork being cleaned up for reproducibility after the original student left. Sprints 00-09 produced a modular, config-first port. **Sprint 10** wiped `src/maps/` and produced 41 reverse-prompts (one per module). **Sprint 11** has rebuilt `core/` (cascade + second_order + losses, ~700 LOC, 67/67 tests pass including 5 parity vs paper_reference).
 
-**Branch:** `refactor/main-rewrite` (active rewrite). `main` keeps the Sprint 09 state as numerical reference.
+**Branches:**
+- `refactor/core` — current head. Core/ written + tested.
+- `refactor/main-rewrite` — Sprint 10 baseline (empty src/maps/).
+- `main` — Sprint 09 state, kept as numerical reference.
 
-See `docs/sprints/sprint-10-reappropriation-phase-0-and-1.md` for the current sprint spec, and `docs/learning/structure-decision.md` for the layout decisions.
+**Sprint 12 (next) :** Blindsight. Adds `networks/first_order_mlp.py`, the rest of `utils/`, and `domains/blindsight/{data,trainer,cli,augmentations}.py`. Will exercise the `core/` API end-to-end and validate paper-reproduction z-scores.
+
+See `docs/sprints/sprint-11-core-rewrite.md` for Sprint 11 closeout, `docs/learning/walkthroughs/cascade-from-paper-to-code.md` for the cascade pedagogy, and `docs/learning/structure-decision.md` for the layout decisions taken in Sprint 10.
 
 ---
 

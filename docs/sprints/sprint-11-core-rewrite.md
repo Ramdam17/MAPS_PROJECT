@@ -1,12 +1,124 @@
 # Sprint 11 — MAPS core rewrite + tests
 
-**Status:** 🔵 open (2026-05-25)
-**Branch:** `refactor/core` (à brancher depuis `refactor/main-rewrite`)
+**Status:** ✅ done (2026-05-25)
+**Branch:** `refactor/core` (branchée depuis `refactor/main-rewrite`)
 **Owner:** Rémy Ramadour
+**Effort réel :** 1 session intensive (Phase A → G en continu)
 **Depends on:** Sprint 10 closed — structure + reverse-prompts validés
 **Numerical reference:** `external/paper_reference/blindsight_tmlr.py` (verbatim
 Vargas code — c'est CE code qui a produit les chiffres paper Tables 5/6/7,
 pas la version Sprint 09 sur `main`).
+
+## Closeout (2026-05-25)
+
+**Phase 11.A ✅ — décisions Day-1 (commit `c498bb3`)** :
+7 décisions tranchées (D11.1 → D11.7). Voir section Open items.
+
+**Phase 11.B ✅ — utils/seeding + scaffold (commit `42ae8ba`)** :
+- `src/maps/utils/seeding.py` : `set_all_seeds(seed)` (random, numpy,
+  torch CPU/CUDA/MPS, PYTHONHASHSEED) + `LAB_DEFAULT_SEED = 42`
+- `tests/conftest.py` : autouse `seed_everything` fixture
+- `tests/{unit,parity}/core/__init__.py` : scaffold
+- `tests/unit/utils/test_seeding.py` : 9/9 pass
+
+**Phase 11.C ✅ — core/cascade.py (commit `f90dc0c`)** :
+- `cascade_update(new, prev, cascade_rate)` (D11.1 renamed)
+- `n_iterations_from_alpha(rate)`
+- Docstrings citent McClelland1989, Vargas2025, D-sarl-cascade-noop,
+  Gal & Ghahramani 2016
+- 15/15 unit tests pass (incl. analytical no-op convergence)
+
+**Phase 11.D ✅ — core/losses.py (commit `6c55665`)** :
+- `cae_loss(weight, x, recons_x, hidden, lam, *, recon='bce_sum')`
+  avec quirk `h(1-h)` sur ReLU preserved byte-for-byte
+- `wagering_bce_loss(wager, target, *, reduction='mean')` — `pos_weight`
+  retiré (D11.6)
+- `weight_regularization(student, teacher)` — `zip(strict=True)`
+- `simclr_loss(z_i, z_j, *, temperature=0.5, reduction='mean')` —
+  NT-Xent réelle (D11.7), pas un stub
+- `distillation_loss` **DELETED** (D11.5) — DETTE-3 résolue
+- 21/21 unit tests pass (incl. CAE parity vs paper_reference verbatim,
+  SimCLR cross-check vs manual cross_entropy)
+
+**Phase 11.E ✅ — core/second_order.py (commit `24e89c2`)** :
+- `ComparatorMatrix(nn.Module)` — eq.1 stateless avec shape validation
+  (D11.4)
+- `WageringHead(input_dim, *, n_wager_units=1, hidden_dim: int | None = None)`
+  — D11.2 None default ; Pasquali hidden D.25 restored ; readout init
+  uniform(0, 0.1)
+- `SecondOrderNetwork(input_dim, *, n_wager_units, hidden_dim, dropout=0.5)`
+  — attribut `self.wager` (D11.3) ; composition Comparator → Dropout
+  → cascade → Wager ; caller threads `prev_comparison`
+- 17/17 unit tests pass (incl. Pasquali hidden differentiation,
+  eval-vs-train cascade divergence proving MC-dropout mechanism)
+
+**Phase 11.F ✅ — parity tests vs paper_reference (commit `8d6d926`)** :
+- `tests/parity/core/test_against_paper_reference.py` avec
+  `_StudentSecondOrderNetwork` extrait verbatim de
+  `external/paper_reference/blindsight_tmlr.py:213-252`
+- 5/5 parity tests pass : init weights bit-identical, single-forward
+  eval bit-exact (1e-7), 50-cascade eval (1e-6), 50-cascade train avec
+  RNG-controlled dropout (1e-5), backward gradients (1e-5)
+
+**Phase 11.G ✅ — walkthrough + closeout (ce commit)** :
+- `docs/learning/walkthroughs/cascade-from-paper-to-code.md` —
+  narratif post-rewrite (9 sections, expose équivalence MC-dropout
+  et co-design de `core/`)
+- `docs/reproduction/deviations.md` — refs `components/` → `core/`
+  (D-blindsight-wager-hidden, D-agl-wager-hidden, DETTE-1, DETTE-2 ;
+  DETTE-3 ✅ RESOLVED via D11.5)
+- `docs/reproduction/paper_equations_extracted.md` + `paper_vs_code_audit.md`
+  — refs path mis à jour, mention SimCLR D11.7
+- `CLAUDE.md` Current Status → Sprint 12 next
+
+### Suite de tests Sprint 11 — 67 passing
+
+| Tier | Path | Count | Tolerance |
+|------|------|-------|-----------|
+| unit | `tests/unit/utils/test_seeding.py` | 9 | bit-exact |
+| unit | `tests/unit/core/test_cascade.py` | 15 | bit-exact |
+| unit | `tests/unit/core/test_losses.py` | 21 | 1e-6 (CAE parity), 1e-7 (sanity) |
+| unit | `tests/unit/core/test_second_order.py` | 17 | 1e-5 (50-iter convergence) |
+| parity | `tests/parity/core/test_against_paper_reference.py` | 5 | 1e-7 (eval), 1e-5 (train) |
+
+Tous les tests parity sont des **gardiens cross-sprint** : tout
+domaine qui les casse au Sprint 12+ a un bug de domaine, pas un test
+à modifier.
+
+### Insights scientifiques à reporter Sprint 12+
+
+1. **`core/` est un bloc co-conçu.** Les 3 modules ne sont pas
+   indépendants — le walkthrough cascade-from-paper-to-code l'explique
+   en détail. Toute modification de `cascade.py` doit s'évaluer en
+   tenant compte de `second_order.py` (qui le consomme) et
+   `losses.py` (qui reçoit le gradient à travers).
+
+2. **`simclr_loss` est porté mais non utilisé.** D11.7 a livré la
+   math NT-Xent réelle. Sprint 12 Blindsight devra (a) écrire
+   `domains/blindsight/augmentations.py` (choix de recherche : bit-flip
+   p% ? noise level perturbation ?), (b) brancher `first_order_loss.kind
+   ∈ {cae, simclr}` dans le trainer. La comparaison empirique CAE vs
+   SimCLR est un livrable post-Sprint 12.
+
+3. **`distillation_loss` est DELETED.** Sprint 15 SARL+CL ne pourra
+   pas l'importer. Le vrai "distillation" CL est `weight_regularization`
+   (L2 anchor) — pas un changement, c'est ce que le student utilisait
+   déjà en prod.
+
+4. **MC-dropout equivalence** (Gal & Ghahramani 2016) est *le* angle
+   pédagogique central de MAPS. Il devrait apparaître dans tous les
+   futurs walkthroughs et le README final.
+
+### Hors scope reporté
+
+- `networks/first_order_mlp.py` → Sprint 12 Blindsight
+- `utils/{config, logging_setup, device, energy_tracker}.py` → Sprint 12
+- Tous les domaines → Sprints 12-16
+- Unification `core.cae_loss` vs `domains/sarl/losses.cae_loss` (DETTE-2)
+  → Sprint 14 SARL ou post-Phase F
+- Unification `SecondOrderNetwork` vs `SarlSecondOrderNetwork` (DETTE-1)
+  → Sprint 14 ou post-Phase F
+- SimCLR augmentations + comparaison empirique → Sprint 12+ et au-delà
 
 ---
 

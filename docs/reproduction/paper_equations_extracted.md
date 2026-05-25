@@ -27,8 +27,8 @@ $$
 - `Ŷ^{(1)}_t` — sortie reconstruite par le first-order network (autoencoder output).
 - `C_t` — la comparison matrix = résidu input / reconstruction. Entrée du second-order.
 
-**Port :** `src/maps/components/second_order.ComparatorMatrix.forward()`. Pour SARL, la comparaison
-est calculée inline dans `SarlQNetwork.forward()` : `comparison = flat_input - reconstruction`.
+**Port :** `src/maps/core/second_order.ComparatorMatrix.forward()` (Sprint 11). Pour SARL, la comparaison
+sera calculée inline dans `SarlQNetwork.forward()` (Sprint 14) : `comparison = flat_input - reconstruction`.
 
 ### Equation 2 — Dropout sur comparison
 
@@ -89,9 +89,9 @@ Representations (SimCLR)*, arXiv:2002.05709.
 
 **🚨 Divergence majeure D-002** (already open dans `deviations.md`) : notre port **n'utilise pas**
 cette loss SimCLR. Il utilise un **Contractive AutoEncoder loss (CAE, Rifai et al. 2011)** via
-`src/maps/components/losses.cae_loss` et `src/maps/experiments/sarl/losses.cae_loss`. Deux losses
+`src/maps/core/losses.cae_loss` (Sprint 11) et `src/maps/domains/sarl/losses.cae_loss` (Sprint 14 — pas encore porté). Deux losses
 mathématiquement différentes malgré la collision de nom "contrastive". Décision politique Phase
-C.7-C.9.
+C.7-C.9. **Sprint 11 a aussi ajouté un `simclr_loss` réel (D11.7)** pour permettre la comparaison empirique CAE vs SimCLR sur Blindsight post-Sprint 12.
 
 ### Equation 5 — BCE loss (wagering)
 
@@ -132,7 +132,7 @@ $$
 
 **Paper constants :** `α = 0.02`, `N_cascade = 1/α = 50` iterations.
 
-**Port :** `src/maps/components/cascade.cascade_update(new, prev, alpha)` = `α·new + (1-α)·prev`.
+**Port :** `src/maps/core/cascade.cascade_update(new, prev, cascade_rate)` = `α·new + (1-α)·prev` (Sprint 11 ; param renommé de `alpha` → `cascade_rate` per D11.1 pour distinguer du wager-EMA α=0.45).
 `α·Σ_j w_{ij}·a_{js}(t)` du papier = la fresh activation déjà calculée par un layer linear+nonlin
 dans le port → match sémantique.
 
