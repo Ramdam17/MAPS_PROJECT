@@ -22,12 +22,13 @@ from maps.experiments.agl import (
 )
 from maps.utils import load_config, set_all_seeds
 
-
 # All 4 legacy factorial settings (symmetric cascade — paper settings 1/2/3/6).
 SETTINGS = [
     AGLSetting(id="neither", label="", cascade_1st=False, cascade_2nd=False, second_order=False),
     AGLSetting(id="cascade_only", label="", cascade_1st=True, cascade_2nd=True, second_order=False),
-    AGLSetting(id="second_order_only", label="", cascade_1st=False, cascade_2nd=False, second_order=True),
+    AGLSetting(
+        id="second_order_only", label="", cascade_1st=False, cascade_2nd=False, second_order=True
+    ),
     AGLSetting(id="both", label="", cascade_1st=True, cascade_2nd=True, second_order=True),
 ]
 
@@ -85,9 +86,7 @@ def test_full_pipeline_runs_end_to_end(tiny_cfg, setting):
         if setting.second_order:
             wa = eval_metrics[tier].get("wager_accuracy")
             assert wa is not None, f"wager_accuracy missing on {setting.id}/{tier}"
-            assert 0.0 <= wa <= 1.0, (
-                f"wager_accuracy out of range on {setting.id}/{tier}: {wa}"
-            )
+            assert 0.0 <= wa <= 1.0, f"wager_accuracy out of range on {setting.id}/{tier}: {wa}"
 
 
 def test_full_pipeline_tier_split_respects_num_networks_over_2(tiny_cfg):
@@ -108,7 +107,7 @@ def test_full_pipeline_tier_split_respects_num_networks_over_2(tiny_cfg):
     p_lo = result["low"]["precision_1st"]
     p_all = result["overall"]["precision_1st"]
     assert abs(p_all - (p_hi + p_lo) / 2) < 0.2, (
-        f"overall mean {p_all} not close to (high+low)/2 = {(p_hi+p_lo)/2}"
+        f"overall mean {p_all} not close to (high+low)/2 = {(p_hi + p_lo) / 2}"
     )
 
 

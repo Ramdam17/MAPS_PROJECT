@@ -42,7 +42,7 @@ import json
 import logging
 import time
 from collections import namedtuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -58,12 +58,12 @@ log = logging.getLogger(__name__)
 # ── Paper-locked hyperparameters (Young & Tian 2019, reference constants) ────
 
 DEFAULT_ALPHA: float = 0.00048828125  # 1 / 2048, AC(λ) step size
-DEFAULT_LAMBDA: float = 0.8            # trace decay
-DEFAULT_GAMMA: float = 0.99            # discount factor
-DEFAULT_BETA: float = 0.01             # entropy bonus weight
-DEFAULT_GAMMA_RMS: float = 0.999       # RMSprop EMA on squared grad
-DEFAULT_EPS_RMS: float = 0.0001        # RMSprop epsilon
-DEFAULT_MIN_DENOM: float = 0.0001      # numerical floor in log(π) — D-sarl-acb-min-denom
+DEFAULT_LAMBDA: float = 0.8  # trace decay
+DEFAULT_GAMMA: float = 0.99  # discount factor
+DEFAULT_BETA: float = 0.01  # entropy bonus weight
+DEFAULT_GAMMA_RMS: float = 0.999  # RMSprop EMA on squared grad
+DEFAULT_EPS_RMS: float = 0.0001  # RMSprop epsilon
+DEFAULT_MIN_DENOM: float = 0.0001  # numerical floor in log(π) — D-sarl-acb-min-denom
 
 
 Transition = namedtuple("Transition", ["state", "last_state", "action", "reward", "is_terminal"])
@@ -218,7 +218,9 @@ def _get_state(s, device: torch.device) -> torch.Tensor:
     return torch.tensor(s, device=device).permute(2, 0, 1).unsqueeze(0).float()
 
 
-def _world_step(s: torch.Tensor, env, network: ACNetwork) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def _world_step(
+    s: torch.Tensor, env, network: ACNetwork
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """One env step under the current policy. Mirrors reference ``world_dynamics``."""
     with torch.no_grad():
         action = torch.multinomial(network(s)[0], 1)[0]
@@ -232,7 +234,9 @@ def _world_step(s: torch.Tensor, env, network: ACNetwork) -> tuple[torch.Tensor,
     )
 
 
-def _validation(env, network: ACNetwork, num_episodes: int, device: torch.device) -> tuple[float, float]:
+def _validation(
+    env, network: ACNetwork, num_episodes: int, device: torch.device
+) -> tuple[float, float]:
     """Average + std of returns over ``num_episodes`` greedy episodes.
 
     Reference still samples from π during validation (no argmax) — we mirror
@@ -361,8 +365,8 @@ class ACBTrainer:
         cfg = self.cfg
         cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
-        t = 0          # frame counter
-        e = 0          # episode counter
+        t = 0  # frame counter
+        e = 0  # episode counter
         avg_return = 0.0
         returns: list[float] = []
         frame_stamps: list[int] = []
@@ -393,8 +397,10 @@ class ACBTrainer:
                 G += reward.item()
                 t += 1
 
-                s_last, r_last, term_last = s, reward, torch.tensor(
-                    [[is_terminated]], device=self.device
+                s_last, r_last, term_last = (
+                    s,
+                    reward,
+                    torch.tensor([[is_terminated]], device=self.device),
                 )
                 s = s_prime
 
@@ -422,13 +428,27 @@ class ACBTrainer:
                 validation_episodes.append(e)
                 log.info(
                     "[ACB %s seed=%d] ep=%d frame=%d/%d G=%.2f avg=%.2f val=%.2f±%.2f t/frame=%.4fs",
-                    cfg.game, cfg.seed, e, t, cfg.num_frames, G, avg_return,
-                    val_mean, val_std, (time.perf_counter() - t_start) / max(t, 1),
+                    cfg.game,
+                    cfg.seed,
+                    e,
+                    t,
+                    cfg.num_frames,
+                    G,
+                    avg_return,
+                    val_mean,
+                    val_std,
+                    (time.perf_counter() - t_start) / max(t, 1),
                 )
             elif cfg.log_every_episodes and e % cfg.log_every_episodes == 0:
                 log.info(
                     "[ACB %s seed=%d] ep=%d frame=%d/%d G=%.2f avg=%.2f",
-                    cfg.game, cfg.seed, e, t, cfg.num_frames, G, avg_return,
+                    cfg.game,
+                    cfg.seed,
+                    e,
+                    t,
+                    cfg.num_frames,
+                    G,
+                    avg_return,
                 )
 
         elapsed = time.perf_counter() - t_start
@@ -460,8 +480,12 @@ class ACBTrainer:
             "elapsed_seconds": elapsed,
             "final_return": float(returns[-1]) if returns else 0.0,
             "avg_return_ema": float(avg_return),
-            "last_validation_mean": float(validation_returns[-1]) if validation_returns else float("nan"),
-            "last_validation_std": float(validation_returns_std[-1]) if validation_returns_std else float("nan"),
+            "last_validation_mean": float(validation_returns[-1])
+            if validation_returns
+            else float("nan"),
+            "last_validation_std": float(validation_returns_std[-1])
+            if validation_returns_std
+            else float("nan"),
             "n_validation_points": len(validation_returns),
             "hyperparameters": {
                 "alpha": cfg.alpha,
@@ -476,7 +500,11 @@ class ACBTrainer:
         (cfg.output_dir / "summary.json").write_text(json.dumps(summary, indent=2))
         log.info(
             "[ACB %s seed=%d] DONE %d frames in %.1fs — final G=%.2f, val mean=%.2f",
-            cfg.game, cfg.seed, t, elapsed,
-            summary["final_return"], summary["last_validation_mean"],
+            cfg.game,
+            cfg.seed,
+            t,
+            elapsed,
+            summary["final_return"],
+            summary["last_validation_mean"],
         )
         return summary

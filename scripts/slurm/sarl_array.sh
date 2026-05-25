@@ -99,12 +99,33 @@ if [[ -s "${OUT_DIR}/metrics.json" ]]; then
 fi
 
 # ── Run ────────────────────────────────────────────────────────────────────
+# Sprint-09 Phase 9.2 (D-sarl-wrong-variant): MODEL_VARIANT controls which
+# port is wired in. 'v1' (default) is paper-canonical — invoked by Juan's
+# SARL_Training_Standard.sh with 2M frames + α=0.25. 'v2' is the Sprint-04b
+# port retained for archived Phase F.4 v2 runs and ablations. Override via:
+#   export MODEL_VARIANT=v2
+# at sbatch-time to retarget the array. The paper-faithful hyperparameter
+# triplet for v1 is set below — override with explicit env vars
+# (NUM_FRAMES / ALPHA_EMA) to reproduce non-paper-faithful baselines.
+MODEL_VARIANT="${MODEL_VARIANT:-v1}"
+if [[ "${MODEL_VARIANT}" == "v1" ]]; then
+    NUM_FRAMES="${NUM_FRAMES:-2000000}"      # SARL_Training_Standard.sh: base=2000000
+    ALPHA_EMA="${ALPHA_EMA:-25}"             # SARL_Training_Standard.sh: -ema 25
+else
+    NUM_FRAMES="${NUM_FRAMES:-500000}"       # Sprint-08 D.12: paper Table 11 row 5
+    ALPHA_EMA="${ALPHA_EMA:-45}"             # Sprint-08 D.2: paper Table 11
+fi
+echo "[array] model_variant=${MODEL_VARIANT} num_frames=${NUM_FRAMES} alpha=${ALPHA_EMA}"
+
 uv run --offline python scripts/run_sarl.py \
     --game "${GAME}" \
     --setting "${SETTING}" \
     --seed "${SEED}" \
     --output-dir "${OUT_DIR}" \
-    -o "device=${DEVICE}"
+    -o "device=${DEVICE}" \
+    -o "training.model_variant=${MODEL_VARIANT}" \
+    -o "training.num_frames=${NUM_FRAMES}" \
+    -o "alpha=${ALPHA_EMA}"
 
 if [[ ! -s "${OUT_DIR}/metrics.json" ]]; then
     echo "[array] FAIL: ${OUT_DIR}/metrics.json missing or empty" >&2

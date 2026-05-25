@@ -19,11 +19,8 @@ def check(input):
 
 
 def calculate_conv_params(input_size):
-    height, width, channels = input_size
-    if height > 100 or width > 100:
-        kernel_size = 5
-    else:
-        kernel_size = 3
+    height, width, _channels = input_size
+    kernel_size = 5 if height > 100 or width > 100 else 3
     stride = 1
     padding = (kernel_size - 1) // 2
     return kernel_size, stride, padding

@@ -178,9 +178,7 @@ def _evaluate_single_cell(
         h1: torch.Tensor | None = None
         h2: torch.Tensor | None = None
         for _ in range(cascade_iters_1):
-            h1, h2 = first_order(
-                patterns, prev_h1=h1, prev_h2=h2, cascade_rate=cascade_rate_1
-            )
+            h1, h2 = first_order(patterns, prev_h1=h1, prev_h2=h2, cascade_rate=cascade_rate_1)
         assert h2 is not None
 
         # First-order WTA precision on each 6-bit letter chunk.
@@ -201,9 +199,7 @@ def _evaluate_single_cell(
             comparison: torch.Tensor | None = None
             wager: torch.Tensor | None = None
             for _ in range(cascade_iters_2):
-                wager, comparison = second_order(
-                    patterns, h2, comparison, cascade_rate_2
-                )
+                wager, comparison = second_order(patterns, h2, comparison, cascade_rate_2)
             assert wager is not None
             wager = wager.squeeze()
             target = target_second(patterns, h2)
@@ -253,7 +249,7 @@ def _aggregate_pool_metrics(
         "low": per_cell[split:num_networks],
         "overall": per_cell,
     }
-    keys = sorted({k for cell in per_cell for k in cell.keys()})
+    keys = sorted({k for cell in per_cell for k in cell})
 
     out: dict[str, dict[str, float]] = {}
     for tier_name, cells in tiers.items():
@@ -303,10 +299,7 @@ def _run_training_loop(
 
     See ``AGLTrainer.training`` docstring for the behavioural contract.
     """
-    if batches is not None:
-        n = len(batches)
-    else:
-        n = int(n_epochs)
+    n = len(batches) if batches is not None else int(n_epochs)
 
     losses_1 = np.zeros(n)
     losses_2 = np.zeros(n)
@@ -341,9 +334,7 @@ def _run_training_loop(
             # Backward gated by ``meta_frozen``.
             wager: torch.Tensor | None = None
             for _ in range(cascade_iters_2):
-                wager, comparison = second_order(
-                    batch.patterns, h2, comparison, cascade_rate_2
-                )
+                wager, comparison = second_order(batch.patterns, h2, comparison, cascade_rate_2)
             assert wager is not None
             wager = wager.squeeze()
 
@@ -440,9 +431,7 @@ class AGLTrainer:
         # See docs/reports/sprint-08-d22b-simclr-decision.md.
         from maps.experiments.sarl.training_loop import _check_first_order_loss_kind
 
-        _check_first_order_loss_kind(
-            str(self.cfg.get("first_order_loss", {}).get("kind", "cae"))
-        )
+        _check_first_order_loss_kind(str(self.cfg.get("first_order_loss", {}).get("kind", "cae")))
 
         fo_cfg = self.cfg.first_order
         so_cfg = self.cfg.second_order
@@ -809,12 +798,8 @@ class AGLTrainer:
             cell.second_order.eval()
 
             # Fresh test batch per cell (student L1197-1198).
-            batch_a = generate_batch(
-                grammar_type=GrammarType.A, number=n_eval, device=self.device
-            )
-            batch_b = generate_batch(
-                grammar_type=GrammarType.B, number=n_eval, device=self.device
-            )
+            batch_a = generate_batch(grammar_type=GrammarType.A, number=n_eval, device=self.device)
+            batch_b = generate_batch(grammar_type=GrammarType.B, number=n_eval, device=self.device)
             patterns = torch.cat((batch_a.patterns, batch_b.patterns), dim=0)
 
             cell_metrics = _evaluate_single_cell(

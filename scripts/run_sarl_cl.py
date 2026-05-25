@@ -192,7 +192,7 @@ def main(
         "--adaptive",
         help="Use AdaptiveQNetwork backbone for variable in_channels.",
     ),
-    teacher_load_path: Path | None = typer.Option(  # noqa: B008
+    teacher_load_path: Path | None = typer.Option(
         None,
         "--teacher-load-path",
         help=(
@@ -203,12 +203,12 @@ def main(
             "stage in the same curriculum (D.19b dual-role checkpoint)."
         ),
     ),
-    output_dir: Path | None = typer.Option(  # noqa: B008
+    output_dir: Path | None = typer.Option(
         None,
         "--output-dir",
         help="Override output directory. Default: $SCRATCH/maps/outputs/sarl_cl/<game>/setting-<N>/seed-<seed>/ (or ./outputs/sarl_cl/... when $SCRATCH unset).",
     ),
-    override: list[str] = typer.Option(  # noqa: B008
+    override: list[str] = typer.Option(
         [],
         "--override",
         "-o",
@@ -226,7 +226,7 @@ def main(
             "previous-task reference for the CL distillation anchor."
         ),
     ),
-    resume_from: Path | None = typer.Option(  # noqa: B008
+    resume_from: Path | None = typer.Option(
         None,
         "--resume-from",
         help=(
@@ -272,9 +272,7 @@ def main(
             resolved_resume = candidate
             log.info("--resume auto-detected checkpoint: %s", resolved_resume)
         else:
-            log.warning(
-                "--resume requested but no checkpoint at %s; starting fresh", candidate
-            )
+            log.warning("--resume requested but no checkpoint at %s; starting fresh", candidate)
 
     training_cfg = _build_training_config(
         cfg,

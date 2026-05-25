@@ -75,6 +75,18 @@ scheduler:
 # instead, override via `--override alpha=25` on the CLI.
 alpha: 45
 
+# ── Model variant — Sprint-09 D-sarl-wrong-variant (Phase 9.2) ──────────────
+# 'v1' (default, paper-canonical): SarlQNetworkV1 + SarlSecondOrderNetworkV1.
+#   Dedicated decoder Linear(128, 1024), active comparison_layer
+#   Linear(1024, 1024), Q-head from 1024-dim Output. This is what
+#   SARL_Training_Standard.sh invokes, with 2M frames + α=0.25 (override
+#   training.num_frames=2000000 alpha=25 for the full paper reproduction).
+# 'v2' (Sprint-04b legacy): SarlQNetwork + SarlSecondOrderNetwork. Tied-weight
+#   decoder, no comparison_layer; runs at 500k frames + α=0.45 (current
+#   defaults). Retained for archived Phase F.4 v2 runs and ablations.
+# See docs/reproduction/sarl-v1-vs-v2.md + deviations.md D-sarl-wrong-variant.
+model_variant: v1
+
 # ── Validation ──────────────────────────────────────────────────────────────
 validation:
   every_episodes: 50           # run validation rollouts every N training episodes

@@ -23,7 +23,10 @@ def test_for_game_freeway_overrides_validation_cadence() -> None:
     2019) explicitly drops it to 15 for this game.
     """
     cfg = ACBConfig.for_game(
-        "freeway", seed=42, num_frames=500_000, output_dir=Path("/tmp/x"),
+        "freeway",
+        seed=42,
+        num_frames=500_000,
+        output_dir=Path("/tmp/x"),
         validation_every_episodes=500,
     )
     assert cfg.validation_every_episodes == 15, (
@@ -37,7 +40,10 @@ def test_for_game_non_freeway_respects_caller() -> None:
     """Non-freeway games keep whatever the caller passed."""
     for game in ("space_invaders", "breakout", "seaquest", "asterix"):
         cfg = ACBConfig.for_game(
-            game, seed=42, num_frames=500_000, output_dir=Path("/tmp/x"),
+            game,
+            seed=42,
+            num_frames=500_000,
+            output_dir=Path("/tmp/x"),
             validation_every_episodes=500,
         )
         assert cfg.validation_every_episodes == 500, (
@@ -48,7 +54,10 @@ def test_for_game_non_freeway_respects_caller() -> None:
 def test_for_game_freeway_default_when_not_passed() -> None:
     """Freeway gets 15 even without an explicit kwarg."""
     cfg = ACBConfig.for_game(
-        "freeway", seed=42, num_frames=500_000, output_dir=Path("/tmp/x"),
+        "freeway",
+        seed=42,
+        num_frames=500_000,
+        output_dir=Path("/tmp/x"),
     )
     assert cfg.validation_every_episodes == 15
 
@@ -56,8 +65,13 @@ def test_for_game_freeway_default_when_not_passed() -> None:
 def test_for_game_passes_paper_hyperparams() -> None:
     """Algorithmic constants reach the dataclass through for_game."""
     cfg = ACBConfig.for_game(
-        "breakout", seed=42, num_frames=500_000, output_dir=Path("/tmp/x"),
-        alpha=0.001, lambda_=0.9, gamma=0.95,
+        "breakout",
+        seed=42,
+        num_frames=500_000,
+        output_dir=Path("/tmp/x"),
+        alpha=0.001,
+        lambda_=0.9,
+        gamma=0.95,
     )
     assert cfg.alpha == 0.001
     assert cfg.lambda_ == 0.9

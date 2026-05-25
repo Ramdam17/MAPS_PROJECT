@@ -127,7 +127,7 @@ class R_MAPPO:
             available_actions=available_actions_batch,
             active_masks=active_masks_batch if self._use_policy_active_masks else None,
         )
-        values, _ = self.policy.critic(share_obs_batch, rnn_states_critic_batch, masks_batch)
+        _values, _ = self.policy.critic(share_obs_batch, rnn_states_critic_batch, masks_batch)
 
         # PPO policy loss.
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)

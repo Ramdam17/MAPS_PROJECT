@@ -37,17 +37,15 @@ import torch
 from torch.optim.lr_scheduler import StepLR
 
 from maps.components import SecondOrderNetwork
-from maps.experiments.agl.data import TrainingBatch
 from maps.experiments.agl.trainer import (
-    _OPTIMIZERS,
+    BITS_PER_LETTER,
+    AGLTrainer,
     _build_optimizer,
     _run_training_loop,
-    AGLTrainer,
-    BITS_PER_LETTER,
 )
 from maps.networks import FirstOrderMLP
 
-__all__ = ["NetworkCell", "AGLNetworkPool"]
+__all__ = ["AGLNetworkPool", "NetworkCell"]
 
 log = logging.getLogger(__name__)
 
@@ -114,7 +112,7 @@ class AGLNetworkPool:
         fo_state = copy.deepcopy(trainer.first_order.state_dict())
         so_state = copy.deepcopy(trainer.second_order.state_dict())
 
-        for i in range(self.num_networks):
+        for _i in range(self.num_networks):
             # Rebuild the same architecture as the trainer (matches build()).
             from maps.networks import make_chunked_sigmoid
 
@@ -149,10 +147,14 @@ class AGLNetworkPool:
             s2 = StepLR(o2, step_size=int(sch_cfg.step_size), gamma=float(sch_cfg.gamma))
 
             self.cells.append(
-                NetworkCell(first_order=fo, second_order=so, optim_1=o1, optim_2=o2, sched_1=s1, sched_2=s2)
+                NetworkCell(
+                    first_order=fo, second_order=so, optim_1=o1, optim_2=o2, sched_1=s1, sched_2=s2
+                )
             )
 
-        log.info("AGLNetworkPool: %d cells initialized from post-pretrain weights", self.num_networks)
+        log.info(
+            "AGLNetworkPool: %d cells initialized from post-pretrain weights", self.num_networks
+        )
 
     def __len__(self) -> int:
         return len(self.cells)
@@ -173,9 +175,7 @@ class AGLNetworkPool:
         ``losses_1``, ``losses_2``, and ``precision`` — one row per cell.
         """
         if not (0 <= start < end <= self.num_networks):
-            raise ValueError(
-                f"Invalid range [{start}:{end}] for pool of size {self.num_networks}"
-            )
+            raise ValueError(f"Invalid range [{start}:{end}] for pool of size {self.num_networks}")
 
         trainer = self.trainer
         cfg = trainer.cfg

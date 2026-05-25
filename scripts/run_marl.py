@@ -53,18 +53,17 @@ from dataclasses import asdict
 from pathlib import Path
 
 import typer
-from gymnasium import spaces
 from omegaconf import OmegaConf
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from maps.experiments.marl import (  # noqa: E402
+from maps.experiments.marl import (
     MarlSetting,
     MeltingpotRunner,
     RunnerConfig,
 )
-from maps.experiments.marl.env import build_env_from_config  # noqa: E402
-from maps.utils import configure_logging, get_paths, load_config, set_all_seeds  # noqa: E402
+from maps.experiments.marl.env import build_env_from_config
+from maps.utils import configure_logging, get_paths, load_config, set_all_seeds
 
 app = typer.Typer(add_completion=False, help=__doc__)
 log = logging.getLogger("maps.run_marl")
@@ -166,7 +165,7 @@ def main(
         "cuda",
         help="Torch device. DRAC compute nodes default to 'cuda' ; 'cpu' for dev.",
     ),
-    override: list[str] = typer.Option(  # noqa: B008
+    override: list[str] = typer.Option(
         [],
         "--override",
         "-o",
@@ -182,7 +181,7 @@ def main(
             "to pass unconditionally for idempotent re-submissions."
         ),
     ),
-    resume_from: Path | None = typer.Option(  # noqa: B008
+    resume_from: Path | None = typer.Option(
         None,
         "--resume-from",
         help=(
@@ -196,13 +195,9 @@ def main(
 
     # ── Resolve + load configs ────────────────────────────────────────────
     if substrate not in _SUPPORTED_SUBSTRATES:
-        raise typer.BadParameter(
-            f"Unknown substrate {substrate!r}. Valid: {_SUPPORTED_SUBSTRATES}"
-        )
+        raise typer.BadParameter(f"Unknown substrate {substrate!r}. Valid: {_SUPPORTED_SUBSTRATES}")
     if setting not in _SUPPORTED_SETTINGS:
-        raise typer.BadParameter(
-            f"Unknown setting {setting!r}. Valid: {_SUPPORTED_SETTINGS}"
-        )
+        raise typer.BadParameter(f"Unknown setting {setting!r}. Valid: {_SUPPORTED_SETTINGS}")
 
     cfg = load_config("training/marl", overrides=list(override))
     env_cfg = load_config(f"env/marl/{substrate}")

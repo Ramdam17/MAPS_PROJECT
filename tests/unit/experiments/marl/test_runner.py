@@ -14,7 +14,6 @@ from maps.experiments.marl import MarlSetting, MeltingpotRunner, RunnerConfig
 from maps.experiments.marl.runner import compute_wager_objective
 from maps.utils import load_config
 
-
 HIDDEN = 32
 OBS_SHAPE = (11, 11, 3)
 N_AGENTS = 2
@@ -93,8 +92,12 @@ class _FakeEnv:
     def _obs_dict(self):
         return {
             k: {
-                "RGB": np.random.randint(0, 256, (self.n_threads, *self.obs_shape), dtype=np.uint8).astype(np.float32),
-                "WORLD.RGB": np.random.randint(0, 256, (self.n_threads, *self.obs_shape), dtype=np.uint8).astype(np.float32),
+                "RGB": np.random.randint(
+                    0, 256, (self.n_threads, *self.obs_shape), dtype=np.uint8
+                ).astype(np.float32),
+                "WORLD.RGB": np.random.randint(
+                    0, 256, (self.n_threads, *self.obs_shape), dtype=np.uint8
+                ).astype(np.float32),
             }
             for k in self._player_keys
         }
@@ -138,8 +141,11 @@ def cfg():
 @pytest.fixture
 def runner_cfg(cfg):
     setting = MarlSetting(
-        id="baseline", label="baseline",
-        meta=False, cascade_iterations1=1, cascade_iterations2=1,
+        id="baseline",
+        label="baseline",
+        meta=False,
+        cascade_iterations1=1,
+        cascade_iterations2=1,
     )
     return RunnerConfig(
         cfg=cfg,
@@ -155,8 +161,11 @@ def runner_cfg(cfg):
 @pytest.fixture
 def meta_runner_cfg(cfg):
     setting = MarlSetting(
-        id="maps", label="maps",
-        meta=True, cascade_iterations1=50, cascade_iterations2=1,
+        id="maps",
+        label="maps",
+        meta=True,
+        cascade_iterations1=50,
+        cascade_iterations2=1,
     )
     return RunnerConfig(
         cfg=cfg,
@@ -256,7 +265,9 @@ class _ConstRewardEnv(_FakeEnv):
 
     def step(self, action_dict):
         obs = self._obs_dict()
-        rewards = {k: np.full(self.n_threads, self.const, dtype=np.float32) for k in self._player_keys}
+        rewards = {
+            k: np.full(self.n_threads, self.const, dtype=np.float32) for k in self._player_keys
+        }
         dones = {k: np.zeros(self.n_threads, dtype=bool) for k in self._player_keys}
         return obs, rewards, dones, {}
 

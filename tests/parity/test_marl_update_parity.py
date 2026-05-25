@@ -34,7 +34,7 @@ from gymnasium import spaces
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_student_ref"))
 
 from marl.r_actor import R_Actor, R_Critic
-from marl.trainer import R_MAPPO as RefTrainer
+from marl.trainer import R_MAPPO as RefTrainer  # noqa: N811  # paper-style class name
 
 from maps.experiments.marl.policy import MAPPOPolicy
 from maps.experiments.marl.trainer import MAPPOTrainer
@@ -203,7 +203,7 @@ def _fake_sample(n: int = BATCH):
 
 
 def test_cal_value_loss_matches_student(cfg, args_ns):
-    ours_policy, ours_trainer, _, ref_trainer = _build_pair(cfg, args_ns)
+    _ours_policy, ours_trainer, _, ref_trainer = _build_pair(cfg, args_ns)
     # Both start with independent but equal ValueNorm states (set in _build_pair).
     B = 16
     values = torch.randn(B, 1, generator=torch.Generator().manual_seed(10))
@@ -233,7 +233,7 @@ def _compare_state_dicts(a: dict, b: dict, atol: float = ATOL) -> None:
 
 def test_ppo_update_baseline_outputs_bit_exact(cfg, args_ns):
     """Single ppo_update step with meta=False : compare all scalar outputs."""
-    ours_policy, ours_trainer, ref_policy, ref_trainer = _build_pair(cfg, args_ns)
+    _ours_policy, ours_trainer, ref_policy, ref_trainer = _build_pair(cfg, args_ns)
 
     sample = _fake_sample()
     ours_trainer.prep_training()
@@ -295,7 +295,7 @@ def test_ppo_update_baseline_update_actor_false(cfg, args_ns):
     regardless of whether the optimizer steps. Compare only ``named_parameters``
     to isolate optimizer-driven changes.)
     """
-    ours_policy, ours_trainer, ref_policy, ref_trainer = _build_pair(cfg, args_ns)
+    ours_policy, ours_trainer, ref_policy, _ref_trainer = _build_pair(cfg, args_ns)
 
     sample = _fake_sample()
     ours_trainer.prep_training()

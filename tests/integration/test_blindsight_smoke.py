@@ -21,20 +21,32 @@ from maps.utils import load_config, set_all_seeds
 SETTINGS = [
     # Legacy 4-cell smoke (paper settings 1/2/3/6 via symmetric cascade).
     BlindsightSetting(
-        id="neither", label="vanilla",
-        cascade_1st=False, cascade_2nd=False, second_order=False,
+        id="neither",
+        label="vanilla",
+        cascade_1st=False,
+        cascade_2nd=False,
+        second_order=False,
     ),
     BlindsightSetting(
-        id="cascade_only", label="c",
-        cascade_1st=True, cascade_2nd=True, second_order=False,
+        id="cascade_only",
+        label="c",
+        cascade_1st=True,
+        cascade_2nd=True,
+        second_order=False,
     ),
     BlindsightSetting(
-        id="second_order_only", label="so",
-        cascade_1st=False, cascade_2nd=False, second_order=True,
+        id="second_order_only",
+        label="so",
+        cascade_1st=False,
+        cascade_2nd=False,
+        second_order=True,
     ),
     BlindsightSetting(
-        id="both", label="full",
-        cascade_1st=True, cascade_2nd=True, second_order=True,
+        id="both",
+        label="full",
+        cascade_1st=True,
+        cascade_2nd=True,
+        second_order=True,
     ),
 ]
 

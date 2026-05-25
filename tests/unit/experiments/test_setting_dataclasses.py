@@ -21,18 +21,17 @@ from maps.experiments.agl import AGLSetting
 from maps.experiments.blindsight import BlindsightSetting
 from maps.utils import load_config
 
-
 # Cell-by-cell expected mapping for the 6-cell factorial. Anchored by id +
 # the (cascade_1st, cascade_2nd, second_order) tuple from
 # experiment_matrix.md §Settings factorial (paper Figure 6).
 EXPECTED_6CELL = [
     # (id, cascade_1st, cascade_2nd, second_order)
-    ("setting-1-baseline",          False, False, False),
-    ("setting-2-cascade-1st",       True,  False, False),
+    ("setting-1-baseline", False, False, False),
+    ("setting-2-cascade-1st", True, False, False),
     ("setting-3-second-order-only", False, False, True),
-    ("setting-4-maps",              True,  False, True),
-    ("setting-5-cascade-2nd",       False, True,  True),
-    ("setting-6-full-maps",         True,  True,  True),
+    ("setting-4-maps", True, False, True),
+    ("setting-5-cascade-2nd", False, True, True),
+    ("setting-6-full-maps", True, True, True),
 ]
 
 
@@ -69,7 +68,12 @@ class TestNewSchema:
 
     def test_from_dict_label_defaults_to_id(self, cls):
         s = cls.from_dict(
-            {"id": "setting-1-baseline", "cascade_1st": False, "cascade_2nd": False, "second_order": False}
+            {
+                "id": "setting-1-baseline",
+                "cascade_1st": False,
+                "cascade_2nd": False,
+                "second_order": False,
+            }
         )
         assert s.label == "setting-1-baseline"
 

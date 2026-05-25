@@ -61,12 +61,12 @@ def _rnn_forward(
         x = x.view(episode_len, batch_num, x.size(1))
         masks = masks.view(episode_len, batch_num)
 
-        has_zeros = ((masks[1:] == 0.0).any(dim=-1).nonzero().squeeze().cpu())
+        has_zeros = (masks[1:] == 0.0).any(dim=-1).nonzero().squeeze().cpu()
         if has_zeros.dim() == 0:
             has_zeros = [has_zeros.item() + 1]
         else:
             has_zeros = (has_zeros + 1).numpy().tolist()
-        has_zeros = [0] + has_zeros + [episode_len]
+        has_zeros = [0, *has_zeros, episode_len]
 
         hxs = hxs.transpose(0, 1)
         outputs = []
@@ -94,7 +94,9 @@ class RNNLayer(nn.Module):
     applies to any GRU-output if caller requests).
     """
 
-    def __init__(self, inputs_dim: int, outputs_dim: int, recurrent_n: int = 1, use_orthogonal: bool = True):
+    def __init__(
+        self, inputs_dim: int, outputs_dim: int, recurrent_n: int = 1, use_orthogonal: bool = True
+    ):
         super().__init__()
         self._recurrent_n = recurrent_n
         self.rnn = nn.GRU(inputs_dim, outputs_dim, num_layers=recurrent_n)
@@ -129,7 +131,9 @@ class RNNLayerMeta(nn.Module):
     (grep confirmed 0 call sites in E.4) and is OMITTED per E.5 scope lock.
     """
 
-    def __init__(self, inputs_dim: int, outputs_dim: int, recurrent_n: int = 1, use_orthogonal: bool = True):
+    def __init__(
+        self, inputs_dim: int, outputs_dim: int, recurrent_n: int = 1, use_orthogonal: bool = True
+    ):
         super().__init__()
         self._recurrent_n = recurrent_n
         self.rnn = nn.GRU(inputs_dim, outputs_dim, num_layers=recurrent_n)

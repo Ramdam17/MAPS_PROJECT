@@ -23,18 +23,16 @@ import numpy as np
 import pytest
 import torch
 
-from maps.experiments.sarl.model import SarlQNetwork, SarlSecondOrderNetwork
 from maps.experiments.sarl.training_loop import (
     SarlReplayBuffer,
     SarlTrainingConfig,
-    Transition,
     TrainingMetrics,
+    Transition,
     _build_networks,
     _build_optimizers,
     _persist_checkpoint,
     _restore_from_checkpoint,
 )
-
 
 IN_CHANNELS = 4
 NUM_ACTIONS = 6
@@ -163,10 +161,19 @@ def test_checkpoint_roundtrip_preserves_rng_state(tmp_path: Path) -> None:
     ckpt = tmp_path / "checkpoint.pt"
     _persist_checkpoint(
         ckpt,
-        t=0, episode_idx=0, policy_update_counter=0,
-        policy_net=policy_net, target_net=target_net, second_order_net=None,
-        optimizer=opt1, optimizer2=None, scheduler1=sch1, scheduler2=None,
-        buffer=buffer, metrics=metrics, cfg=cfg,
+        t=0,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=policy_net,
+        target_net=target_net,
+        second_order_net=None,
+        optimizer=opt1,
+        optimizer2=None,
+        scheduler1=sch1,
+        scheduler2=None,
+        buffer=buffer,
+        metrics=metrics,
+        cfg=cfg,
     )
 
     # Reference continuation (no pause).
@@ -178,9 +185,7 @@ def test_checkpoint_roundtrip_preserves_rng_state(tmp_path: Path) -> None:
     _seed_training_rngs(999)
     policy2, target2, _ = _build_networks(IN_CHANNELS, NUM_ACTIONS, cfg)
     opt1_b, _, sch1_b, _ = _build_optimizers(policy2, None, cfg)
-    _restore_from_checkpoint(
-        ckpt, cfg, policy2, target2, None, opt1_b, None, sch1_b, None
-    )
+    _restore_from_checkpoint(ckpt, cfg, policy2, target2, None, opt1_b, None, sch1_b, None)
 
     # These draws should match the reference continuation bit-for-bit.
     assert torch.equal(torch.randn(3), ref_torch)
@@ -200,10 +205,19 @@ def test_checkpoint_atomic_on_interrupted_write(tmp_path: Path) -> None:
     # 1st successful write so we have a non-empty target.
     _persist_checkpoint(
         ckpt,
-        t=1, episode_idx=0, policy_update_counter=0,
-        policy_net=policy_net, target_net=target_net, second_order_net=None,
-        optimizer=opt1, optimizer2=None, scheduler1=sch1, scheduler2=None,
-        buffer=buffer, metrics=metrics, cfg=cfg,
+        t=1,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=policy_net,
+        target_net=target_net,
+        second_order_net=None,
+        optimizer=opt1,
+        optimizer2=None,
+        scheduler1=sch1,
+        scheduler2=None,
+        buffer=buffer,
+        metrics=metrics,
+        cfg=cfg,
     )
     original_size = ckpt.stat().st_size
     original_payload = torch.load(ckpt, map_location="cpu", weights_only=False)
@@ -218,10 +232,19 @@ def test_checkpoint_atomic_on_interrupted_write(tmp_path: Path) -> None:
         with pytest.raises(RuntimeError, match="simulated disk error"):
             _persist_checkpoint(
                 ckpt,
-                t=999, episode_idx=99, policy_update_counter=99,
-                policy_net=policy_net, target_net=target_net, second_order_net=None,
-                optimizer=opt1, optimizer2=None, scheduler1=sch1, scheduler2=None,
-                buffer=buffer, metrics=metrics, cfg=cfg,
+                t=999,
+                episode_idx=99,
+                policy_update_counter=99,
+                policy_net=policy_net,
+                target_net=target_net,
+                second_order_net=None,
+                optimizer=opt1,
+                optimizer2=None,
+                scheduler1=sch1,
+                scheduler2=None,
+                buffer=buffer,
+                metrics=metrics,
+                cfg=cfg,
             )
     finally:
         torch.save = real_save  # type: ignore[assignment]
@@ -246,10 +269,19 @@ def test_checkpoint_cfg_guardrail_rejects_mismatched_seed(tmp_path: Path) -> Non
 
     _persist_checkpoint(
         ckpt,
-        t=0, episode_idx=0, policy_update_counter=0,
-        policy_net=policy_net, target_net=target_net, second_order_net=None,
-        optimizer=opt1, optimizer2=None, scheduler1=sch1, scheduler2=None,
-        buffer=buffer, metrics=metrics, cfg=cfg,
+        t=0,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=policy_net,
+        target_net=target_net,
+        second_order_net=None,
+        optimizer=opt1,
+        optimizer2=None,
+        scheduler1=sch1,
+        scheduler2=None,
+        buffer=buffer,
+        metrics=metrics,
+        cfg=cfg,
     )
 
     # Same cfg except seed — that's a guarded field, so resume MUST reject.
@@ -257,9 +289,7 @@ def test_checkpoint_cfg_guardrail_rejects_mismatched_seed(tmp_path: Path) -> Non
     policy2, target2, _ = _build_networks(IN_CHANNELS, NUM_ACTIONS, bad_cfg)
     opt1_b, _, sch1_b, _ = _build_optimizers(policy2, None, bad_cfg)
     with pytest.raises(ValueError, match="seed"):
-        _restore_from_checkpoint(
-            ckpt, bad_cfg, policy2, target2, None, opt1_b, None, sch1_b, None
-        )
+        _restore_from_checkpoint(ckpt, bad_cfg, policy2, target2, None, opt1_b, None, sch1_b, None)
 
 
 def test_checkpoint_meta_mismatch_raises(tmp_path: Path) -> None:
@@ -273,10 +303,19 @@ def test_checkpoint_meta_mismatch_raises(tmp_path: Path) -> None:
 
     _persist_checkpoint(
         ckpt,
-        t=0, episode_idx=0, policy_update_counter=0,
-        policy_net=policy_net, target_net=target_net, second_order_net=second_net,
-        optimizer=opt1, optimizer2=opt2, scheduler1=sch1, scheduler2=sch2,
-        buffer=buffer, metrics=metrics, cfg=cfg_meta,
+        t=0,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=policy_net,
+        target_net=target_net,
+        second_order_net=second_net,
+        optimizer=opt1,
+        optimizer2=opt2,
+        scheduler1=sch1,
+        scheduler2=sch2,
+        buffer=buffer,
+        metrics=metrics,
+        cfg=cfg_meta,
     )
 
     cfg_nometa = replace(cfg_meta, meta=False)

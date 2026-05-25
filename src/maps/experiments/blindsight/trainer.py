@@ -238,9 +238,7 @@ class BlindsightTrainer:
         # See docs/reports/sprint-08-d22b-simclr-decision.md.
         from maps.experiments.sarl.training_loop import _check_first_order_loss_kind
 
-        _check_first_order_loss_kind(
-            str(self.cfg.get("first_order_loss", {}).get("kind", "cae"))
-        )
+        _check_first_order_loss_kind(str(self.cfg.get("first_order_loss", {}).get("kind", "cae")))
 
         fo_cfg = self.cfg.first_order
         so_cfg = self.cfg.second_order

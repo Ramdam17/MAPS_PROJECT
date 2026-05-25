@@ -15,7 +15,6 @@ import torch
 from maps.experiments.agl import AGLNetworkPool, AGLSetting, AGLTrainer
 from maps.utils import load_config, set_all_seeds
 
-
 SETTINGS = [
     AGLSetting(id="neither", label="", cascade_1st=False, cascade_2nd=False, second_order=False),
     AGLSetting(id="both", label="", cascade_1st=True, cascade_2nd=True, second_order=True),
@@ -99,7 +98,7 @@ def test_pool_train_range_decreases_loss_1(tiny_cfg):
     # Loss 1 should be lower at end than at start on average.
     for row in range(3):
         assert result["losses_1"][row, -1] < result["losses_1"][row, 0] * 2.0, (
-            "loss_1 trajectory worrying (end not much better than start, row=%d)" % row
+            f"loss_1 trajectory worrying (end not much better than start, row={row})"
         )
 
 
@@ -159,7 +158,7 @@ def test_evaluate_pool_rejects_empty_pool(tiny_cfg):
     trainer.build()
 
     class _EmptyPool:
-        cells = []
+        cells: tuple = ()
 
         def __len__(self):
             return 0

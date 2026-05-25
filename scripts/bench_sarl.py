@@ -73,7 +73,7 @@ def main(
     seed: int = typer.Option(42),
     num_frames: int = typer.Option(500000, "--num-frames"),
     device: str = typer.Option("cpu", help="cpu | cuda"),
-    output_dir: Path | None = typer.Option(  # noqa: B008
+    output_dir: Path | None = typer.Option(
         None,
         "--output-dir",
         help="Where to write bench-<mode>-<rev>.json. Default: paths.outputs / 'bench'",

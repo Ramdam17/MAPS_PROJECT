@@ -47,7 +47,9 @@ def _read_ckpt_progress(p: Path) -> tuple[int | None, int | None, int | None]:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     default_root = ""
     if scratch := os.environ.get("SCRATCH"):
         default_root = f"{scratch}/maps/outputs/sarl_cl"

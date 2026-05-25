@@ -153,13 +153,13 @@ def main(
         "--seeds",
         help="Comma-separated seed list overriding the factorial seed pool in --all-settings mode (e.g. '42,43,...,51').",
     ),
-    override: list[str] = typer.Option(  # noqa: B008
+    override: list[str] = typer.Option(
         [],
         "--override",
         "-o",
         help="Hydra-style override, e.g. `-o train.n_epochs=10`. Repeatable.",
     ),
-    output_dir: Path | None = typer.Option(  # noqa: B008
+    output_dir: Path | None = typer.Option(
         None,
         "--output-dir",
         help="Override base output dir. Default: $SCRATCH/maps/outputs/blindsight/ (or ./outputs/blindsight/... when $SCRATCH unset). The <setting>/seed-<seed>/ tail is appended automatically.",
@@ -174,7 +174,9 @@ def main(
     paths.ensure_dirs()
 
     base_out = (
-        output_dir if output_dir is not None else paths.scratch_root / "maps" / "outputs" / "blindsight"
+        output_dir
+        if output_dir is not None
+        else paths.scratch_root / "maps" / "outputs" / "blindsight"
     )
 
     if all_settings:

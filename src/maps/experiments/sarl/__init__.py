@@ -29,6 +29,10 @@ from maps.experiments.sarl.model import (
     SarlQNetwork,
     SarlSecondOrderNetwork,
 )
+from maps.experiments.sarl.model_v1 import (
+    SarlQNetworkV1,
+    SarlSecondOrderNetworkV1,
+)
 from maps.experiments.sarl.trainer import (
     CAE_LAMBDA,
     SarlUpdateOutput,
@@ -36,14 +40,16 @@ from maps.experiments.sarl.trainer import (
 )
 
 __all__ = [
+    "CAE_LAMBDA",
+    "NUM_LINEAR_UNITS",
     "ACBConfig",
     "ACBTrainer",
     "ACNetwork",
-    "CAE_LAMBDA",
-    "NUM_LINEAR_UNITS",
     "SarlQNetwork",
+    "SarlQNetworkV1",
     "SarlReplayBuffer",
     "SarlSecondOrderNetwork",
+    "SarlSecondOrderNetworkV1",
     "SarlUpdateOutput",
     "Transition",
     "cae_loss",

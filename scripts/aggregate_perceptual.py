@@ -204,8 +204,13 @@ def main(
     payload = {}
     md_sections = []
     for d in domains:
-        log.info("Aggregating %s (%d settings × %d seeds, baseline=%s)",
-                 d, len(settings), len(seed_list), baseline)
+        log.info(
+            "Aggregating %s (%d settings × %d seeds, baseline=%s)",
+            d,
+            len(settings),
+            len(seed_list),
+            baseline,
+        )
         result = _aggregate_domain(d, paths.outputs, settings, seed_list, baseline)
         payload[d] = result
         md_sections.append(_render_md(d, result["stats"], result["z_vs_baseline"], result["field"]))

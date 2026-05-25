@@ -17,12 +17,17 @@ import pytest
 from maps.experiments.marl import env as marl_env
 from maps.utils import load_config
 
-
 # Paper §A.4 + student train_meltingpot.sh — canonical per-substrate knobs.
 _EXPECTED = {
     "commons_harvest_closed": {"num_agents": 6, "substrate_name": "commons_harvest__closed"},
-    "commons_harvest_partnership": {"num_agents": 4, "substrate_name": "commons_harvest__partnership"},
-    "chemistry": {"num_agents": 8, "substrate_name": "chemistry__three_metabolic_cycles_with_plentiful_distractors"},
+    "commons_harvest_partnership": {
+        "num_agents": 4,
+        "substrate_name": "commons_harvest__partnership",
+    },
+    "chemistry": {
+        "num_agents": 8,
+        "substrate_name": "chemistry__three_metabolic_cycles_with_plentiful_distractors",
+    },
     "territory_inside_out": {"num_agents": 5, "substrate_name": "territory__inside_out"},
 }
 

@@ -23,7 +23,6 @@ from gymnasium import spaces
 from maps.experiments.marl import MAPPOPolicy, MAPPOTrainer
 from maps.utils import load_config
 
-
 HIDDEN = 32
 OBS_SHAPE = (11, 11, 3)
 BATCH = 8
@@ -86,9 +85,11 @@ class _FakeBuffer:
         T, N = advantages.shape[:2]
         # Flatten (T, N, ...) → ((T*N), ...). All input arrays are (T+1, N, ...)
         # so slice [:T] first (drops the bootstrap last step).
-        share_obs = self.obs[:T].reshape((T * N,) + self.obs.shape[2:])
-        obs = self.obs[:T].reshape((T * N,) + self.obs.shape[2:])
-        actions = self.actions.reshape((T * N,) + self.actions.shape[2:])  # actions shape is (T, N, 1)
+        share_obs = self.obs[:T].reshape((T * N, *self.obs.shape[2:]))
+        obs = self.obs[:T].reshape((T * N, *self.obs.shape[2:]))
+        actions = self.actions.reshape(
+            (T * N, *self.actions.shape[2:])
+        )  # actions shape is (T, N, 1)
         value_preds = self.value_preds[:-1].reshape((T * N, -1))
         returns = self.returns[:-1].reshape((T * N, -1))
         masks = self.masks[:-1].reshape((T * N, -1))
@@ -96,8 +97,10 @@ class _FakeBuffer:
         old_logprobs = self.old_action_log_probs.reshape((T * N, -1))
         adv = advantages.reshape((T * N, -1))
 
-        rnn_states = self.rnn_states[:-1].reshape((T * N,) + self.rnn_states.shape[2:])
-        rnn_states_c = self.rnn_states_critic[:-1].reshape((T * N,) + self.rnn_states_critic.shape[2:])
+        rnn_states = self.rnn_states[:-1].reshape((T * N, *self.rnn_states.shape[2:]))
+        rnn_states_c = self.rnn_states_critic[:-1].reshape(
+            (T * N, *self.rnn_states_critic.shape[2:])
+        )
 
         yield (
             torch.from_numpy(share_obs).float(),

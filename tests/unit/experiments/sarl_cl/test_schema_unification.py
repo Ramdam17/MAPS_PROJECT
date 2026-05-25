@@ -25,7 +25,6 @@ from pathlib import Path
 import pytest
 import torch
 
-from maps.experiments.sarl_cl.loss_weighting import DynamicLossWeighter
 from maps.experiments.sarl_cl.training_loop import (
     CLTrainingMetrics,
     SarlCLTrainingConfig,
@@ -36,12 +35,13 @@ from maps.experiments.sarl_cl.training_loop import (
     _persist_outputs,
 )
 
-
 IN_CHANNELS = 4
 NUM_ACTIONS = 6
 
 
-def _base_cfg(tmp_path: Path, *, curriculum: bool = False, meta: bool = True) -> SarlCLTrainingConfig:
+def _base_cfg(
+    tmp_path: Path, *, curriculum: bool = False, meta: bool = True
+) -> SarlCLTrainingConfig:
     return SarlCLTrainingConfig(
         game="space_invaders",
         seed=42,
@@ -102,19 +102,26 @@ def test_teacher_loading_from_d13_checkpoint(tmp_path: Path) -> None:
     """D.19b: a D.13 checkpoint (canonical keys) serves as a teacher source."""
     # Task-1 run (no teacher) → produce a D.13 checkpoint.
     cfg_task1 = _base_cfg(tmp_path, curriculum=False, meta=True)
-    policy_net, target_net, second_net, _, _ = _build_networks(
-        IN_CHANNELS, NUM_ACTIONS, cfg_task1
-    )
+    policy_net, target_net, second_net, _, _ = _build_networks(IN_CHANNELS, NUM_ACTIONS, cfg_task1)
     opt1, opt2, sch1, sch2 = _build_optimizers(policy_net, second_net, cfg_task1)
 
     ckpt = tmp_path / "task1_checkpoint.pt"
     _persist_checkpoint_cl(
         ckpt,
-        t=0, episode_idx=0, policy_update_counter=0,
-        policy_net=policy_net, target_net=target_net, second_order_net=second_net,
-        teacher_first_net=None, teacher_second_net=None,
-        optimizer=opt1, optimizer2=opt2, scheduler1=sch1, scheduler2=sch2,
-        loss_weighter=None, loss_weighter_second=None,
+        t=0,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=policy_net,
+        target_net=target_net,
+        second_order_net=second_net,
+        teacher_first_net=None,
+        teacher_second_net=None,
+        optimizer=opt1,
+        optimizer2=opt2,
+        scheduler1=sch1,
+        scheduler2=sch2,
+        loss_weighter=None,
+        loss_weighter_second=None,
         buffer=SarlReplayBuffer(cfg_task1.replay_buffer_size),
         metrics=CLTrainingMetrics(),
         cfg=cfg_task1,
@@ -122,9 +129,7 @@ def test_teacher_loading_from_d13_checkpoint(tmp_path: Path) -> None:
 
     # Task-2 run: point teacher at that file, same cfg except curriculum=True.
     cfg_task2 = replace(cfg_task1, curriculum=True, teacher_load_path=ckpt)
-    (_, _, _, teacher_first, teacher_second) = _build_networks(
-        IN_CHANNELS, NUM_ACTIONS, cfg_task2
-    )
+    (_, _, _, teacher_first, teacher_second) = _build_networks(IN_CHANNELS, NUM_ACTIONS, cfg_task2)
 
     assert teacher_first is not None, "FO teacher failed to load from D.13 checkpoint"
     assert teacher_second is not None, "SO teacher failed to load from D.13 checkpoint"
@@ -161,9 +166,7 @@ def test_teacher_loading_from_legacy_checkpoint(tmp_path: Path) -> None:
 
     # Task-2 cfg pointing at the legacy file.
     cfg_task2 = replace(cfg_ref, curriculum=True, teacher_load_path=legacy_ckpt)
-    (_, _, _, teacher_first, teacher_second) = _build_networks(
-        IN_CHANNELS, NUM_ACTIONS, cfg_task2
-    )
+    (_, _, _, teacher_first, teacher_second) = _build_networks(IN_CHANNELS, NUM_ACTIONS, cfg_task2)
 
     assert teacher_first is not None
     assert teacher_second is not None

@@ -105,15 +105,11 @@ def _run_one(cfg, setting: AGLSetting, seed: int, out_dir: Path) -> dict:
 
     # ── Phase 3: Training (High / Low awareness tiers) ──────────────────────
     t1 = time.perf_counter()
-    high_metrics = pool.train_range(
-        start=0, end=num_networks // 2, n_epochs=n_epochs_high
-    )
+    high_metrics = pool.train_range(start=0, end=num_networks // 2, n_epochs=n_epochs_high)
     training_high_elapsed = time.perf_counter() - t1
 
     t2 = time.perf_counter()
-    low_metrics = pool.train_range(
-        start=num_networks // 2, end=num_networks, n_epochs=n_epochs_low
-    )
+    low_metrics = pool.train_range(start=num_networks // 2, end=num_networks, n_epochs=n_epochs_low)
     training_low_elapsed = time.perf_counter() - t2
 
     # Persist per-tier training loss arrays for post-hoc analysis.
@@ -167,9 +163,7 @@ def _run_one(cfg, setting: AGLSetting, seed: int, out_dir: Path) -> dict:
             **eval_metrics,
             "elapsed_seconds": eval_elapsed,
         },
-        "meta_frozen_in_training": bool(
-            cfg.train.get("train_meta_frozen_in_training", True)
-        ),
+        "meta_frozen_in_training": bool(cfg.train.get("train_meta_frozen_in_training", True)),
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=float))
 
@@ -243,13 +237,13 @@ def main(
         "--seeds",
         help="Comma-separated seed list overriding the factorial seed pool in --all-settings mode (e.g. '42,43,...,51').",
     ),
-    override: list[str] = typer.Option(  # noqa: B008
+    override: list[str] = typer.Option(
         [],
         "--override",
         "-o",
         help="Hydra-style override, e.g. `-o train.n_epochs_pretrain=10`. Repeatable.",
     ),
-    output_dir: Path | None = typer.Option(  # noqa: B008
+    output_dir: Path | None = typer.Option(
         None,
         "--output-dir",
         help="Override base output dir. Default: $SCRATCH/maps/outputs/agl/ "
