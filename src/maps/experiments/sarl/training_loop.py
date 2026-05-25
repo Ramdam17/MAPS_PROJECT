@@ -66,8 +66,20 @@ from torch.optim.lr_scheduler import StepLR
 from maps.experiments.sarl.data import SarlReplayBuffer, Transition, get_state, target_wager
 from maps.experiments.sarl.evaluate import ValidationSummary, aggregate_validation
 from maps.experiments.sarl.model import SarlQNetwork, SarlSecondOrderNetwork
+from maps.experiments.sarl.model_v1 import SarlQNetworkV1, SarlSecondOrderNetworkV1
 from maps.experiments.sarl.rollout import epsilon_greedy_action
 from maps.experiments.sarl.trainer import sarl_update_step
+
+#: Maps the ``model_variant`` config string to the (first_order, second_order)
+#: network class pair. ``"v1"`` is paper-canonical (dedicated decoder, active
+#: comparison_layer, 2M frames + α=0.25 in ``SARL_Training_Standard.sh``).
+#: ``"v2"`` is the Sprint-04b port (tied-weight decoder, no comparison_layer,
+#: 500k frames at α=0.45); retained for ablations and historical Phase F.4
+#: archived runs. See deviations.md ``D-sarl-wrong-variant``.
+_MODEL_VARIANTS: dict[str, tuple[type, type]] = {
+    "v1": (SarlQNetworkV1, SarlSecondOrderNetworkV1),
+    "v2": (SarlQNetwork, SarlSecondOrderNetwork),
+}
 
 log = logging.getLogger(__name__)
 
@@ -88,7 +100,10 @@ TARGET_NETWORK_UPDATE_FREQ = 1_000  # sync cadence, in policy-update steps
 MIN_SQUARED_GRAD = 0.01  # Adam eps
 STEP_SIZE_1 = 0.0003  # policy-net learning rate — paper Table 11 row 9 (paper-faithful)
 STEP_SIZE_2 = 0.0002  # second-order learning rate — paper Table 11 (was 0.00005 — D-sarl-lr-2nd)
-ADAM_BETAS: tuple[float, float] = (0.95, 0.95)  # paper Table 11 (student omitted → PyTorch default 0.9/0.999)
+ADAM_BETAS: tuple[float, float] = (
+    0.95,
+    0.95,
+)  # paper Table 11 (student omitted → PyTorch default 0.9/0.999)
 SCHEDULER_STEP = 0.999  # StepLR gamma (paper silent; student value kept)
 SCHEDULER_PERIOD = 1  # StepLR step_size — paper Table 11 (suspected typo, student used 1000); see _build_optimizers
 
@@ -165,6 +180,17 @@ class SarlTrainingConfig:
     # docs/reports/sprint-08-d22b-simclr-decision.md.
     first_order_loss_kind: str = "cae"
 
+    # Sprint-09 D-sarl-wrong-variant (Phase 9.2): SARL model architecture
+    # selector. 'v1' is paper-canonical — dedicated decoder Linear(128, 1024),
+    # active comparison_layer Linear(1024, 1024), Q-head from 1024-dim Output;
+    # this is what ``SARL_Training_Standard.sh`` invokes with 2M frames +
+    # α=0.25. 'v2' is the Sprint-04b port that mistakenly anchored on the
+    # secondary variant (TD-008 audit was a token diff, not structural);
+    # retained for archived Phase F.4 v2 runs and ablations. Override via
+    # ``-o training.model_variant=v2`` for the wrong-variant baseline.
+    # See deviations.md D-sarl-wrong-variant + sarl-v1-vs-v2.md.
+    model_variant: str = "v1"
+
     # Validation cadence.
     validation_every_episodes: int = 50
     validation_iterations: int = 3
@@ -214,8 +240,14 @@ class TrainingMetrics:
 
 def _build_networks(
     in_channels: int, num_actions: int, cfg: SarlTrainingConfig
-) -> tuple[SarlQNetwork, SarlQNetwork, SarlSecondOrderNetwork | None]:
+) -> tuple[torch.nn.Module, torch.nn.Module, torch.nn.Module | None]:
     """Construct policy / target / optional second-order nets.
+
+    Dispatches on ``cfg.model_variant`` to either the v1 paper-canonical
+    classes (``SarlQNetworkV1`` / ``SarlSecondOrderNetworkV1``, default) or
+    the Sprint-04b v2 classes (``SarlQNetwork`` / ``SarlSecondOrderNetwork``).
+    See deviations.md ``D-sarl-wrong-variant`` and module-level
+    ``_MODEL_VARIANTS`` for the mapping.
 
     Init order matters for init-RNG reproducibility — keep policy→target→second.
     """
@@ -224,12 +256,19 @@ def _build_networks(
     # must be done upstream via ``maps.utils.seeding.set_all_seeds(cfg.seed)``
     # — the CLI (``scripts/run_sarl.py``) does this; don't call
     # ``_build_networks`` without that prelude.
+    if cfg.model_variant not in _MODEL_VARIANTS:
+        raise ValueError(
+            f"Unknown model_variant={cfg.model_variant!r}; "
+            f"expected one of {sorted(_MODEL_VARIANTS)}."
+        )
+    q_cls, so_cls = _MODEL_VARIANTS[cfg.model_variant]
+
     torch.manual_seed(cfg.seed)
-    policy = SarlQNetwork(in_channels, num_actions).to(cfg.device)
-    target = SarlQNetwork(in_channels, num_actions).to(cfg.device)
+    policy = q_cls(in_channels, num_actions).to(cfg.device)
+    target = q_cls(in_channels, num_actions).to(cfg.device)
     target.load_state_dict(policy.state_dict())
     target.eval()  # target net never trains
-    second = SarlSecondOrderNetwork(in_channels).to(cfg.device) if cfg.meta else None
+    second = so_cls(in_channels).to(cfg.device) if cfg.meta else None
     return policy, target, second
 
 
@@ -306,8 +345,7 @@ def _check_first_order_loss_kind(kind: str) -> None:
         )
     if kind not in _FIRST_ORDER_LOSS_KINDS:
         raise ValueError(
-            f"first_order_loss.kind must be one of {sorted(_FIRST_ORDER_LOSS_KINDS)}, "
-            f"got {kind!r}."
+            f"first_order_loss.kind must be one of {sorted(_FIRST_ORDER_LOSS_KINDS)}, got {kind!r}."
         )
 
 
@@ -326,6 +364,11 @@ _CHECKPOINT_CFG_GUARDS: tuple[str, ...] = (
     "cascade_iterations_1",
     "cascade_iterations_2",
     "num_frames",
+    # Sprint-09 Phase 9.2: v1/v2 state_dicts have distinct keys
+    # (fc_output, comparison_layer); restoring a v1 checkpoint into a v2
+    # setup (or vice-versa) would silently produce missing-key errors at
+    # load_state_dict time. Guard upstream with a clear message.
+    "model_variant",
 )
 
 
@@ -393,9 +436,7 @@ def _persist_checkpoint(
         "cfg_snapshot": asdict(cfg),
         # RNG states.
         "rng_torch": torch.get_rng_state(),
-        "rng_torch_cuda": (
-            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-        ),
+        "rng_torch_cuda": (torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None),
         "rng_python": random.getstate(),
         "rng_numpy_legacy": np.random.get_state(),
     }
@@ -473,14 +514,10 @@ def _restore_from_checkpoint(
     if second_order_net is not None:
         so_state = payload["second_order_state_dict"]
         if so_state is None:
-            raise ValueError(
-                "checkpoint has no second-order state but caller expects meta=True"
-            )
+            raise ValueError("checkpoint has no second-order state but caller expects meta=True")
         second_order_net.load_state_dict(so_state)
     elif payload["second_order_state_dict"] is not None:
-        log.warning(
-            "checkpoint has second-order state but caller is meta=False; discarded"
-        )
+        log.warning("checkpoint has second-order state but caller is meta=False; discarded")
 
     # Optim + sched.
     optimizer.load_state_dict(payload["optimizer_state_dict"])

@@ -114,6 +114,10 @@ def _build_training_config(
         if hasattr(cfg, "first_order_loss")
         else "cae"
     )
+    # Sprint-09 Phase 9.2: pick up the model variant toggle from yaml. Legacy
+    # yamls (pre-9.2) default to 'v1' (paper-canonical) for safety, matching
+    # the dataclass default in SarlTrainingConfig. See D-sarl-wrong-variant.
+    model_variant = str(getattr(cfg.training, "model_variant", "v1"))
 
     base = SarlTrainingConfig(
         game=game,
@@ -135,6 +139,7 @@ def _build_training_config(
         gamma=gamma_val,
         alpha=float(cfg.alpha),
         first_order_loss_kind=fo_loss_kind,
+        model_variant=model_variant,
         validation_every_episodes=int(cfg.validation.every_episodes),
         validation_iterations=int(cfg.validation.n_episodes),
         device=str(cfg.device),
@@ -231,9 +236,7 @@ def main(
             resolved_resume = candidate
             log.info("--resume auto-detected checkpoint: %s", resolved_resume)
         else:
-            log.warning(
-                "--resume requested but no checkpoint at %s; starting fresh", candidate
-            )
+            log.warning("--resume requested but no checkpoint at %s; starting fresh", candidate)
 
     if setting == 7:
         # ── ACB branch (Setting 7) ──────────────────────────────────────────
@@ -264,7 +267,10 @@ def main(
         )
         log.info(
             "SARL Setting 7 (ACB) : game=%s seed=%d frames=%d device=%s",
-            acb_cfg.game, acb_cfg.seed, acb_cfg.num_frames, acb_cfg.device,
+            acb_cfg.game,
+            acb_cfg.seed,
+            acb_cfg.num_frames,
+            acb_cfg.device,
         )
         log.info("Effective config:\n%s", OmegaConf.to_yaml(cfg))
 
@@ -276,8 +282,12 @@ def main(
         elapsed = time.perf_counter() - t0
         log.info(
             "done: ACB %s seed=%d frames=%d elapsed=%.1fs final_G=%.2f val=%.2f",
-            game, effective_seed, summary["num_frames"], elapsed,
-            summary["final_return"], summary["last_validation_mean"],
+            game,
+            effective_seed,
+            summary["num_frames"],
+            elapsed,
+            summary["final_return"],
+            summary["last_validation_mean"],
         )
         return
 
