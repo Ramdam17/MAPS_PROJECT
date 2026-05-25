@@ -7,8 +7,16 @@ from maps.core.losses import (
     wagering_bce_loss,
     weight_regularization,
 )
+from maps.core.second_order import (
+    ComparatorMatrix,
+    SecondOrderNetwork,
+    WageringHead,
+)
 
 __all__ = [
+    "ComparatorMatrix",
+    "SecondOrderNetwork",
+    "WageringHead",
     "cae_loss",
     "cascade_update",
     "n_iterations_from_alpha",
