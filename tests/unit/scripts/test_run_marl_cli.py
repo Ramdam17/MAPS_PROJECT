@@ -10,13 +10,15 @@ and will be exercised on compute nodes via scripts/slurm/marl_array.sh.
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("gymnasium", reason="MARL CLI tests require gymnasium (Linux-only)")
+
 import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
-
 
 _SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "run_marl.py"
 
@@ -48,9 +50,7 @@ def test_run_marl_rejects_unknown_substrate(cli_app):
 
 def test_run_marl_rejects_unknown_setting(cli_app):
     runner = CliRunner()
-    result = runner.invoke(
-        cli_app, ["--substrate", "chemistry", "--setting", "bogus_setting"]
-    )
+    result = runner.invoke(cli_app, ["--substrate", "chemistry", "--setting", "bogus_setting"])
     assert result.exit_code != 0
 
 

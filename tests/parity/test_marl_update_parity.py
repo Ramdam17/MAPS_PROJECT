@@ -19,25 +19,27 @@ dead-code path. Meta-path parity is out of scope for E.15.
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("gymnasium", reason="MARL parity tests require gymnasium (Linux-only)")
+
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
 import torch
 from gymnasium import spaces
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_student_ref"))
 
-from marl.r_actor import R_Actor, R_Critic  # noqa: E402
-from marl.trainer import R_MAPPO as RefTrainer  # noqa: E402
+from marl.r_actor import R_Actor, R_Critic
+from marl.trainer import R_MAPPO as RefTrainer
 
-from maps.experiments.marl.policy import MAPPOPolicy  # noqa: E402
-from maps.experiments.marl.trainer import MAPPOTrainer  # noqa: E402
-from maps.experiments.marl.valuenorm import ValueNorm  # noqa: E402
-from maps.utils import load_config  # noqa: E402
-
+from maps.experiments.marl.policy import MAPPOPolicy
+from maps.experiments.marl.trainer import MAPPOTrainer
+from maps.experiments.marl.valuenorm import ValueNorm
+from maps.utils import load_config
 
 ATOL = 1e-5
 HIDDEN = 32
@@ -240,10 +242,18 @@ def test_ppo_update_baseline_outputs_bit_exact(cfg, args_ns):
 
     # Ours returns 8-tuple ; ref returns 6-tuple (no wager losses in baseline).
     (
-        v_ours, cgn_ours, p_ours, e_ours, agn_ours, iw_ours,
-        wla_ours, wlc_ours,
+        v_ours,
+        cgn_ours,
+        p_ours,
+        e_ours,
+        agn_ours,
+        iw_ours,
+        wla_ours,
+        wlc_ours,
     ) = ours_trainer.ppo_update(sample, update_actor=True, wager_objective=None, meta=False)
-    v_ref, cgn_ref, p_ref, e_ref, agn_ref, iw_ref = ref_trainer.ppo_update(sample, update_actor=True)
+    v_ref, cgn_ref, p_ref, e_ref, agn_ref, iw_ref = ref_trainer.ppo_update(
+        sample, update_actor=True
+    )
 
     # Baseline : our wager-loss outputs are exactly zero ; student has no such.
     assert wla_ours == 0.0
@@ -253,9 +263,7 @@ def test_ppo_update_baseline_outputs_bit_exact(cfg, args_ns):
     assert abs(p_ours - p_ref.item()) < ATOL, f"policy_loss : {p_ours} vs {p_ref.item()}"
     assert abs(e_ours - e_ref.item()) < ATOL, f"dist_entropy : {e_ours} vs {e_ref.item()}"
     assert abs(agn_ours - float(agn_ref)) < ATOL * 10, f"actor_grad_norm : {agn_ours} vs {agn_ref}"
-    assert abs(cgn_ours - float(cgn_ref)) < ATOL * 10, (
-        f"critic_grad_norm : {cgn_ours} vs {cgn_ref}"
-    )
+    assert abs(cgn_ours - float(cgn_ref)) < ATOL * 10, f"critic_grad_norm : {cgn_ours} vs {cgn_ref}"
     assert abs(iw_ours - iw_ref.mean().item()) < ATOL, (
         f"imp_weights mean : {iw_ours} vs {iw_ref.mean().item()}"
     )
@@ -274,13 +282,9 @@ def test_ppo_update_baseline_weights_after_step_bit_exact(cfg, args_ns):
     ref_trainer.ppo_update(sample, update_actor=True)
 
     # Actor weights.
-    _compare_state_dicts(
-        ours_policy.actor.state_dict(), ref_policy.actor.state_dict(), atol=ATOL
-    )
+    _compare_state_dicts(ours_policy.actor.state_dict(), ref_policy.actor.state_dict(), atol=ATOL)
     # Critic weights.
-    _compare_state_dicts(
-        ours_policy.critic.state_dict(), ref_policy.critic.state_dict(), atol=ATOL
-    )
+    _compare_state_dicts(ours_policy.critic.state_dict(), ref_policy.critic.state_dict(), atol=ATOL)
 
 
 def test_ppo_update_baseline_update_actor_false(cfg, args_ns):

@@ -19,29 +19,31 @@ the ref side before comparison — documented below as ``_RNN_PERMUTE_NOTE``.
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("gymnasium", reason="MARL parity tests require gymnasium (Linux-only)")
+
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
 import torch
 from gymnasium import spaces
 
 # ensure the vendored student ref imports cleanly.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_student_ref"))
 
-from marl.act import ACTLayer as RefACTLayer  # noqa: E402
-from marl.cnn import CNNBase as RefCNNBase  # noqa: E402
-from marl.r_actor import R_Actor, R_Critic  # noqa: E402
-from marl.rnn import RNNLayer as RefRNNLayer  # noqa: E402
+from marl.act import ACTLayer as RefACTLayer
+from marl.cnn import CNNBase as RefCNNBase
+from marl.r_actor import R_Actor, R_Critic
+from marl.rnn import RNNLayer as RefRNNLayer
 
-from maps.experiments.marl.act import ACTLayer as OursACTLayer  # noqa: E402
-from maps.experiments.marl.encoder import CNNBase as OursCNNBase  # noqa: E402
-from maps.experiments.marl.policy import MAPPOActor, MAPPOCritic  # noqa: E402
-from maps.experiments.marl.rnn import RNNLayer as OursRNNLayer  # noqa: E402
-from maps.utils import load_config  # noqa: E402
-
+from maps.experiments.marl.act import ACTLayer as OursACTLayer
+from maps.experiments.marl.encoder import CNNBase as OursCNNBase
+from maps.experiments.marl.policy import MAPPOActor, MAPPOCritic
+from maps.experiments.marl.rnn import RNNLayer as OursRNNLayer
+from maps.utils import load_config
 
 _RNN_PERMUTE_NOTE = (
     "Student R_Actor.forward permutes rnn_states (batch, N, H) → (N, batch, H) "
@@ -63,13 +65,9 @@ N_ACTIONS = 8
 
 def test_cnn_forward_bit_exact_vs_student():
     torch.manual_seed(0)
-    ref = RefCNNBase(
-        obs_shape=OBS_SHAPE, hidden_size=HIDDEN, use_orthogonal=True, use_ReLU=True
-    )
+    ref = RefCNNBase(obs_shape=OBS_SHAPE, hidden_size=HIDDEN, use_orthogonal=True, use_ReLU=True)
     torch.manual_seed(0)
-    ours = OursCNNBase(
-        obs_shape=OBS_SHAPE, hidden_size=HIDDEN, use_orthogonal=True, use_ReLU=True
-    )
+    ours = OursCNNBase(obs_shape=OBS_SHAPE, hidden_size=HIDDEN, use_orthogonal=True, use_ReLU=True)
     ours.load_state_dict(ref.state_dict())
     ref.eval()
     ours.eval()

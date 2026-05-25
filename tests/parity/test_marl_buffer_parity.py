@@ -15,26 +15,28 @@ atol = 1e-6 on all floating-point arrays.
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("gymnasium", reason="MARL parity tests require gymnasium (Linux-only)")
+
 import sys
 from pathlib import Path
 
 import numpy as np
-import pytest
 import torch
 from gymnasium import spaces
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_student_ref"))
 
-from marl.buffer import SeparatedReplayBuffer as RefBuffer  # noqa: E402
+from marl.buffer import SeparatedReplayBuffer as RefBuffer
 
-from maps.experiments.marl.data import RolloutBuffer  # noqa: E402
-from maps.experiments.marl.valuenorm import ValueNorm  # noqa: E402
-
+from maps.experiments.marl.data import RolloutBuffer
+from maps.experiments.marl.valuenorm import ValueNorm
 
 ATOL = 1e-6
-T = 8            # episode_length
-N = 3            # n_rollout_threads
-H = 32           # hidden size
+T = 8  # episode_length
+N = 3  # n_rollout_threads
+H = 32  # hidden size
 RECURRENT_N = 1
 OBS_SHAPE = (11, 11, 3)
 N_ACTIONS = 8
@@ -200,9 +202,9 @@ def test_feed_forward_generator_matches_student_seeded(num_mini_batch):
             ref_np = _as_np(ref_arr)
             our_np = _as_np(our_arr)
             assert ref_np.shape == our_np.shape, f"shape mismatch at index {i}"
-            assert np.allclose(
-                ref_np.astype(np.float64), our_np.astype(np.float64), atol=ATOL
-            ), f"feed-forward generator divergence at tuple-idx {i}"
+            assert np.allclose(ref_np.astype(np.float64), our_np.astype(np.float64), atol=ATOL), (
+                f"feed-forward generator divergence at tuple-idx {i}"
+            )
 
 
 # ──────────────────────────────────────────────────────────────
@@ -235,6 +237,6 @@ def test_recurrent_generator_matches_student_seeded(chunk_length, num_mini_batch
             ref_np = _as_np(ref_arr)
             our_np = _as_np(our_arr)
             assert ref_np.shape == our_np.shape, f"shape mismatch at index {i}"
-            assert np.allclose(
-                ref_np.astype(np.float64), our_np.astype(np.float64), atol=ATOL
-            ), f"recurrent generator divergence at tuple-idx {i}"
+            assert np.allclose(ref_np.astype(np.float64), our_np.astype(np.float64), atol=ATOL), (
+                f"recurrent generator divergence at tuple-idx {i}"
+            )
