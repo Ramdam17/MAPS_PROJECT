@@ -29,7 +29,7 @@ References
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -299,7 +299,9 @@ class MAPPOTrainer:
                 action=actions_batch,
                 masks=masks_batch,
             )
-            wager_loss_actor = F.binary_cross_entropy_with_logits(values_meta_actor, wager_objective_t)
+            wager_loss_actor = F.binary_cross_entropy_with_logits(
+                values_meta_actor, wager_objective_t
+            )
 
         # ─ PPO policy loss (student L174-189).
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
@@ -363,11 +365,15 @@ class MAPPOTrainer:
                 action=actions_batch,
                 masks=masks_batch,
             )
-            wager_loss_critic = F.binary_cross_entropy_with_logits(values_meta_critic, wager_objective_t)
+            wager_loss_critic = F.binary_cross_entropy_with_logits(
+                values_meta_critic, wager_objective_t
+            )
 
         # Compute values AGAIN for value loss — student L227 re-evaluates via critic.
         values_fresh, _ = self.policy.critic(share_obs_batch, rnn_states_critic_batch, masks_batch)
-        value_loss = self.cal_value_loss(values_fresh, value_preds_batch, return_batch, active_masks_batch)
+        value_loss = self.cal_value_loss(
+            values_fresh, value_preds_batch, return_batch, active_masks_batch
+        )
         total_critic_loss = value_loss * self.value_loss_coef
 
         if meta:
@@ -459,7 +465,7 @@ class MAPPOTrainer:
                 )
             denorm = self.value_normalizer.denormalize(value_preds_slice)
             if not np.isfinite(denorm).all():
-                mean, var = vn.running_mean_var()
+                _mean, var = vn.running_mean_var()
                 raise RuntimeError(
                     f"[NaN-guard] denormalize(value_preds) not finite : "
                     f"NaN={int(np.isnan(denorm).sum())}, "

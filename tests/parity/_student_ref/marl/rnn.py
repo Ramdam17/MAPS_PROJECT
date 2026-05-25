@@ -26,9 +26,9 @@ class RNNLayer(nn.Module):
         if x.size(0) == hxs.size(0):
             x, hxs = self.rnn(
                 x.unsqueeze(0),
-                (
-                    hxs * masks.repeat(1, self._recurrent_N).unsqueeze(-1)
-                ).transpose(0, 1).contiguous(),
+                (hxs * masks.repeat(1, self._recurrent_N).unsqueeze(-1))
+                .transpose(0, 1)
+                .contiguous(),
             )
             x = x.squeeze(0)
             hxs = hxs.transpose(0, 1)
@@ -37,14 +37,12 @@ class RNNLayer(nn.Module):
             episode_len = int(x.size(0) / batch_num)
             x = x.view(episode_len, batch_num, x.size(1))
             masks = masks.view(episode_len, batch_num)
-            has_zeros = (
-                (masks[1:] == 0.0).any(dim=-1).nonzero().squeeze().cpu()
-            )
+            has_zeros = (masks[1:] == 0.0).any(dim=-1).nonzero().squeeze().cpu()
             if has_zeros.dim() == 0:
                 has_zeros = [has_zeros.item() + 1]
             else:
                 has_zeros = (has_zeros + 1).numpy().tolist()
-            has_zeros = [0] + has_zeros + [episode_len]
+            has_zeros = [0, *has_zeros, episode_len]
             hxs = hxs.transpose(0, 1)
             outputs = []
             for i in range(len(has_zeros) - 1):

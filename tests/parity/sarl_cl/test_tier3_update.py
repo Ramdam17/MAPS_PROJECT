@@ -29,7 +29,7 @@ import torch
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 
-from maps.experiments.sarl.data import SarlReplayBuffer, Transition
+from maps.experiments.sarl.data import Transition
 from maps.experiments.sarl_cl.loss_weighting import DynamicLossWeighter
 from maps.experiments.sarl_cl.model import (
     SarlCLQNetwork,
@@ -38,8 +38,6 @@ from maps.experiments.sarl_cl.model import (
 from maps.experiments.sarl_cl.trainer import LossMixingWeights, sarl_cl_update_step
 from tests.parity.sarl_cl._reference_sarl_cl import (
     MIN_SQUARED_GRAD,
-    QNetwork as RefQNetwork,
-    SecondOrderNetwork as RefSecondOrderNetwork,
     WEIGHT1,
     WEIGHT2,
     WEIGHT3,
@@ -48,9 +46,16 @@ from tests.parity.sarl_cl._reference_sarl_cl import (
     step_size1,
     step_size2,
     target_wager,
+)
+from tests.parity.sarl_cl._reference_sarl_cl import (
+    QNetwork as RefQNetwork,
+)
+from tests.parity.sarl_cl._reference_sarl_cl import (
+    SecondOrderNetwork as RefSecondOrderNetwork,
+)
+from tests.parity.sarl_cl._reference_sarl_cl import (
     transition as ref_transition,
 )
-
 
 # ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -133,8 +138,7 @@ def _sample_as_port(ref_sample: list[Any]) -> list[Transition]:
     Same tensor contents; only the namedtuple class differs.
     """
     return [
-        Transition(s.state, s.next_state, s.action, s.reward, s.is_terminal)
-        for s in ref_sample
+        Transition(s.state, s.next_state, s.action, s.reward, s.is_terminal) for s in ref_sample
     ]
 
 
@@ -146,9 +150,7 @@ def test_non_cl_branch_matches_reference(meta: bool) -> None:
     """Degenerate path (no teacher): port must match reference bit-exactly."""
     # Build two separate network instances — one for ref, one for port.
     ref_policy, ref_target, ref_second = _build_networks_ref(SEED)
-    our_policy, our_target, our_second = _build_networks_ours(
-        ref_policy, ref_target, ref_second
-    )
+    our_policy, our_target, our_second = _build_networks_ours(ref_policy, ref_target, ref_second)
 
     ref_opt1, ref_opt2, ref_sch1, ref_sch2 = _build_optimizers(ref_policy, ref_second)
     our_opt1, our_opt2, our_sch1, our_sch2 = _build_optimizers(our_policy, our_second)
@@ -165,25 +167,39 @@ def test_non_cl_branch_matches_reference(meta: bool) -> None:
     # ref path
     reference_dqn_update_step_cl(
         ref_sample,
-        ref_policy, ref_target, ref_second if meta else None,
-        ref_opt1, ref_opt2 if meta else None,
-        ref_sch1, ref_sch2 if meta else None,
-        meta=meta, alpha=45, cascade_iterations_1=CASCADE_OFF, cascade_iterations_2=CASCADE_OFF,
+        ref_policy,
+        ref_target,
+        ref_second if meta else None,
+        ref_opt1,
+        ref_opt2 if meta else None,
+        ref_sch1,
+        ref_sch2 if meta else None,
+        meta=meta,
+        alpha=45,
+        cascade_iterations_1=CASCADE_OFF,
+        cascade_iterations_2=CASCADE_OFF,
     )
 
     # port path
     mixing = LossMixingWeights(task=WEIGHT1, distillation=WEIGHT2, feature=WEIGHT3)
     sarl_cl_update_step(
         sample=our_sample,
-        policy_net=our_policy, target_net=our_target,
+        policy_net=our_policy,
+        target_net=our_target,
         second_order_net=our_second if meta else None,
-        teacher_first_net=None, teacher_second_net=None,
-        optimizer=our_opt1, optimizer2=our_opt2 if meta else None,
-        scheduler1=our_sch1, scheduler2=our_sch2 if meta else None,
-        loss_weighter=None, loss_weighter_second=None,
+        teacher_first_net=None,
+        teacher_second_net=None,
+        optimizer=our_opt1,
+        optimizer2=our_opt2 if meta else None,
+        scheduler1=our_sch1,
+        scheduler2=our_sch2 if meta else None,
+        loss_weighter=None,
+        loss_weighter_second=None,
         mixing=mixing,
-        meta=meta, alpha=45,
-        cascade_iterations_1=CASCADE_OFF, cascade_iterations_2=CASCADE_OFF,
+        meta=meta,
+        alpha=45,
+        cascade_iterations_1=CASCADE_OFF,
+        cascade_iterations_2=CASCADE_OFF,
         target_wager_fn=target_wager,
     )
 
@@ -224,9 +240,7 @@ def test_cl_branch_matches_reference() -> None:
     for p in ref_teacher_second.parameters():
         p.requires_grad_(False)
 
-    our_policy, our_target, our_second = _build_networks_ours(
-        ref_policy, ref_target, ref_second
-    )
+    our_policy, our_target, our_second = _build_networks_ours(ref_policy, ref_target, ref_second)
     our_teacher_first = SarlCLQNetwork(IN_CHANNELS, NUM_ACTIONS)
     _copy_state_dict(ref_teacher_first, our_teacher_first)
     our_teacher_first.eval()
@@ -258,10 +272,17 @@ def test_cl_branch_matches_reference() -> None:
     # --- ref path ---
     reference_dqn_update_step_cl(
         ref_sample,
-        ref_policy, ref_target, ref_second,
-        ref_opt1, ref_opt2, ref_sch1, ref_sch2,
-        meta=True, alpha=45,
-        cascade_iterations_1=CASCADE_OFF, cascade_iterations_2=CASCADE_OFF,
+        ref_policy,
+        ref_target,
+        ref_second,
+        ref_opt1,
+        ref_opt2,
+        ref_sch1,
+        ref_sch2,
+        meta=True,
+        alpha=45,
+        cascade_iterations_1=CASCADE_OFF,
+        cascade_iterations_2=CASCADE_OFF,
         teacher_first_net=ref_teacher_first,
         teacher_second_net=ref_teacher_second,
         loss_weighter=shared_weighter,
@@ -270,12 +291,12 @@ def test_cl_branch_matches_reference() -> None:
 
     # Snapshot weighter state post-ref so we can restore before the port run.
     saved_w_hist = dict(shared_weighter.historical_max)
-    saved_w_hist_prev = dict(shared_weighter.historical_max_prev)
-    saved_w_moving = dict(shared_weighter.moving_avgs)
+    dict(shared_weighter.historical_max_prev)
+    dict(shared_weighter.moving_avgs)
     saved_w_steps = shared_weighter.steps
     saved_w2_hist = dict(shared_weighter_second.historical_max)
-    saved_w2_hist_prev = dict(shared_weighter_second.historical_max_prev)
-    saved_w2_moving = dict(shared_weighter_second.moving_avgs)
+    dict(shared_weighter_second.historical_max_prev)
+    dict(shared_weighter_second.moving_avgs)
     saved_w2_steps = shared_weighter_second.steps
 
     # Reset the weighters to their pre-ref state for the port run (so both
@@ -295,15 +316,22 @@ def test_cl_branch_matches_reference() -> None:
     mixing = LossMixingWeights(task=WEIGHT1, distillation=WEIGHT2, feature=WEIGHT3)
     sarl_cl_update_step(
         sample=our_sample,
-        policy_net=our_policy, target_net=our_target, second_order_net=our_second,
-        teacher_first_net=our_teacher_first, teacher_second_net=our_teacher_second,
-        optimizer=our_opt1, optimizer2=our_opt2,
-        scheduler1=our_sch1, scheduler2=our_sch2,
+        policy_net=our_policy,
+        target_net=our_target,
+        second_order_net=our_second,
+        teacher_first_net=our_teacher_first,
+        teacher_second_net=our_teacher_second,
+        optimizer=our_opt1,
+        optimizer2=our_opt2,
+        scheduler1=our_sch1,
+        scheduler2=our_sch2,
         loss_weighter=shared_weighter,
         loss_weighter_second=shared_weighter_second,
         mixing=mixing,
-        meta=True, alpha=45,
-        cascade_iterations_1=CASCADE_OFF, cascade_iterations_2=CASCADE_OFF,
+        meta=True,
+        alpha=45,
+        cascade_iterations_1=CASCADE_OFF,
+        cascade_iterations_2=CASCADE_OFF,
         target_wager_fn=target_wager,
     )
 

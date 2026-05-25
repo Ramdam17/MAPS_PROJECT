@@ -30,7 +30,7 @@ import logging
 import os
 import random
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -41,7 +41,6 @@ from maps.experiments.marl.data import RolloutBuffer
 from maps.experiments.marl.policy import MAPPOPolicy
 from maps.experiments.marl.setting import MarlSetting
 from maps.experiments.marl.trainer import MAPPOTrainer
-from maps.experiments.marl.valuenorm import ValueNorm
 
 __all__ = ["MeltingpotRunner", "RunnerConfig", "compute_wager_objective"]
 
@@ -252,7 +251,9 @@ class MeltingpotRunner:
             obs = torch.from_numpy(buf.obs[step]).float().to(self.device)
             share_obs = torch.from_numpy(buf.share_obs[step]).float().to(self.device)
             rnn_states = torch.from_numpy(buf.rnn_states[step]).float().to(self.device)
-            rnn_states_critic = torch.from_numpy(buf.rnn_states_critic[step]).float().to(self.device)
+            rnn_states_critic = (
+                torch.from_numpy(buf.rnn_states_critic[step]).float().to(self.device)
+            )
             masks = torch.from_numpy(buf.masks[step]).float().to(self.device)
 
             actions, action_log_probs, new_rnn_states = policy.actor(
@@ -349,9 +350,7 @@ class MeltingpotRunner:
             self.trainers[agent_id].prep_rollout()
 
             share_obs = torch.from_numpy(buf.share_obs[-1]).float().to(self.device)
-            rnn_states_critic = (
-                torch.from_numpy(buf.rnn_states_critic[-1]).float().to(self.device)
-            )
+            rnn_states_critic = torch.from_numpy(buf.rnn_states_critic[-1]).float().to(self.device)
             masks = torch.from_numpy(buf.masks[-1]).float().to(self.device)
 
             next_values, _ = policy.critic(share_obs, rnn_states_critic, masks)
@@ -375,7 +374,9 @@ class MeltingpotRunner:
         infos = []
         for agent_id in range(self.num_agents):
             self.trainers[agent_id].prep_training()
-            wager = wager_targets_per_agent[agent_id] if wager_targets_per_agent is not None else None
+            wager = (
+                wager_targets_per_agent[agent_id] if wager_targets_per_agent is not None else None
+            )
             try:
                 info = self.trainers[agent_id].train(
                     self.buffers[agent_id],
@@ -422,7 +423,9 @@ class MeltingpotRunner:
             from the prior run are prepended.
         """
         if num_episodes is None:
-            num_episodes = max(1, self.num_env_steps // (self.episode_length * self.n_rollout_threads))
+            num_episodes = max(
+                1, self.num_env_steps // (self.episode_length * self.n_rollout_threads)
+            )
 
         start_episode = 0
         all_infos: list[dict] = []
@@ -476,10 +479,12 @@ class MeltingpotRunner:
                     # Reduce reward over rollout threads (mean) for EMA signal.
                     reward_t = rewards_per_agent.mean(axis=1)
                     ema_prev = self.ema_reward.mean(axis=1)
-                    ema_new, wager_t = compute_wager_objective(
+                    _ema_new, wager_t = compute_wager_objective(
                         reward_t, ema_prev, alpha=self.ema_alpha, condition=self.wager_condition
                     )
-                    self.ema_reward = alpha_broadcast(self.ema_reward, rewards_per_agent, self.ema_alpha)
+                    self.ema_reward = alpha_broadcast(
+                        self.ema_reward, rewards_per_agent, self.ema_alpha
+                    )
                     episode_wagers.append(wager_t)
 
             # GAE returns
@@ -496,9 +501,12 @@ class MeltingpotRunner:
                 T = self.episode_length
                 N = self.n_rollout_threads
                 # Broadcast wager target across rollout threads (assumes same EMA across threads).
-                wager_per_agent = np.broadcast_to(
-                    stacked[:, :, None, :], (T, A, N, 2)
-                ).transpose(1, 0, 2, 3).reshape(A, T * N, 2).astype(np.float32)
+                wager_per_agent = (
+                    np.broadcast_to(stacked[:, :, None, :], (T, A, N, 2))
+                    .transpose(1, 0, 2, 3)
+                    .reshape(A, T * N, 2)
+                    .astype(np.float32)
+                )
 
             # Train
             infos = self.train_agents(wager_per_agent)
@@ -575,8 +583,12 @@ class MeltingpotRunner:
             entry = {
                 "actor": policy.actor.state_dict(),
                 "critic": policy.critic.state_dict(),
-                "actor_meta": policy.actor_meta.state_dict() if policy.actor_meta is not None else None,
-                "critic_meta": policy.critic_meta.state_dict() if policy.critic_meta is not None else None,
+                "actor_meta": policy.actor_meta.state_dict()
+                if policy.actor_meta is not None
+                else None,
+                "critic_meta": policy.critic_meta.state_dict()
+                if policy.critic_meta is not None
+                else None,
                 "actor_opt": policy.optimizers.actor.state_dict(),
                 "critic_opt": policy.optimizers.critic.state_dict(),
                 "actor_meta_opt": policy.optimizers.actor_meta.state_dict()
@@ -599,7 +611,9 @@ class MeltingpotRunner:
 
         payload = {
             "meta": {
-                "substrate": str(self.setting.id),  # setting id is a slug ; substrate comes from env_cfg separately
+                "substrate": str(
+                    self.setting.id
+                ),  # setting id is a slug ; substrate comes from env_cfg separately
                 "setting_id": self.setting.id,
                 "setting": {
                     "id": self.setting.id,
@@ -627,7 +641,9 @@ class MeltingpotRunner:
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         torch.save(payload, tmp_path)
         os.replace(tmp_path, path)
-        log.info("checkpoint saved : %s (next_episode=%d, %d infos)", path, next_episode, len(all_infos))
+        log.info(
+            "checkpoint saved : %s (next_episode=%d, %d infos)", path, next_episode, len(all_infos)
+        )
 
     def load_checkpoint(self, path: str | Path) -> tuple[int, list[dict]]:
         """Restore the runner state from ``path`` — inverse of
@@ -682,16 +698,16 @@ class MeltingpotRunner:
         if rng["cuda"] is not None and torch.cuda.is_available():
             for i, state in enumerate(rng["cuda"]):
                 if i < torch.cuda.device_count():
-                    torch.cuda.set_rng_state(
-                        state.to(device="cpu", dtype=torch.uint8), device=i
-                    )
+                    torch.cuda.set_rng_state(state.to(device="cpu", dtype=torch.uint8), device=i)
 
         next_episode = int(ck_meta["next_episode"])
         all_infos = list(payload["all_infos"])
         return next_episode, all_infos
 
 
-def alpha_broadcast(ema_per_thread: np.ndarray, reward_per_thread: np.ndarray, alpha: float) -> np.ndarray:
+def alpha_broadcast(
+    ema_per_thread: np.ndarray, reward_per_thread: np.ndarray, alpha: float
+) -> np.ndarray:
     """Vectorized EMA update across threads + agents (paper eq.13).
 
     Parameters

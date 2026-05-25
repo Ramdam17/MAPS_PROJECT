@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from gymnasium import spaces
@@ -55,7 +55,11 @@ log = logging.getLogger(__name__)
 PLAYER_STR_FORMAT = "player_{index}"
 MAX_CYCLES = 400
 _OBSERVATION_PREFIX: tuple[str, ...] = ("WORLD.RGB", "RGB")
-_WORLD_PREFIX: tuple[str, ...] = ("WORLD.RGB", "INTERACTION_INVENTORIES", "NUM_OTHERS_WHO_CLEANED_THIS_STEP")
+_WORLD_PREFIX: tuple[str, ...] = (
+    "WORLD.RGB",
+    "INTERACTION_INVENTORIES",
+    "NUM_OTHERS_WHO_CLEANED_THIS_STEP",
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -119,9 +123,7 @@ def timestep_to_observations(timestep: Any) -> dict[str, dict[str, np.ndarray]]:
 
 def remove_world_observations_from_space(observation: spaces.Dict) -> spaces.Dict:
     """Strip the ``WORLD.*`` keys from a per-player :class:`spaces.Dict`."""
-    return spaces.Dict(
-        {key: observation[key] for key in observation if key not in _WORLD_PREFIX}
-    )
+    return spaces.Dict({key: observation[key] for key in observation if key not in _WORLD_PREFIX})
 
 
 def downsample_observation(array: np.ndarray, scaled: int) -> np.ndarray:
@@ -202,7 +204,7 @@ class MeltingPotEnv:
     wrap multiple instances via a VectorEnv at the runner level (future scope).
     """
 
-    metadata = {"render.modes": ["rgb_array"]}
+    metadata: ClassVar[dict[str, list[str]]] = {"render.modes": ["rgb_array"]}
 
     def __init__(self, env: Any, max_cycles: int = MAX_CYCLES):
         self._env = env
@@ -248,7 +250,10 @@ class MeltingPotEnv:
         """One dm_env step. Accepts per-agent action in scalar or (1,) form."""
         # Build a flat per-player int vector (N_players,) for dmlab2d.
         actions = np.asarray(
-            [int(self._scalarize_action(action_dict[agent_id])) for agent_id in self._ordered_agent_ids]
+            [
+                int(self._scalarize_action(action_dict[agent_id]))
+                for agent_id in self._ordered_agent_ids
+            ]
         )
 
         timestep = self._env.step(actions)
@@ -321,7 +326,9 @@ class MeltingPotEnv:
             }
         )
 
-    def _create_world_rgb_observation_space(self, observation_spec: Sequence[Mapping[str, Any]]) -> spaces.Dict:
+    def _create_world_rgb_observation_space(
+        self, observation_spec: Sequence[Mapping[str, Any]]
+    ) -> spaces.Dict:
         """Build the centralized-obs Dict space (WORLD.RGB only). Student L273-299."""
         world_rgb_spec = [player_obs_spec["WORLD.RGB"] for player_obs_spec in observation_spec]
         world_rgb_space = spaces.Tuple([spec_to_space(spec) for spec in world_rgb_spec])
@@ -376,9 +383,7 @@ def _make_downsampling_wrapper_class():
             spec = super().observation_spec()
             return [
                 {
-                    k: _downsample_multi_spec(v, self._scaled)
-                    if k in _OBSERVATION_PREFIX
-                    else v
+                    k: _downsample_multi_spec(v, self._scaled) if k in _OBSERVATION_PREFIX else v
                     for k, v in s.items()
                 }
                 for s in spec

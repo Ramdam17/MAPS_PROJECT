@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 import torch
-
 from gymnasium import spaces
+
 from maps.experiments.marl import (
     MAPPOActor,
     MAPPOCritic,
@@ -26,7 +26,7 @@ from maps.experiments.marl import (
     MAPSCritic,
     MarlSecondOrderNetwork,
 )
-from maps.experiments.marl.act import ACTLayer, Categorical, FixedCategorical
+from maps.experiments.marl.act import ACTLayer, Categorical
 from maps.experiments.marl.encoder import CNNBase
 from maps.experiments.marl.rnn import RNNLayer, RNNLayerMeta
 from maps.utils import load_config
@@ -51,6 +51,7 @@ def cfg():
 
 # ─── CNNBase ───────────────────────────────────────────────────────────
 
+
 def test_cnn_base_forward_shape():
     cnn = CNNBase(obs_shape=OBS_SHAPE, hidden_size=HIDDEN)
     x = torch.randint(0, 256, (BATCH, *OBS_SHAPE), dtype=torch.float32)
@@ -70,6 +71,7 @@ def test_cnn_base_normalizes_uint8_input():
 
 
 # ─── RNNLayer / RNNLayerMeta ──────────────────────────────────────────
+
 
 @pytest.mark.parametrize("rnn_cls", [RNNLayer, RNNLayerMeta])
 def test_rnn_rollout_mode_shape(rnn_cls):
@@ -103,6 +105,7 @@ def test_rnn_cascade_update_applied():
 
 
 # ─── ACTLayer ──────────────────────────────────────────────────────────
+
 
 def test_actlayer_discrete_sample():
     action_space = spaces.Discrete(8)
@@ -154,6 +157,7 @@ def test_categorical_masks_unavailable_actions():
 
 # ─── MarlSecondOrderNetwork ────────────────────────────────────────────
 
+
 def test_marl_second_order_network_outputs_2_logits():
     so = MarlSecondOrderNetwork(hidden_size=HIDDEN, dropout=0.0)
     comparator = torch.randn(BATCH, HIDDEN)
@@ -179,6 +183,7 @@ def test_marl_second_order_network_cascade_update():
 
 
 # ─── MAPPOActor / MAPPOCritic ──────────────────────────────────────────
+
 
 def test_mappo_actor_rollout(cfg):
     action_space = spaces.Discrete(8)
@@ -219,6 +224,7 @@ def test_mappo_actor_cascade_iterations(cfg):
 
 # ─── MAPSActor / MAPSCritic ────────────────────────────────────────────
 
+
 def test_maps_actor_rollout_matches_mappo_shape(cfg):
     """MAPSActor rollout has same shape contract as MAPPOActor."""
     action_space = spaces.Discrete(8)
@@ -258,6 +264,7 @@ def test_maps_critic_rollout(cfg):
 
 
 # ─── MAPPOPolicy ───────────────────────────────────────────────────────
+
 
 def test_policy_baseline_no_meta(cfg):
     """setting.meta=False → no actor_meta/critic_meta built."""

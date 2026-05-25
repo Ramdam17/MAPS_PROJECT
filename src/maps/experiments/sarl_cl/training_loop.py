@@ -393,7 +393,7 @@ def _persist_checkpoint_cl(
     loss_weighter: DynamicLossWeighter | None,
     loss_weighter_second: DynamicLossWeighter | None,
     buffer: SarlReplayBuffer,
-    metrics: "CLTrainingMetrics",
+    metrics: CLTrainingMetrics,
     cfg: SarlCLTrainingConfig,
 ) -> None:
     """Atomically persist the full SARL+CL training state for resume.
@@ -447,9 +447,7 @@ def _persist_checkpoint_cl(
         "cfg_snapshot": asdict(cfg),
         # RNG states.
         "rng_torch": torch.get_rng_state(),
-        "rng_torch_cuda": (
-            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-        ),
+        "rng_torch_cuda": (torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None),
         "rng_python": random.getstate(),
         "rng_numpy_legacy": np.random.get_state(),
     }
@@ -479,8 +477,13 @@ def _restore_from_checkpoint_cl(
     scheduler1: Any,
     scheduler2: Any | None,
 ) -> tuple[
-    int, int, int, SarlReplayBuffer, "CLTrainingMetrics",
-    DynamicLossWeighter | None, DynamicLossWeighter | None,
+    int,
+    int,
+    int,
+    SarlReplayBuffer,
+    CLTrainingMetrics,
+    DynamicLossWeighter | None,
+    DynamicLossWeighter | None,
 ]:
     """Load a CL checkpoint. Networks / optimizers / schedulers / teachers are
     mutated in place; buffer, metrics, and both loss weighters are returned.
@@ -507,9 +510,7 @@ def _restore_from_checkpoint_cl(
         if snapshot.get(k) != current.get(k)
     }
     if mismatches:
-        raise ValueError(
-            f"CL checkpoint cfg mismatch on guarded fields: {mismatches}"
-        )
+        raise ValueError(f"CL checkpoint cfg mismatch on guarded fields: {mismatches}")
 
     policy_net.load_state_dict(payload["policy_state_dict"])
     target_net.load_state_dict(payload["target_state_dict"])
@@ -552,9 +553,7 @@ def _restore_from_checkpoint_cl(
     # routes from a list of CPU ByteTensors.
     torch.set_rng_state(payload["rng_torch"].cpu().byte())
     if payload.get("rng_torch_cuda") is not None and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(
-            [s.cpu().byte() for s in payload["rng_torch_cuda"]]
-        )
+        torch.cuda.set_rng_state_all([s.cpu().byte() for s in payload["rng_torch_cuda"]])
     random.setstate(payload["rng_python"])
     np.random.set_state(payload["rng_numpy_legacy"])
 

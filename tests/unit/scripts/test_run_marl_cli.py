@@ -106,5 +106,7 @@ def test_run_marl_resolve_setting_raises_on_unknown():
     from maps.utils import load_config
 
     factorial = load_config("experiments/factorial_marl")
-    with pytest.raises(Exception):  # typer.BadParameter, but imported lazily
+    # Lazy-imported typer.BadParameter would be the precise type; we match
+    # anything because the import is deferred (testing CLI without typer in scope).
+    with pytest.raises(Exception, match=r".+"):
         mod._resolve_setting(factorial, "not_a_real_setting")

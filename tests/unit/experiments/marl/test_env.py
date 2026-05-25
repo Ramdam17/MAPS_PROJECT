@@ -20,13 +20,12 @@ from gymnasium import spaces
 
 from maps.experiments.marl import env as marl_env
 from maps.experiments.marl.env import (
-    MeltingPotEnv,
     PLAYER_STR_FORMAT,
+    MeltingPotEnv,
     remove_world_observations_from_space,
     spec_to_space,
     timestep_to_observations,
 )
-
 
 # ──────────────────────────────────────────────────────────────
 # spec_to_space
@@ -41,9 +40,7 @@ def test_spec_to_space_discrete():
 
 
 def test_spec_to_space_bounded_array():
-    spec = dm_env.specs.BoundedArray(
-        shape=(11, 11, 3), dtype=np.uint8, minimum=0, maximum=255
-    )
+    spec = dm_env.specs.BoundedArray(shape=(11, 11, 3), dtype=np.uint8, minimum=0, maximum=255)
     out = spec_to_space(spec)
     assert isinstance(out, spaces.Box)
     assert out.shape == (11, 11, 3)
@@ -119,7 +116,7 @@ def test_timestep_to_observations_drops_extra_keys():
     ts = _make_fake_timestep(num_players=3)
     obs = timestep_to_observations(ts)
     assert set(obs.keys()) == {"player_0", "player_1", "player_2"}
-    for player, d in obs.items():
+    for _player, d in obs.items():
         assert set(d.keys()) == {"RGB", "WORLD.RGB"}
 
 
@@ -143,7 +140,13 @@ def test_remove_world_observations_from_space_strips_world_keys():
 class _MockDmlab2dEnv:
     """Minimal mock of a dmlab2d.Environment for MeltingPotEnv testing."""
 
-    def __init__(self, num_players: int = 3, obs_shape=(11, 11, 3), world_shape=(30, 21, 3), num_actions: int = 8):
+    def __init__(
+        self,
+        num_players: int = 3,
+        obs_shape=(11, 11, 3),
+        world_shape=(30, 21, 3),
+        num_actions: int = 8,
+    ):
         self.num_players = num_players
         self.obs_shape = obs_shape
         self.world_shape = world_shape
@@ -161,7 +164,9 @@ class _MockDmlab2dEnv:
         ]
 
     def action_spec(self):
-        return [dm_env.specs.DiscreteArray(num_values=self.num_actions) for _ in range(self.num_players)]
+        return [
+            dm_env.specs.DiscreteArray(num_values=self.num_actions) for _ in range(self.num_players)
+        ]
 
     def reset(self):
         self._step_count = 0
@@ -200,7 +205,12 @@ def test_meltingpot_env_exposes_share_observation_space_world_rgb():
     inner = _MockDmlab2dEnv(num_players=4)
     env = MeltingPotEnv(inner)
     # share_obs = per-player WORLD.RGB space.
-    assert set(env.share_observation_space.spaces.keys()) == {"player_0", "player_1", "player_2", "player_3"}
+    assert set(env.share_observation_space.spaces.keys()) == {
+        "player_0",
+        "player_1",
+        "player_2",
+        "player_3",
+    }
     sample_player = env.share_observation_space["player_0"]
     assert isinstance(sample_player, spaces.Box)
     assert sample_player.shape == (30, 21, 3)
@@ -295,7 +305,7 @@ def test_meltingpot_env_close_closes_inner():
 def test_downsample_observation_preserves_H_W_C_order():
     """Student L303-315 passed cv2 dsize arguments in the wrong order,
     swapping H/W on non-square frames. Guard the fix with a regression test."""
-    cv2 = pytest.importorskip("cv2")
+    pytest.importorskip("cv2")
     from maps.experiments.marl.env import downsample_observation
 
     # Non-square frame : H=192, W=144, C=3 (commons_harvest_closed WORLD.RGB).

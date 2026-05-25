@@ -14,8 +14,6 @@ Verifies :
 from __future__ import annotations
 
 import random
-from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -28,7 +26,6 @@ from maps.experiments.marl import (
     RunnerConfig,
 )
 from maps.utils import load_config
-
 
 HIDDEN = 32
 OBS_SHAPE = (11, 11, 3)
@@ -53,8 +50,12 @@ class _FakeEnv:
     def _obs_dict(self):
         return {
             k: {
-                "RGB": self._rng.integers(0, 256, (self.n_threads, *self.obs_shape)).astype(np.float32),
-                "WORLD.RGB": self._rng.integers(0, 256, (self.n_threads, *self.obs_shape)).astype(np.float32),
+                "RGB": self._rng.integers(0, 256, (self.n_threads, *self.obs_shape)).astype(
+                    np.float32
+                ),
+                "WORLD.RGB": self._rng.integers(0, 256, (self.n_threads, *self.obs_shape)).astype(
+                    np.float32
+                ),
             }
             for k in self._player_keys
         }
@@ -64,7 +65,10 @@ class _FakeEnv:
 
     def step(self, action_dict):
         obs = self._obs_dict()
-        rewards = {k: self._rng.standard_normal(self.n_threads).astype(np.float32) for k in self._player_keys}
+        rewards = {
+            k: self._rng.standard_normal(self.n_threads).astype(np.float32)
+            for k in self._player_keys
+        }
         dones = {k: np.zeros(self.n_threads, dtype=bool) for k in self._player_keys}
         return obs, rewards, dones, {}
 
@@ -95,8 +99,11 @@ def runner_cfg(cfg):
     return RunnerConfig(
         cfg=cfg,
         setting=MarlSetting(
-            id="baseline", label="baseline",
-            meta=False, cascade_iterations1=1, cascade_iterations2=1,
+            id="baseline",
+            label="baseline",
+            meta=False,
+            cascade_iterations1=1,
+            cascade_iterations2=1,
         ),
         num_agents=N_AGENTS,
         obs_shape=OBS_SHAPE,
@@ -192,7 +199,7 @@ def test_load_checkpoint_coerces_rng_state_dtype(runner_cfg, tmp_path):
 
     runner_b = _make_runner(runner_cfg)
     # Must not raise — the coercion inside load_checkpoint handles it.
-    next_ep, infos = runner_b.load_checkpoint(ck)
+    next_ep, _infos = runner_b.load_checkpoint(ck)
     assert next_ep == 0
 
 
@@ -204,8 +211,11 @@ def test_load_checkpoint_rejects_mismatched_setting(runner_cfg, tmp_path):
     diff_cfg = RunnerConfig(
         cfg=runner_cfg.cfg,
         setting=MarlSetting(
-            id="maps", label="maps",
-            meta=True, cascade_iterations1=50, cascade_iterations2=1,
+            id="maps",
+            label="maps",
+            meta=True,
+            cascade_iterations1=50,
+            cascade_iterations2=1,
         ),
         num_agents=runner_cfg.num_agents,
         obs_shape=OBS_SHAPE,

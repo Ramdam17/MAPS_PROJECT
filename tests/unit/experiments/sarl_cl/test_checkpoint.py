@@ -32,7 +32,6 @@ from maps.experiments.sarl_cl.training_loop import (
     _restore_from_checkpoint_cl,
 )
 
-
 IN_CHANNELS = 4
 NUM_ACTIONS = 6
 
@@ -93,11 +92,20 @@ def _make_teacher_checkpoint(tmp_path: Path, cfg: SarlCLTrainingConfig) -> Path:
     ckpt = tmp_path / "teacher.pt"
     _persist_checkpoint_cl(
         ckpt,
-        t=0, episode_idx=0, policy_update_counter=0,
-        policy_net=policy, target_net=target, second_order_net=second,
-        teacher_first_net=None, teacher_second_net=None,
-        optimizer=opt1, optimizer2=opt2, scheduler1=sch1, scheduler2=sch2,
-        loss_weighter=None, loss_weighter_second=None,
+        t=0,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=policy,
+        target_net=target,
+        second_order_net=second,
+        teacher_first_net=None,
+        teacher_second_net=None,
+        optimizer=opt1,
+        optimizer2=opt2,
+        scheduler1=sch1,
+        scheduler2=sch2,
+        loss_weighter=None,
+        loss_weighter_second=None,
         buffer=SarlReplayBuffer(cfg.replay_buffer_size),
         metrics=CLTrainingMetrics(),
         cfg=cfg,
@@ -126,9 +134,9 @@ def test_cl_checkpoint_roundtrip_preserves_weights(tmp_path: Path) -> None:
     cfg = _base_cfg(tmp_path, meta=True, curriculum=True)
     cfg = replace(cfg, teacher_load_path=teacher_src_ckpt)
 
-    (
-        policy_net, target_net, second_net, teacher_first, teacher_second
-    ) = _build_networks(IN_CHANNELS, NUM_ACTIONS, cfg)
+    (policy_net, target_net, second_net, teacher_first, teacher_second) = _build_networks(
+        IN_CHANNELS, NUM_ACTIONS, cfg
+    )
     opt1, opt2, sch1, sch2 = _build_optimizers(policy_net, second_net, cfg)
 
     # Mutate policy weights so defaults can't accidentally match post-restore.
@@ -148,24 +156,43 @@ def test_cl_checkpoint_roundtrip_preserves_weights(tmp_path: Path) -> None:
     ckpt = tmp_path / "cl_checkpoint.pt"
     _persist_checkpoint_cl(
         ckpt,
-        t=84, episode_idx=3, policy_update_counter=7,
-        policy_net=policy_net, target_net=target_net, second_order_net=second_net,
-        teacher_first_net=teacher_first, teacher_second_net=teacher_second,
-        optimizer=opt1, optimizer2=opt2, scheduler1=sch1, scheduler2=sch2,
-        loss_weighter=loss_weighter, loss_weighter_second=loss_weighter_second,
-        buffer=buffer, metrics=metrics, cfg=cfg,
+        t=84,
+        episode_idx=3,
+        policy_update_counter=7,
+        policy_net=policy_net,
+        target_net=target_net,
+        second_order_net=second_net,
+        teacher_first_net=teacher_first,
+        teacher_second_net=teacher_second,
+        optimizer=opt1,
+        optimizer2=opt2,
+        scheduler1=sch1,
+        scheduler2=sch2,
+        loss_weighter=loss_weighter,
+        loss_weighter_second=loss_weighter_second,
+        buffer=buffer,
+        metrics=metrics,
+        cfg=cfg,
     )
 
     # Fresh nets with DIFFERENT default inits.
-    (
-        policy2, target2, second2, teacher_first2, teacher_second2
-    ) = _build_networks(IN_CHANNELS, NUM_ACTIONS, cfg)
+    (policy2, target2, second2, teacher_first2, teacher_second2) = _build_networks(
+        IN_CHANNELS, NUM_ACTIONS, cfg
+    )
     opt1_b, opt2_b, sch1_b, sch2_b = _build_optimizers(policy2, second2, cfg)
 
-    t, ep, upd, buf, mets, w1, w2 = _restore_from_checkpoint_cl(
-        ckpt, cfg,
-        policy2, target2, second2, teacher_first2, teacher_second2,
-        opt1_b, opt2_b, sch1_b, sch2_b,
+    t, ep, upd, buf, mets, _w1, _w2 = _restore_from_checkpoint_cl(
+        ckpt,
+        cfg,
+        policy2,
+        target2,
+        second2,
+        teacher_first2,
+        teacher_second2,
+        opt1_b,
+        opt2_b,
+        sch1_b,
+        sch2_b,
     )
 
     assert t == 84
@@ -184,9 +211,7 @@ def test_cl_checkpoint_roundtrip_preserves_weights(tmp_path: Path) -> None:
     ]:
         assert src is not None and dst is not None
         for k, v in src.state_dict().items():
-            assert torch.equal(v, dst.state_dict()[k]), (
-                f"weight mismatch on {name}.{k}"
-            )
+            assert torch.equal(v, dst.state_dict()[k]), f"weight mismatch on {name}.{k}"
 
 
 def test_cl_checkpoint_rng_preserves_determinism(tmp_path: Path) -> None:
@@ -205,11 +230,20 @@ def test_cl_checkpoint_rng_preserves_determinism(tmp_path: Path) -> None:
     ckpt = tmp_path / "rng_ckpt.pt"
     _persist_checkpoint_cl(
         ckpt,
-        t=0, episode_idx=0, policy_update_counter=0,
-        policy_net=policy_net, target_net=target_net, second_order_net=None,
-        teacher_first_net=None, teacher_second_net=None,
-        optimizer=opt1, optimizer2=None, scheduler1=sch1, scheduler2=None,
-        loss_weighter=None, loss_weighter_second=None,
+        t=0,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=policy_net,
+        target_net=target_net,
+        second_order_net=None,
+        teacher_first_net=None,
+        teacher_second_net=None,
+        optimizer=opt1,
+        optimizer2=None,
+        scheduler1=sch1,
+        scheduler2=None,
+        loss_weighter=None,
+        loss_weighter_second=None,
         buffer=SarlReplayBuffer(cfg.replay_buffer_size),
         metrics=CLTrainingMetrics(),
         cfg=cfg,
@@ -249,12 +283,16 @@ def test_cl_checkpoint_loss_weighter_state_roundtrip(tmp_path: Path) -> None:
     # Feed the weighters some non-trivial state so defaults wouldn't accidentally match.
     weighter_first = DynamicLossWeighter()
     weighter_second = DynamicLossWeighter()
-    for step, loss_tuple in enumerate([(2.5, 7.1, 0.9), (1.8, 10.2, 1.3), (3.0, 9.7, 0.5)]):
+    for _step, loss_tuple in enumerate([(2.5, 7.1, 0.9), (1.8, 10.2, 1.3), (3.0, 9.7, 0.5)]):
         weighter_first.update(
             {"task": loss_tuple[0], "distillation": loss_tuple[1], "feature": loss_tuple[2]}
         )
         weighter_second.update(
-            {"task": loss_tuple[0] * 0.5, "distillation": loss_tuple[1] * 0.5, "feature": loss_tuple[2] * 0.5}
+            {
+                "task": loss_tuple[0] * 0.5,
+                "distillation": loss_tuple[1] * 0.5,
+                "feature": loss_tuple[2] * 0.5,
+            }
         )
 
     # Snapshot pre-persist for later comparison.
@@ -265,25 +303,42 @@ def test_cl_checkpoint_loss_weighter_state_roundtrip(tmp_path: Path) -> None:
     ckpt = tmp_path / "weighter_ckpt.pt"
     _persist_checkpoint_cl(
         ckpt,
-        t=0, episode_idx=0, policy_update_counter=0,
-        policy_net=policy_net, target_net=target_net, second_order_net=second_net,
-        teacher_first_net=teacher_first, teacher_second_net=teacher_second,
-        optimizer=opt1, optimizer2=opt2, scheduler1=sch1, scheduler2=sch2,
-        loss_weighter=weighter_first, loss_weighter_second=weighter_second,
+        t=0,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=policy_net,
+        target_net=target_net,
+        second_order_net=second_net,
+        teacher_first_net=teacher_first,
+        teacher_second_net=teacher_second,
+        optimizer=opt1,
+        optimizer2=opt2,
+        scheduler1=sch1,
+        scheduler2=sch2,
+        loss_weighter=weighter_first,
+        loss_weighter_second=weighter_second,
         buffer=SarlReplayBuffer(cfg.replay_buffer_size),
         metrics=CLTrainingMetrics(),
         cfg=cfg,
     )
 
     # Rebuild fresh and restore.
-    (
-        policy2, target2, second2, teacher_first2, teacher_second2
-    ) = _build_networks(IN_CHANNELS, NUM_ACTIONS, cfg)
+    (policy2, target2, second2, teacher_first2, teacher_second2) = _build_networks(
+        IN_CHANNELS, NUM_ACTIONS, cfg
+    )
     opt1_b, opt2_b, sch1_b, sch2_b = _build_optimizers(policy2, second2, cfg)
     _, _, _, _, _, restored_w1, restored_w2 = _restore_from_checkpoint_cl(
-        ckpt, cfg,
-        policy2, target2, second2, teacher_first2, teacher_second2,
-        opt1_b, opt2_b, sch1_b, sch2_b,
+        ckpt,
+        cfg,
+        policy2,
+        target2,
+        second2,
+        teacher_first2,
+        teacher_second2,
+        opt1_b,
+        opt2_b,
+        sch1_b,
+        sch2_b,
     )
 
     assert restored_w1 is not None and restored_w2 is not None
@@ -310,11 +365,20 @@ def test_cl_checkpoint_cfg_guardrail_rejects_curriculum_mismatch(tmp_path: Path)
     ckpt = tmp_path / "ckpt.pt"
     _persist_checkpoint_cl(
         ckpt,
-        t=0, episode_idx=0, policy_update_counter=0,
-        policy_net=policy, target_net=target, second_order_net=second,
-        teacher_first_net=tf, teacher_second_net=ts,
-        optimizer=opt1, optimizer2=opt2, scheduler1=sch1, scheduler2=sch2,
-        loss_weighter=DynamicLossWeighter(), loss_weighter_second=DynamicLossWeighter(),
+        t=0,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=policy,
+        target_net=target,
+        second_order_net=second,
+        teacher_first_net=tf,
+        teacher_second_net=ts,
+        optimizer=opt1,
+        optimizer2=opt2,
+        scheduler1=sch1,
+        scheduler2=sch2,
+        loss_weighter=DynamicLossWeighter(),
+        loss_weighter_second=DynamicLossWeighter(),
         buffer=SarlReplayBuffer(cfg_curr.replay_buffer_size),
         metrics=CLTrainingMetrics(),
         cfg=cfg_curr,
@@ -325,8 +389,17 @@ def test_cl_checkpoint_cfg_guardrail_rejects_curriculum_mismatch(tmp_path: Path)
     opt1b, opt2b, sch1b, sch2b = _build_optimizers(p2, s2, cfg_no_curr)
     with pytest.raises(ValueError, match="curriculum"):
         _restore_from_checkpoint_cl(
-            ckpt, cfg_no_curr,
-            p2, t2, s2, None, None, opt1b, opt2b, sch1b, sch2b,
+            ckpt,
+            cfg_no_curr,
+            p2,
+            t2,
+            s2,
+            None,
+            None,
+            opt1b,
+            opt2b,
+            sch1b,
+            sch2b,
         )
 
 
@@ -340,11 +413,20 @@ def test_cl_checkpoint_cfg_guardrail_rejects_max_channels_mismatch(tmp_path: Pat
     ckpt = tmp_path / "ckpt.pt"
     _persist_checkpoint_cl(
         ckpt,
-        t=0, episode_idx=0, policy_update_counter=0,
-        policy_net=p, target_net=t, second_order_net=None,
-        teacher_first_net=None, teacher_second_net=None,
-        optimizer=opt1, optimizer2=None, scheduler1=sch1, scheduler2=None,
-        loss_weighter=None, loss_weighter_second=None,
+        t=0,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=p,
+        target_net=t,
+        second_order_net=None,
+        teacher_first_net=None,
+        teacher_second_net=None,
+        optimizer=opt1,
+        optimizer2=None,
+        scheduler1=sch1,
+        scheduler2=None,
+        loss_weighter=None,
+        loss_weighter_second=None,
         buffer=SarlReplayBuffer(cfg.replay_buffer_size),
         metrics=CLTrainingMetrics(),
         cfg=cfg,
@@ -355,8 +437,17 @@ def test_cl_checkpoint_cfg_guardrail_rejects_max_channels_mismatch(tmp_path: Pat
     opt1b, _, sch1b, _ = _build_optimizers(p2, None, cfg_different)
     with pytest.raises(ValueError, match="max_input_channels"):
         _restore_from_checkpoint_cl(
-            ckpt, cfg_different,
-            p2, t2, None, None, None, opt1b, None, sch1b, None,
+            ckpt,
+            cfg_different,
+            p2,
+            t2,
+            None,
+            None,
+            None,
+            opt1b,
+            None,
+            sch1b,
+            None,
         )
 
 
@@ -372,12 +463,23 @@ def test_cl_checkpoint_atomic_on_interrupted_write(tmp_path: Path) -> None:
     # First write succeeds.
     _persist_checkpoint_cl(
         ckpt,
-        t=1, episode_idx=0, policy_update_counter=0,
-        policy_net=p, target_net=t, second_order_net=None,
-        teacher_first_net=None, teacher_second_net=None,
-        optimizer=opt1, optimizer2=None, scheduler1=sch1, scheduler2=None,
-        loss_weighter=None, loss_weighter_second=None,
-        buffer=buffer, metrics=metrics, cfg=cfg,
+        t=1,
+        episode_idx=0,
+        policy_update_counter=0,
+        policy_net=p,
+        target_net=t,
+        second_order_net=None,
+        teacher_first_net=None,
+        teacher_second_net=None,
+        optimizer=opt1,
+        optimizer2=None,
+        scheduler1=sch1,
+        scheduler2=None,
+        loss_weighter=None,
+        loss_weighter_second=None,
+        buffer=buffer,
+        metrics=metrics,
+        cfg=cfg,
     )
     original_t = torch.load(ckpt, map_location="cpu", weights_only=False)["t"]
 
@@ -391,12 +493,23 @@ def test_cl_checkpoint_atomic_on_interrupted_write(tmp_path: Path) -> None:
         with pytest.raises(RuntimeError, match="simulated disk-full"):
             _persist_checkpoint_cl(
                 ckpt,
-                t=999, episode_idx=99, policy_update_counter=99,
-                policy_net=p, target_net=t, second_order_net=None,
-                teacher_first_net=None, teacher_second_net=None,
-                optimizer=opt1, optimizer2=None, scheduler1=sch1, scheduler2=None,
-                loss_weighter=None, loss_weighter_second=None,
-                buffer=buffer, metrics=metrics, cfg=cfg,
+                t=999,
+                episode_idx=99,
+                policy_update_counter=99,
+                policy_net=p,
+                target_net=t,
+                second_order_net=None,
+                teacher_first_net=None,
+                teacher_second_net=None,
+                optimizer=opt1,
+                optimizer2=None,
+                scheduler1=sch1,
+                scheduler2=None,
+                loss_weighter=None,
+                loss_weighter_second=None,
+                buffer=buffer,
+                metrics=metrics,
+                cfg=cfg,
             )
     finally:
         torch.save = real_save  # type: ignore[assignment]
@@ -419,11 +532,20 @@ def test_cl_checkpoint_without_teacher_degenerate_path(tmp_path: Path) -> None:
     ckpt = tmp_path / "ckpt.pt"
     _persist_checkpoint_cl(
         ckpt,
-        t=5, episode_idx=0, policy_update_counter=3,
-        policy_net=policy, target_net=target, second_order_net=second,
-        teacher_first_net=None, teacher_second_net=None,
-        optimizer=opt1, optimizer2=opt2, scheduler1=sch1, scheduler2=sch2,
-        loss_weighter=None, loss_weighter_second=None,
+        t=5,
+        episode_idx=0,
+        policy_update_counter=3,
+        policy_net=policy,
+        target_net=target,
+        second_order_net=second,
+        teacher_first_net=None,
+        teacher_second_net=None,
+        optimizer=opt1,
+        optimizer2=opt2,
+        scheduler1=sch1,
+        scheduler2=sch2,
+        loss_weighter=None,
+        loss_weighter_second=None,
         buffer=SarlReplayBuffer(cfg.replay_buffer_size),
         metrics=CLTrainingMetrics(),
         cfg=cfg,
@@ -431,8 +553,18 @@ def test_cl_checkpoint_without_teacher_degenerate_path(tmp_path: Path) -> None:
 
     p2, t2, s2, _, _ = _build_networks(IN_CHANNELS, NUM_ACTIONS, cfg)
     opt1b, opt2b, sch1b, sch2b = _build_optimizers(p2, s2, cfg)
-    t, ep, upd, buf, mets, w1, w2 = _restore_from_checkpoint_cl(
-        ckpt, cfg, p2, t2, s2, None, None, opt1b, opt2b, sch1b, sch2b,
+    t, _ep, upd, _buf, _mets, w1, w2 = _restore_from_checkpoint_cl(
+        ckpt,
+        cfg,
+        p2,
+        t2,
+        s2,
+        None,
+        None,
+        opt1b,
+        opt2b,
+        sch1b,
+        sch2b,
     )
 
     assert t == 5

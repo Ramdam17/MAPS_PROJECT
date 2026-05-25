@@ -164,12 +164,12 @@ def main(
         "--num-frames",
         help="Override training length. Useful for smoke tests (e.g. 50000).",
     ),
-    output_dir: Path | None = typer.Option(  # noqa: B008
+    output_dir: Path | None = typer.Option(
         None,
         "--output-dir",
         help="Override output directory. Default: $SCRATCH/maps/outputs/sarl/<game>/setting-<N>/seed-<seed>/ (or ./outputs/sarl/... when $SCRATCH unset).",
     ),
-    override: list[str] = typer.Option(  # noqa: B008
+    override: list[str] = typer.Option(
         [],
         "--override",
         "-o",
@@ -185,7 +185,7 @@ def main(
             "Mutually coexists with --resume-from (explicit path wins)."
         ),
     ),
-    resume_from: Path | None = typer.Option(  # noqa: B008
+    resume_from: Path | None = typer.Option(
         None,
         "--resume-from",
         help=(

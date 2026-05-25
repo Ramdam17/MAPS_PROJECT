@@ -75,7 +75,9 @@ class CNNLayer(nn.Module):
         else:
             raise ValueError(f"Cannot infer RGB channel position in obs_shape={obs_shape}")
 
-        kernel_size, stride, _padding = calculate_conv_params((input_width, input_height, input_channel))
+        kernel_size, stride, _padding = calculate_conv_params(
+            (input_width, input_height, input_channel)
+        )
 
         conv_out_w = input_width - kernel_size + stride
         conv_out_h = input_height - kernel_size + stride

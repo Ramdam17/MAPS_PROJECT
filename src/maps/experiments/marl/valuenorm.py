@@ -82,7 +82,9 @@ class ValueNorm(nn.Module):
         input_vector = input_vector.to(self.running_mean.device)
 
         mean, var = self.running_mean_var()
-        return (input_vector - mean[(None,) * self.norm_axes]) / torch.sqrt(var)[(None,) * self.norm_axes]
+        return (input_vector - mean[(None,) * self.norm_axes]) / torch.sqrt(var)[
+            (None,) * self.norm_axes
+        ]
 
     def denormalize(self, input_vector):
         """Returns numpy for API compatibility with student (L76)."""
@@ -91,5 +93,8 @@ class ValueNorm(nn.Module):
         input_vector = input_vector.to(self.running_mean.device)
 
         mean, var = self.running_mean_var()
-        out = input_vector * torch.sqrt(var)[(None,) * self.norm_axes] + mean[(None,) * self.norm_axes]
+        out = (
+            input_vector * torch.sqrt(var)[(None,) * self.norm_axes]
+            + mean[(None,) * self.norm_axes]
+        )
         return out.detach().cpu().numpy()

@@ -19,7 +19,7 @@ import torch.nn as nn
 
 from maps.experiments.marl.util import init
 
-__all__ = ["FixedCategorical", "Categorical", "ACTLayer"]
+__all__ = ["ACTLayer", "Categorical", "FixedCategorical"]
 
 
 class FixedCategorical(torch.distributions.Categorical):
@@ -34,13 +34,7 @@ class FixedCategorical(torch.distributions.Categorical):
         return super().sample().unsqueeze(-1)
 
     def log_probs(self, actions: torch.Tensor) -> torch.Tensor:
-        return (
-            super()
-            .log_prob(actions.squeeze(-1))
-            .view(actions.size(0), -1)
-            .sum(-1)
-            .unsqueeze(-1)
-        )
+        return super().log_prob(actions.squeeze(-1)).view(actions.size(0), -1).sum(-1).unsqueeze(-1)
 
     def mode(self):
         return self.probs.argmax(dim=-1, keepdim=True)
@@ -49,7 +43,9 @@ class FixedCategorical(torch.distributions.Categorical):
 class Categorical(nn.Module):
     """Linear → categorical logits, used as the discrete action head."""
 
-    def __init__(self, num_inputs: int, num_outputs: int, use_orthogonal: bool = True, gain: float = 0.01):
+    def __init__(
+        self, num_inputs: int, num_outputs: int, use_orthogonal: bool = True, gain: float = 0.01
+    ):
         super().__init__()
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][int(use_orthogonal)]
 
@@ -58,7 +54,9 @@ class Categorical(nn.Module):
 
         self.linear = init_(nn.Linear(num_inputs, num_outputs))
 
-    def forward(self, x: torch.Tensor, available_actions: torch.Tensor | None = None) -> FixedCategorical:
+    def forward(
+        self, x: torch.Tensor, available_actions: torch.Tensor | None = None
+    ) -> FixedCategorical:
         logits = self.linear(x)
         if available_actions is not None:
             logits[available_actions == 0] = -1e10
@@ -74,7 +72,9 @@ class ACTLayer(nn.Module):
     MultiDiscrete, Mixed) are OMITTED per E.5 scope lock.
     """
 
-    def __init__(self, action_space, inputs_dim: int, use_orthogonal: bool = True, gain: float = 0.01):
+    def __init__(
+        self, action_space, inputs_dim: int, use_orthogonal: bool = True, gain: float = 0.01
+    ):
         super().__init__()
         if action_space.__class__.__name__ != "Discrete":
             raise NotImplementedError(
@@ -108,7 +108,9 @@ class ACTLayer(nn.Module):
         action_logits = self.action_out(x, available_actions)
         action_log_probs = action_logits.log_probs(action)
         if active_masks is not None:
-            dist_entropy = (action_logits.entropy() * active_masks.squeeze(-1)).sum() / active_masks.sum()
+            dist_entropy = (
+                action_logits.entropy() * active_masks.squeeze(-1)
+            ).sum() / active_masks.sum()
         else:
             dist_entropy = action_logits.entropy().mean()
         return action_log_probs, dist_entropy

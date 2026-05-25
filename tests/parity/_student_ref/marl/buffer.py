@@ -153,9 +153,13 @@ class SeparatedReplayBuffer:
         share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[2:])
         obs = self.obs[:-1].reshape(-1, *self.obs.shape[2:])
         rnn_states = self.rnn_states[:-1].reshape(-1, *self.rnn_states.shape[2:])
-        rnn_states_critic = self.rnn_states_critic[:-1].reshape(-1, *self.rnn_states_critic.shape[2:])
+        rnn_states_critic = self.rnn_states_critic[:-1].reshape(
+            -1, *self.rnn_states_critic.shape[2:]
+        )
         actions = self.actions.reshape(-1, self.actions.shape[-1])
-        available_actions = self.available_actions[:-1].reshape(-1, self.available_actions.shape[-1])
+        available_actions = self.available_actions[:-1].reshape(
+            -1, self.available_actions.shape[-1]
+        )
         value_preds = self.value_preds[:-1].reshape(-1, 1)
         returns = self.returns[:-1].reshape(-1, 1)
         masks = self.masks[:-1].reshape(-1, 1)
@@ -194,7 +198,9 @@ class SeparatedReplayBuffer:
         # Student's fork on obs ndim : (T, N, H, W, C) uses explicit transpose ;
         # smaller shapes use _cast. Both are numerically equivalent.
         if len(self.share_obs.shape) > 3:
-            share_obs = self.share_obs[:-1].transpose(1, 0, 2, 3, 4).reshape(-1, *self.share_obs.shape[2:])
+            share_obs = (
+                self.share_obs[:-1].transpose(1, 0, 2, 3, 4).reshape(-1, *self.share_obs.shape[2:])
+            )
             obs = self.obs[:-1].transpose(1, 0, 2, 3, 4).reshape(-1, *self.obs.shape[2:])
         else:
             share_obs = _cast(self.share_obs[:-1])
@@ -208,9 +214,13 @@ class SeparatedReplayBuffer:
         masks = _cast(self.masks[:-1])
         active_masks = _cast(self.active_masks[:-1])
         available_actions = _cast(self.available_actions[:-1])
-        rnn_states = self.rnn_states[:-1].transpose(1, 0, 2, 3).reshape(-1, *self.rnn_states.shape[2:])
-        rnn_states_critic = self.rnn_states_critic[:-1].transpose(1, 0, 2, 3).reshape(
-            -1, *self.rnn_states_critic.shape[2:]
+        rnn_states = (
+            self.rnn_states[:-1].transpose(1, 0, 2, 3).reshape(-1, *self.rnn_states.shape[2:])
+        )
+        rnn_states_critic = (
+            self.rnn_states_critic[:-1]
+            .transpose(1, 0, 2, 3)
+            .reshape(-1, *self.rnn_states_critic.shape[2:])
         )
 
         for indices in sampler:

@@ -21,7 +21,6 @@ import copy
 import numpy as np
 import pytest
 import torch
-from torch.optim.lr_scheduler import StepLR
 
 from maps.components import SecondOrderNetwork
 from maps.experiments.agl import (
@@ -80,13 +79,13 @@ def cfg():
     return load_config(
         "training/agl",
         overrides=[
-            f"train.n_epochs_pretrain=1",               # unused here — we test training() only
+            "train.n_epochs_pretrain=1",  # unused here — we test training() only
             f"train.batch_size_training={PATTERNS}",
             f"first_order.input_dim={NUM_UNITS}",
             f"first_order.hidden_dim={HIDDEN}",
             f"second_order.input_dim={NUM_UNITS}",
-            "second_order.hidden_dim=0",                # parity w/ reference
-            "optimizer.name=ADAMAX",                    # parity w/ reference
+            "second_order.hidden_dim=0",  # parity w/ reference
+            "optimizer.name=ADAMAX",  # parity w/ reference
             "cascade.alpha=0.2",
             "cascade.n_iterations=5",
             f"losses.cae_lambda={LAM}",
@@ -174,20 +173,24 @@ def test_agl_training_matches_reference(cfg, setting_id, cascade, second_order):
     # These are built fresh inside trainer.training() per our D.28.b design;
     # no pretrain-phase optimizers needed here.
 
-    losses_1_new, losses_2_new, precision_new = trainer.training(
-        n_epochs=N_EPOCHS, batches=batches
-    )
+    losses_1_new, losses_2_new, precision_new = trainer.training(n_epochs=N_EPOCHS, batches=batches)
 
     # --- Parity asserts --------------------------------------------------
     np.testing.assert_allclose(
-        losses_1_new, losses_1_ref,
-        atol=1e-5, err_msg=f"loss_1 mismatch on setting={setting_id}",
+        losses_1_new,
+        losses_1_ref,
+        atol=1e-5,
+        err_msg=f"loss_1 mismatch on setting={setting_id}",
     )
     np.testing.assert_allclose(
-        losses_2_new, losses_2_ref,
-        atol=1e-5, err_msg=f"loss_2 mismatch on setting={setting_id}",
+        losses_2_new,
+        losses_2_ref,
+        atol=1e-5,
+        err_msg=f"loss_2 mismatch on setting={setting_id}",
     )
     np.testing.assert_allclose(
-        precision_new, precision_ref,
-        atol=1e-5, err_msg=f"precision mismatch on setting={setting_id}",
+        precision_new,
+        precision_ref,
+        atol=1e-5,
+        err_msg=f"precision mismatch on setting={setting_id}",
     )

@@ -108,14 +108,10 @@ def _copy_state_dict(src: torch.nn.Module, dst: torch.nn.Module) -> None:
     dst_keys = set(dst_state.keys())
     # Keys missing on the src side would mean we lost something critical.
     missing_in_dst = src_keys - dst_keys
-    assert not missing_in_dst, (
-        f"dst is missing keys present in src: {missing_in_dst}"
-    )
+    assert not missing_in_dst, f"dst is missing keys present in src: {missing_in_dst}"
     # Keys extra on the dst side are only allowed if explicitly whitelisted.
     extras = dst_keys - src_keys - _DST_ONLY_ALLOWED_KEYS
-    assert not extras, (
-        f"dst has unexpected extra keys not whitelisted: {extras}"
-    )
+    assert not extras, f"dst has unexpected extra keys not whitelisted: {extras}"
     dst.load_state_dict(src_state, strict=False)
 
 

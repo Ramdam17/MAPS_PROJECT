@@ -6,7 +6,6 @@ not needed for MeltingPot parity and are stripped.
 
 from __future__ import annotations
 
-import torch
 import torch.nn as nn
 
 from .distributions import Categorical

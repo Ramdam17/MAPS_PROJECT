@@ -202,15 +202,21 @@ class RolloutBuffer:
         mini_batch_size = batch_size // num_mini_batch
 
         rand = torch.randperm(batch_size).numpy()
-        sampler = [rand[i * mini_batch_size : (i + 1) * mini_batch_size] for i in range(num_mini_batch)]
+        sampler = [
+            rand[i * mini_batch_size : (i + 1) * mini_batch_size] for i in range(num_mini_batch)
+        ]
 
         # Flatten all (T + 1, N, ...) → (T * N, ...) via [:-1] slice for T-length data.
         share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[2:])
         obs = self.obs[:-1].reshape(-1, *self.obs.shape[2:])
         rnn_states = self.rnn_states[:-1].reshape(-1, *self.rnn_states.shape[2:])
-        rnn_states_critic = self.rnn_states_critic[:-1].reshape(-1, *self.rnn_states_critic.shape[2:])
+        rnn_states_critic = self.rnn_states_critic[:-1].reshape(
+            -1, *self.rnn_states_critic.shape[2:]
+        )
         actions = self.actions.reshape(-1, self.actions.shape[-1])
-        available_actions = self.available_actions[:-1].reshape(-1, self.available_actions.shape[-1])
+        available_actions = self.available_actions[:-1].reshape(
+            -1, self.available_actions.shape[-1]
+        )
         value_preds = self.value_preds[:-1].reshape(-1, 1)
         returns = self.returns[:-1].reshape(-1, 1)
         masks = self.masks[:-1].reshape(-1, 1)
@@ -234,7 +240,9 @@ class RolloutBuffer:
                 available_actions[indices],
             )
 
-    def recurrent_generator(self, advantages: np.ndarray, num_mini_batch: int, data_chunk_length: int):
+    def recurrent_generator(
+        self, advantages: np.ndarray, num_mini_batch: int, data_chunk_length: int
+    ):
         """Chunk-based generator for recurrent policies.
 
         Splits (T * N) into contiguous chunks of ``data_chunk_length`` steps
@@ -300,7 +308,6 @@ class RolloutBuffer:
                 rnn_states_batch.append(rnn_states[start])
                 rnn_states_critic_batch.append(rnn_states_critic[start])
 
-            L = data_chunk_length
             # (mini_batch_size, L, ...) → (L * mini_batch_size, ...)
             share_obs_b = np.stack(share_obs_batch).reshape(-1, *share_obs.shape[1:])
             obs_b = np.stack(obs_batch).reshape(-1, *obs.shape[1:])

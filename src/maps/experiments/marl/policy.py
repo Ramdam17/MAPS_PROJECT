@@ -36,12 +36,12 @@ from maps.experiments.marl.rnn import RNNLayer, RNNLayerMeta
 from maps.experiments.marl.util import init
 
 __all__ = [
-    "MarlSecondOrderNetwork",
     "MAPPOActor",
     "MAPPOCritic",
+    "MAPPOPolicy",
     "MAPSActor",
     "MAPSCritic",
-    "MAPPOPolicy",
+    "MarlSecondOrderNetwork",
 ]
 
 log = logging.getLogger(__name__)
@@ -225,7 +225,9 @@ class MAPPOCritic(nn.Module):
             use_orthogonal=bool(cfg.model.use_orthogonal),
         )
 
-        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][int(bool(cfg.model.use_orthogonal))]
+        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][
+            int(bool(cfg.model.use_orthogonal))
+        ]
 
         def init_(m: nn.Module) -> nn.Module:
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=1.0)
@@ -343,10 +345,10 @@ class MAPSActor(nn.Module):
         self,
         obs: torch.Tensor,
         rnn_states: torch.Tensor,
-        action: torch.Tensor,  # noqa: ARG002 — student signature ; unused here (returns wager only)
+        action: torch.Tensor,
         masks: torch.Tensor,
-        available_actions: torch.Tensor | None = None,  # noqa: ARG002
-        active_masks: torch.Tensor | None = None,  # noqa: ARG002
+        available_actions: torch.Tensor | None = None,
+        active_masks: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Meta-path : compute the wager (student L151-196).
 
@@ -395,7 +397,7 @@ class MAPSCritic(nn.Module):
         cfg: DictConfig,
         cent_obs_shape: tuple[int, int, int],
         cascade_iterations1: int = 1,
-        cascade_iterations2: int = 1,  # noqa: ARG002 — unused on critic (kept for API symmetry)
+        cascade_iterations2: int = 1,
         device: torch.device | str = "cpu",
     ):
         super().__init__()
@@ -418,7 +420,9 @@ class MAPSCritic(nn.Module):
             use_orthogonal=bool(cfg.model.use_orthogonal),
         )
 
-        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][int(bool(cfg.model.use_orthogonal))]
+        init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][
+            int(bool(cfg.model.use_orthogonal))
+        ]
 
         def init_(m: nn.Module) -> nn.Module:
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=1.0)
@@ -569,7 +573,10 @@ class MAPPOPolicy:
             )
 
         return _PolicyOptimizers(
-            actor=actor_opt, critic=critic_opt, actor_meta=actor_meta_opt, critic_meta=critic_meta_opt
+            actor=actor_opt,
+            critic=critic_opt,
+            actor_meta=actor_meta_opt,
+            critic_meta=critic_meta_opt,
         )
 
     def _build_optimizers_fallback_adam(self, cfg: DictConfig) -> _PolicyOptimizers:
@@ -582,6 +589,7 @@ class MAPPOPolicy:
 
     def total_params(self) -> dict[str, int]:
         """Returns parameter counts for logging (student L45-47)."""
+
         def count(m: nn.Module | None) -> int:
             if m is None:
                 return 0

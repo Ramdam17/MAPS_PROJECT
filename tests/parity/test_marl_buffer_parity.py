@@ -195,8 +195,8 @@ def test_feed_forward_generator_matches_student_seeded(num_mini_batch):
 
     assert len(ref_batches) == len(our_batches) == num_mini_batch
     # Both yield 12-tuples with identical layout.
-    for rb, ob in zip(ref_batches, our_batches):
-        for i, (ref_arr, our_arr) in enumerate(zip(rb, ob)):
+    for rb, ob in zip(ref_batches, our_batches, strict=False):
+        for i, (ref_arr, our_arr) in enumerate(zip(rb, ob, strict=False)):
             if ref_arr is None and our_arr is None:
                 continue
             ref_np = _as_np(ref_arr)
@@ -230,8 +230,8 @@ def test_recurrent_generator_matches_student_seeded(chunk_length, num_mini_batch
     our_batches = list(ours.recurrent_generator(adv, num_mini_batch, chunk_length))
 
     assert len(ref_batches) == len(our_batches) == num_mini_batch
-    for rb, ob in zip(ref_batches, our_batches):
-        for i, (ref_arr, our_arr) in enumerate(zip(rb, ob)):
+    for rb, ob in zip(ref_batches, our_batches, strict=False):
+        for i, (ref_arr, our_arr) in enumerate(zip(rb, ob, strict=False)):
             if ref_arr is None and our_arr is None:
                 continue
             ref_np = _as_np(ref_arr)

@@ -14,7 +14,6 @@ from gymnasium import spaces
 from maps.experiments.marl.data import RolloutBuffer
 from maps.experiments.marl.valuenorm import ValueNorm
 
-
 T = 6  # episode length
 N = 2  # n_rollout_threads
 H = 32  # hidden size
@@ -200,7 +199,7 @@ def test_recurrent_generator_yields_expected_shapes():
     expected_batch = mini_chunks * chunk_length
 
     for sample in samples:
-        (share_obs, obs, rnns, rnnsc, actions, vp, ret, masks, am, alp, adv, aa) = sample
+        (share_obs, obs, rnns, rnnsc, actions, vp, ret, masks, _am, _alp, adv, aa) = sample
         assert share_obs.shape == (expected_batch, *OBS_SHAPE)
         assert obs.shape == (expected_batch, *OBS_SHAPE)
         assert rnns.shape == (mini_chunks, RECURRENT_N, H)  # one state per chunk

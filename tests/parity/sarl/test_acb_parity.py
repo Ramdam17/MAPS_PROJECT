@@ -27,15 +27,20 @@ import torch
 from maps.experiments.sarl.actor_critic import (
     ACBConfig,
     ACBTrainer,
-    ACNetwork as PortedACNetwork,
     Transition,
+)
+from maps.experiments.sarl.actor_critic import (
+    ACNetwork as PortedACNetwork,
 )
 from tests.parity.sarl._reference_acb import (
     ACNetwork as ReferenceACNetwork,
+)
+from tests.parity.sarl._reference_acb import (
     acb_train_step,
+)
+from tests.parity.sarl._reference_acb import (
     transition as RefTransition,
 )
-
 
 # Shapes mirror MinAtar Breakout : (1, 4, 10, 10).
 IN_CHANNELS = 4
@@ -85,9 +90,7 @@ def _make_fake_transitions(num_steps: int, seed: int) -> list[Transition]:
         # Reward is a small float, terminal every 7 steps.
         reward = torch.tensor([[(k % 3) * 0.5 - 0.5]])
         terminal = torch.tensor([[(k + 1) % 7 == 0]])
-        transitions.append(
-            Transition(state, last_state, action, last_reward, last_terminal)
-        )
+        transitions.append(Transition(state, last_state, action, last_reward, last_terminal))
         last_state = state
         last_reward = reward
         last_terminal = terminal
@@ -105,8 +108,13 @@ def test_acb_update_matches_reference(seed: int) -> None:
         seed=seed,
         num_frames=NUM_STEPS,
         output_dir=__file__,  # unused — train() is never called
-        alpha=ALPHA, lambda_=LAMBDA, gamma=GAMMA, beta=BETA,
-        gamma_rms=GAMMA_RMS, eps_rms=EPS_RMS, min_denom=MIN_DENOM,
+        alpha=ALPHA,
+        lambda_=LAMBDA,
+        gamma=GAMMA,
+        beta=BETA,
+        gamma_rms=GAMMA_RMS,
+        eps_rms=EPS_RMS,
+        min_denom=MIN_DENOM,
     )
     # ACBTrainer.__init__ wants an env — pass None and assign network/buffers
     # manually to bypass env-touching code.
@@ -138,9 +146,19 @@ def test_acb_update_matches_reference(seed: int) -> None:
             is_terminal=port_sample.is_terminal,
         )
         acb_train_step(
-            ref_sample, ref_traces, ref_grads, ref_msg, ref_net, ALPHA, t,
-            LAMBDA=LAMBDA, GAMMA=GAMMA, BETA=BETA,
-            GAMMA_RMS=GAMMA_RMS, EPS_RMS=EPS_RMS, MIN_DENOM=MIN_DENOM,
+            ref_sample,
+            ref_traces,
+            ref_grads,
+            ref_msg,
+            ref_net,
+            ALPHA,
+            t,
+            LAMBDA=LAMBDA,
+            GAMMA=GAMMA,
+            BETA=BETA,
+            GAMMA_RMS=GAMMA_RMS,
+            EPS_RMS=EPS_RMS,
+            MIN_DENOM=MIN_DENOM,
         )
 
     # Parameter parity.
@@ -151,21 +169,30 @@ def test_acb_update_matches_reference(seed: int) -> None:
         strict=True,
     ):
         torch.testing.assert_close(
-            p_port, p_ref, atol=0, rtol=0,
+            p_port,
+            p_ref,
+            atol=0,
+            rtol=0,
             msg=f"parameter {name_p!r} diverged after {NUM_STEPS} steps (seed={seed})",
         )
 
     # Trace parity.
     for k, (t_port, t_ref) in enumerate(zip(trainer.traces, ref_traces, strict=True)):
         torch.testing.assert_close(
-            t_port, t_ref, atol=0, rtol=0,
+            t_port,
+            t_ref,
+            atol=0,
+            rtol=0,
             msg=f"trace #{k} diverged after {NUM_STEPS} steps (seed={seed})",
         )
 
     # RMSprop MSG buffer parity.
     for k, (m_port, m_ref) in enumerate(zip(trainer.msg, ref_msg, strict=True)):
         torch.testing.assert_close(
-            m_port, m_ref, atol=0, rtol=0,
+            m_port,
+            m_ref,
+            atol=0,
+            rtol=0,
             msg=f"MSG #{k} diverged after {NUM_STEPS} steps (seed={seed})",
         )
 
@@ -186,5 +213,6 @@ def test_ac_network_forward_shapes() -> None:
     torch.testing.assert_close(
         pi_port.sum(dim=1),
         torch.ones(1),
-        atol=1e-6, rtol=0,
+        atol=1e-6,
+        rtol=0,
     )

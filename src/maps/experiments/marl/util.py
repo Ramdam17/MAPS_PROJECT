@@ -17,14 +17,14 @@ import torch
 import torch.nn as nn
 
 __all__ = [
-    "init",
-    "check",
     "calculate_conv_params",
-    "huber_loss",
-    "mse_loss",
+    "check",
     "get_grad_norm",
-    "update_linear_schedule",
     "get_shape_from_obs_space",
+    "huber_loss",
+    "init",
+    "mse_loss",
+    "update_linear_schedule",
 ]
 
 
