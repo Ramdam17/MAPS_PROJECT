@@ -79,7 +79,7 @@ section "h must be post-sigmoid" et la remplacer par "h is assumed post-ReLU (st
 formula `h(1-h)` is mathematically valid for sigmoid only, but applied on ReLU output for
 paper parity in all 3 domains." Cross-ref `docs/reviews/first_order_mlp.md §C.11 (b)`.
 
-### (c) 🚨 Finding C11-F2 — `config/training/blindsight.yaml` diverge de paper Table 9
+### (c) 🚨 Finding C11-F2 — `config/domains/blindsight/training.yaml` diverge de paper Table 9
 
 **Paper Table 9** (verbatim, `paper_tables_extracted.md:121-123`) :
 - `Input size = Output size = 100`
@@ -208,7 +208,7 @@ RG-002.
 | ID        | Fix                                                                                    | Scope                                           | Effort |
 |:----------|----------------------------------------------------------------------------------------|-------------------------------------------------|:------:|
 | C11-fix-1 🚨 | Correction `components.cae_loss` docstring C.10 — h post-ReLU dans les 3 domaines | `src/maps/components/losses.py:37-66`           | 10 min |
-| C11-fix-2 | (Phase D.25, pas C.11) aligner `blindsight.yaml` sur paper Table 9 (hidden 60)         | `config/training/blindsight.yaml:10`            | hors  |
+| C11-fix-2 | (Phase D.25, pas C.11) aligner `blindsight.yaml` sur paper Table 9 (hidden 60)         | `config/domains/blindsight/training.yaml:10`            | hors  |
 | C11-fix-3 | (skip) docstring prev_h1 no-op — déjà documenté                                        | —                                               | skip   |
 | C11-fix-4 | Docstring `make_chunked_sigmoid` : note sur `.clone()` vs student in-place            | `first_order_mlp.py:40-51` docstring            | 3 min  |
 | C11-fix-5 | Docstring `FirstOrderMLP.hidden_dim` : clarifier que 40 est AGL-default, Blindsight = 60 (paper) | `first_order_mlp.py:62-63` docstring | 5 min  |

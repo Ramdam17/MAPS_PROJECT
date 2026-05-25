@@ -6,7 +6,7 @@
 1 function).
 **Paper sources :** paper §A.1 Blindsight (Weiskrantz 1986 / Pasquali & Cleeremans 2010 regimes).
 **Student sources :** `external/paper_reference/blindsight_tmlr.py:generate_patterns` L259-328.
-**Env config :** `config/env/blindsight.yaml` — 3 conditions paramétrées.
+**Env config :** `config/domains/blindsight/env.yaml` — 3 conditions paramétrées.
 
 **Callers du port :**
 - `src/maps/experiments/blindsight/trainer.py:pre_train` L286, `evaluate` L404.
@@ -29,7 +29,7 @@ Student hardcode 3 branches `if condition == 0/1/2:` inline. Port factorize via
 `ConditionParams` loaded from yaml → **config-driven**, abilité à paramétrer des conditions
 au-delà des 3 paper sans toucher le code.
 
-`config/env/blindsight.yaml:conditions` :
+`config/domains/blindsight/env.yaml:conditions` :
 - `superthreshold : (random_limit=0.0, baseline=0.0, multiplier=1.0)` — student L278-281 match.
 - `subthreshold : (random_limit=0.02, baseline=${train.noise_level}, multiplier=1.0)` — L283-286 match.
 - `low_vision : (random_limit=0.02, baseline=${train.noise_level}, multiplier=0.3)` — L288-291 match.
@@ -103,14 +103,14 @@ order_2_target)` — 3 tensors, cleaner.
 
 ## (e) Pre-training condition hardcoded to superthreshold
 
-Per `config/env/blindsight.yaml:pre_training_condition: superthreshold` + student L530. Cross-ref
+Per `config/domains/blindsight/env.yaml:pre_training_condition: superthreshold` + student L530. Cross-ref
 `trainer.py:_pre_training_params`.
 
 Paper §2.2 confirms pre-training on superthreshold. ✅
 
 ## (f) Eval patterns — 200 trials (100 noise + 100 stim)
 
-Port `config/env/blindsight.yaml:eval.patterns_number=200`. Student `testing()` L815 same.
+Port `config/domains/blindsight/env.yaml:eval.patterns_number=200`. Student `testing()` L815 same.
 Half noise, half stim-present. ✅
 
 ### Wager thresholds

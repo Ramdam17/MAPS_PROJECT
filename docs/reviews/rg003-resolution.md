@@ -118,7 +118,7 @@ keeps architectural alignment with the paper's Pasquali 2010 citation in §2.2.
 ## Port default configuration (post-D.28.i)
 
 ```yaml
-# config/training/agl.yaml
+# config/domains/agl/training.yaml
 first_order:
   input_dim: 48
   hidden_dim: 40              # paper T.10
@@ -176,7 +176,7 @@ See `deviations.md` §B.10 for the updated table.
   `_run_training_loop()`, `_evaluate_single_cell()`, `_aggregate_pool_metrics()`.
 - `src/maps/experiments/agl/pool.py` (new) — `NetworkCell`, `AGLNetworkPool`.
 - `scripts/run_agl.py` — full 3-phase pipeline + `--output-dir`.
-- `config/training/agl.yaml` — paper Table 10 + A3 override + detailed rationale.
+- `config/domains/agl/training.yaml` — paper Table 10 + A3 override + detailed rationale.
 - `tests/parity/_reference_agl_training.py` (new) + `test_agl_training.py` (new).
 - `tests/unit/experiments/agl/test_pool.py` (new, 8 tests).
 - `pyproject.toml` — `torch-optimizer` in `agl` extras.

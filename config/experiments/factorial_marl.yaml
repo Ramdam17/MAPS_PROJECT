@@ -43,7 +43,7 @@ settings:
 n_seeds: 3
 seeds: [42, 43, 44]
 
-# Substrates (ids match config/env/marl/*.yaml filenames).
+# Substrates (ids match config/domains/marl/env/*.yaml filenames).
 substrates:
   - commons_harvest_closed
   - commons_harvest_partnership

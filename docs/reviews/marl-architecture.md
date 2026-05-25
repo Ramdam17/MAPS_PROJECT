@@ -262,7 +262,7 @@ student config) :
 | E.8 | `MAPPOActor`, `MAPPOCritic`, `MAPSActor`, `MAPSCritic`, `MarlSecondOrderNetwork` | `policy.py` (~300-400 L) |
 | E.9 | `MAPPOTrainer` with PPO clip + meta wager integration | `trainer.py` (~300 L) |
 | E.10 | MeltingPot env wrapper | `env.py` |
-| E.11 | Per-substrate reward/termination configs | `config/env/marl/*.yaml` |
+| E.11 | Per-substrate reward/termination configs | `config/domains/marl/env/*.yaml` |
 | E.12 | CLI + slurm | `scripts/run_marl.py`, `scripts/slurm/marl_array.sh` |
 
 **Items to SKIP per E.5 decision** :

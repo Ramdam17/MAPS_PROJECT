@@ -71,7 +71,7 @@ en-dessous. Crée un mix balancé pour entraîner le wager.
 ### Conditions hardcodées vs config
 
 `ConditionParams` (random_limit, baseline, multiplier) sont **chargées
-depuis `config/env/blindsight.yaml`**, pas hardcodées dans ce module.
+depuis `config/domains/blindsight/env.yaml`**, pas hardcodées dans ce module.
 C'est le `BlindsightTrainer` qui fait le wiring. Bonne séparation.
 
 ## 3. Contraintes d'ingénierie
@@ -163,5 +163,5 @@ student `Blindsight_TMLR.py:259-328`. Pas de finding open.
 
 ### Connexion
 - Utilisé par `domains/blindsight/trainer.py`
-- Configure via `config/env/blindsight.yaml`
+- Configure via `config/domains/blindsight/env.yaml`
 - Seedé via `utils/seeding.set_all_seeds`

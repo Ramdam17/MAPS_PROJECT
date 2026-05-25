@@ -138,7 +138,7 @@ class MarlSetting:
 | `chemistry` | `chemistry__three_metabolic_cycles_with_plentiful_distractors` | 8 | Chemistry Three Metabolic Cycles with Plentiful Distractors |
 | `territory_inside_out` | `territory_inside_out` | 5 | Territory Inside Out |
 
-`config/env/marl/<port_id>.yaml` per substrate.
+`config/domains/marl/env/<port_id>.yaml` per substrate.
 
 ---
 
@@ -179,7 +179,7 @@ From `deviations.md §B.11` + E.2/E.3/E.4 audits. All target columns :
 | `src/maps/experiments/marl/data.py` | inline | shared buffer types | 100 |
 | `scripts/run_marl.py` | `scripts/train/train_meltingpot.py` | typer CLI | 200 |
 | `scripts/slurm/marl_array.sh` | `train_meltingpot.sh` | DRAC GPU sbatch | 80 |
-| `config/training/marl.yaml` + `config/env/marl/*.yaml` | config.py + shell | | 200 |
+| `config/domains/marl/training.yaml` + `config/domains/marl/env/*.yaml` | config.py + shell | | 200 |
 
 **Total port : ~2400 LOC.** Student source equivalent : ~2500-3000 LOC (after
 dropping dead code + extensions). Roughly 1:1.

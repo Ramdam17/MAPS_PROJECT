@@ -363,7 +363,7 @@ $$
 `task = 0.4, reg = 0.4, feature = 0.2`. Table et texte disagree. À flagger dans `deviations.md`
 comme D-cl-weights-inconsistency.
 
-**🚨 Divergence port D-cl-weights** : notre `config/training/sarl_cl.yaml` = `(1.0, 1.0, 1.0)`
+**🚨 Divergence port D-cl-weights** : notre `config/domains/sarl_cl/training.yaml` = `(1.0, 1.0, 1.0)`
 (unnormalized). Ni aligné sur Table 11, ni sur texte p. 17. À fixer Phase D.20.
 
 ---

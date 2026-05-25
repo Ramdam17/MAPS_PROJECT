@@ -94,7 +94,7 @@ Décodage minimal pour les phases d'audit suivantes (Phase B.7) :
 - `Gradient momentum = 0.95` = **Adam β₁** (défaut PyTorch = 0.9). Paper diverge du défaut.
 - `Squared gradient momentum = 0.95` = **Adam β₂** (défaut PyTorch = 0.999). Paper diverge du défaut.
 - `Minimum squared gradient = 0.01` = **Adam `eps`** (défaut PyTorch = `1e-8`). Paper diverge
-  largement du défaut. Déjà aligné dans notre `config/training/sarl.yaml` → `optimizer.eps = 0.01`.
+  largement du défaut. Déjà aligné dans notre `config/domains/sarl/training.yaml` → `optimizer.eps = 0.01`.
 - `Max input channels (CL) = 10` = l'union des channels de tous les jeux MinAtar couverts par la
   curriculum learning (SpaceInvaders=6, Breakout=4, Seaquest=10, Asterix=4, Freeway=7 → max=10).
   Canaux manquants zero-padded + conv 1×1 d'adaptation, main text p. 9.

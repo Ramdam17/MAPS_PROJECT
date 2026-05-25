@@ -78,15 +78,26 @@ src/maps/                # package — empty during Sprint 10, populated Sprint 
 │                        #   energy_tracker.py
 └── cli/                 # optional global Typer app dispatching to each domain
 
-config/                  # YAML (maps.yaml, paths.yaml, training/*, env/*, experiments/*)
+config/                  # YAML config (Sprint 11.5 reorg D-cleanup.2 Option C)
+├── maps.yaml            # canonical paper constants (locked)
+├── paths.yaml           # filesystem path helpers
+├── domains/             # per-domain (env + training)
+│   ├── blindsight/      # env.yaml, training.yaml
+│   ├── agl/             # training.yaml
+│   ├── sarl/            # training.yaml, acb.yaml
+│   ├── sarl_cl/         # training.yaml
+│   └── marl/            # env/{*.yaml}, training.yaml
+└── experiments/         # factorial_{2x2,6cell,marl}.yaml
+
 external/                # vendored: METTA, MinAtar, paper_reference (numerical truth)
-tests/                   # unit + parity tier 1/2/3 + integration smoke + reproduction
+tests/                   # unit + parity (Sprint 11+ rewrite per-domain)
 docs/
-├── sprints/             # sprint-00 .. sprint-10 specs
-├── plans/               # per-execution plans
+├── sprints/             # current sprint specs (00-09 historical, on main)
 ├── reproduction/        # deviations.md, experiment_matrix.md, paper audits
-├── reviews/             # technical reviews (Sprint-08 C.* sub-phases)
-├── reports/             # per-sprint closeouts
+├── reviews/             # technical reviews (Sprint-08 C.* sub-phases — kept as reference)
+├── reports/             # per-sprint closeouts (most historical, on main)
+├── figures/             # paper figures (Sprint 11.5: ex-/images/)
+├── pdf/                 # reference papers (Sprint 11.5: ex-/pdf/)
 └── learning/            # Sprint 10 pedagogical layer
     ├── structure-decision.md
     ├── reverse-prompts/   # one .md per module, mirror src/maps/ path
@@ -95,7 +106,6 @@ docs/
 
 notebooks/learning/      # executable tutorials (Jupyter)
 outputs/ logs/ models/ data/   # gitignored
-pdf/                     # reference papers
 ```
 
 **Naming conventions** :

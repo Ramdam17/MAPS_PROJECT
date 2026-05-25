@@ -50,9 +50,9 @@ Same bug pattern as Blindsight D.25 (RG-002) :
 **Port status :**
 - Port's `SecondOrderNetwork` is shared with Blindsight (from `maps.components.second_order`).
 - After D.25, it supports `hidden_dim` (default 0 = no hidden, bw-compat).
-- **`config/training/agl.yaml` does NOT set `second_order.hidden_dim`** → currently 0 → port matches student bug → likely undertrains the wager head like Blindsight did.
+- **`config/domains/agl/training.yaml` does NOT set `second_order.hidden_dim`** → currently 0 → port matches student bug → likely undertrains the wager head like Blindsight did.
 
-**→ AGL fix candidate : add `second_order.hidden_dim: 48` to `config/training/agl.yaml`.** Pasquali 2010 hidden matches AGL input_dim. Same logic as Blindsight's `hidden_dim=100`. Low risk — can be ablated if bitwise parity matters for a test.
+**→ AGL fix candidate : add `second_order.hidden_dim: 48` to `config/domains/agl/training.yaml`.** Pasquali 2010 hidden matches AGL input_dim. Same logic as Blindsight's `hidden_dim=100`. Low risk — can be ablated if bitwise parity matters for a test.
 
 ---
 
@@ -74,7 +74,7 @@ And `initialize_global()` L1648-1689 sets globals :
 - `num_networks = 20` (comment says "default is 30")
 - `num_training_high = 12`, `num_training_low = 3`
 
-| Knob | Paper T.10 | Student `main()` | Student `initialize_global()` | Port `config/training/agl.yaml` | Action |
+| Knob | Paper T.10 | Student `main()` | Student `initialize_global()` | Port `config/domains/agl/training.yaml` | Action |
 |:--|:--:|:--:|:--:|:--:|:--|
 | `first_order.hidden_dim` | 40 | 40 | — | 40 | ✅ aligned |
 | `second_order.hidden_dim` | silent | **48** (dropped in code) | — | **0** (not set) | ❌ **add 48** (analogous to Blindsight D.25) |

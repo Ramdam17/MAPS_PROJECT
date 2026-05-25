@@ -108,5 +108,5 @@ Pas de déviation paper sur ce module.
 - Utilise : `domains.sarl_cl.{SarlCLTrainingConfig, run_training_cl}`
 - Utilise : `utils.{configure_logging, get_paths, load_config,
   set_all_seeds}`
-- Configure via `config/training/sarl_cl.yaml`
+- Configure via `config/domains/sarl_cl/training.yaml`
 - Curriculum via SLURM dependent jobs (Phase F)

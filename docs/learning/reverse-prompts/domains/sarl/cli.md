@@ -152,4 +152,4 @@ Pas de déviation paper sur ce module (pure plumbing).
   run_training, setting_to_config}`
 - Utilise : `utils.{configure_logging, get_paths, load_config,
   set_all_seeds}`
-- Configure via : `config/training/sarl.yaml`, `config/training/sarl_acb.yaml`
+- Configure via : `config/domains/sarl/training.yaml`, `config/domains/sarl/acb.yaml`

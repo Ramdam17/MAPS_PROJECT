@@ -257,7 +257,7 @@ Module gros (933 L) mais propre. Bien factorisé via `_build_networks`,
 - Utilise : `data` (replay + state), `losses` (cae_loss), `model` (v2),
   `model_v1` (v1), `trainer.sarl_update_step`, `rollout.epsilon_greedy_action`,
   `evaluate.aggregate_validation`
-- Configure via `config/training/sarl.yaml`
+- Configure via `config/domains/sarl/training.yaml`
 - Appelé par `domains/sarl/cli.py`
 
 ## Méta — pour Claude chat

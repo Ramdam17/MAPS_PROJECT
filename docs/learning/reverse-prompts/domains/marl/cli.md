@@ -8,8 +8,8 @@
 
 ## 1. Quelle aurait été la spec ?
 
-> Écris CLI typer pour MARL. Charge `config/training/marl.yaml` +
-> `config/env/marl/<substrate>.yaml` + `config/experiments/factorial_marl.yaml`,
+> Écris CLI typer pour MARL. Charge `config/domains/marl/training.yaml` +
+> `config/domains/marl/env/<substrate>.yaml` + `config/experiments/factorial_marl.yaml`,
 > build MeltingPot env + separated-MAPPO runner, trains one cell
 > (substrate × setting × seed).
 >
@@ -62,8 +62,8 @@ nécessite `.venv-marl` (Python 3.11 + native libs). Documented dans
 ### Multi-file config compose
 
 3 configs YAML :
-- `config/training/marl.yaml` : hyperparams (Table 12)
-- `config/env/marl/<substrate>.yaml` : env-specific (num_agents,
+- `config/domains/marl/training.yaml` : hyperparams (Table 12)
+- `config/domains/marl/env/<substrate>.yaml` : env-specific (num_agents,
   episode_length, max_cycles)
 - `config/experiments/factorial_marl.yaml` : 6 settings
 

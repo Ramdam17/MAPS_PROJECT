@@ -68,7 +68,7 @@ search at L2346 (`primary_scaling_factors=[0.0625, 0.125, 0.25, 0.5]`) is a
 
 ### 🚨 Discrepancy : Table 9 ≠ student main() ≠ port
 
-| Knob | Paper Table 9 | Student `main()` | Port `config/training/blindsight.yaml` (post-D.25) |
+| Knob | Paper Table 9 | Student `main()` | Port `config/domains/blindsight/training.yaml` (post-D.25) |
 |:--|:--|:--|:--|
 | `hidden_dim` | **60** | **40** | **60** (just aligned to T.9 in D.25) |
 | patterns/epoch | silent (T.9 silent on batch) | **200** (factor=1) | **100** (`train.batch_size`) |

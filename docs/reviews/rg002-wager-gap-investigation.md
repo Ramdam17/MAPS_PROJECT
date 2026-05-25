@@ -82,7 +82,7 @@ paper-text faithfulness but confers no performance gain.
 ## Final port configuration
 
 ```yaml
-# config/training/blindsight.yaml
+# config/domains/blindsight/training.yaml
 first_order:
   input_dim: 100
   hidden_dim: 40            # student main() value, NOT T.9's 60
@@ -130,7 +130,7 @@ See `docs/reproduction/deviations.md` §B.9 for the updated table.
 
 - `src/maps/components/second_order.py` — `WageringHead(hidden_dim=...)` and `SecondOrderNetwork(hidden_dim=...)` accept optional hidden MLP layer (default 0 = no hidden, bw-compatible with legacy).
 - `src/maps/experiments/blindsight/trainer.py` — 2-unit BCE-with-logits path added, config-toggled via `n_wager_units`. `hidden_dim` plumbed through.
-- `config/training/blindsight.yaml` — defaults updated with both D.25 fixes + detailed rationale comment block.
+- `config/domains/blindsight/training.yaml` — defaults updated with both D.25 fixes + detailed rationale comment block.
 
 ---
 

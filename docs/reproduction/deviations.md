@@ -38,7 +38,7 @@ under "Reproduction gaps".
 | G-02 | AGL High Awareness classification acc. | 0.66 (z=8.20) | 0.073 (z=+0.00) | `AGLTrainer.pre_train` resets the first-order to init weights (reference L751 behavior). Paper numbers come from a downstream supervised phase on Grammar A vs B that used the *pre-trained* second-order + a fresh first-order — this phase is not ported. | RG-003 |
 | G-03 | AGL Low Awareness classification acc. | 0.62 (z=15.70) | 0.093 (z=+0.00) | Same root cause as G-02 — the post-hoc seed-pool split cannot create the "awareness" signal without the downstream training phase. | RG-003 |
 
-No hyperparameters were changed from `config/training/{blindsight,agl}.yaml` in
+No hyperparameters were changed from `config/domains/{blindsight,agl}/training.yaml` in
 Sprint 06. The gaps above are reproduction-depth, not protocol drift.
 
 ---

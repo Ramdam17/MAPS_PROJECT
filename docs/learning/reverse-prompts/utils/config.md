@@ -15,7 +15,7 @@
 > Two-level pattern :
 > 1. `config/maps.yaml` = constantes scientifiques verrouillées (α
 >    cascade, dimensions, wager units, seeds)
-> 2. `config/training/<domain>.yaml` = hyperparams training-loop
+> 2. `config/domains/<domain>/training.yaml` = hyperparams training-loop
 >    (optimizer, lr, epochs) qui composent depuis maps.yaml via :
 >    ```yaml
 >    defaults:

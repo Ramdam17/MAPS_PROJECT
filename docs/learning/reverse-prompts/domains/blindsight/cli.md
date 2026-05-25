@@ -10,7 +10,7 @@
 
 > Écris un CLI typer pour lancer un (ou plusieurs) run(s) Blindsight.
 > Le module charge la config composée
-> (`config/training/blindsight.yaml` ← `config/maps.yaml`), seed
+> (`config/domains/blindsight/training.yaml` ← `config/maps.yaml`), seed
 > toutes les RNG, build les networks, run pre-training, save loss
 > curves + final state.
 >

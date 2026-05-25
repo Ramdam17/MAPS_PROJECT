@@ -168,7 +168,7 @@ Tous les callers correct.
 |:---------|-----------------------------------------------------------------------|---------------------------------|:------:|
 | D1-fix-1 | Docstring `target_wager` : préciser shape contrainte `(batch,)` ou `(batch, 1)` | `data.py:93-105` docstring | 3 min  |
 | D1→D.2   | Vectoriser `target_wager` loop (perf)                                 | `data.py:93-118` impl           | queued D.2 |
-| D1→D.2   | Aligner `config/training/sarl.yaml:44 alpha=1.0` → `45` (paper Table 11) | `config/training/sarl.yaml:44` | queued D.2 |
+| D1→D.2   | Aligner `config/domains/sarl/training.yaml:44 alpha=1.0` → `45` (paper Table 11) | `config/domains/sarl/training.yaml:44` | queued D.2 |
 
 ## Cross-reference deviations.md
 

@@ -108,7 +108,7 @@ Port (158 L) : `load_config(name, overrides, resolve)` + `_apply_defaults` (Hydr
 
 Support :
 - `- /maps@_here_` (merge `config/maps.yaml` à root).
-- `- training/foo` (merge `config/training/foo.yaml` à root).
+- `- training/foo` (merge `config/domains/<domain>/training.yaml` à root).
 - `_self_` sentinel (toléré, ignoré — Hydra convention).
 
 **Non-support** (documenté implicitement) :

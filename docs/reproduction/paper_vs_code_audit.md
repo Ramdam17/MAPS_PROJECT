@@ -6,8 +6,9 @@
   `docs/reproduction/paper_{tables,equations,targets}_extracted.md`.
 - **Student monoliths :** `external/paper_reference/{sarl,sarl_cl,agl,blindsight}_*.py` +
   shell launchers récupérés de git history (`git show 8c38e4f^:SARL/*.sh`).
-- **Current ports + configs :** `src/maps/experiments/*`, `config/training/*.yaml`,
-  `config/maps.yaml`, et quelques constantes hardcodées dans `trainer.py`.
+- **Current ports + configs :** `src/maps/{core,domains}/*` (Sprint 11+),
+  `config/domains/<x>/training.yaml`, `config/maps.yaml`, et quelques
+  constantes hardcodées dans `trainer.py`.
 
 Pour chaque hyperparam / choix architectural : 5 colonnes (Paper, Student monolith, Our port+config,
 ∆ verdict, Deviation ID vers `deviations.md`).
@@ -33,7 +34,7 @@ l'ensemble dans `deviations.md`.
 - Paper Table 11 (p. 30) + eqs. 1-14 (pp. 6-8), extractions dans `paper_{tables,equations}_extracted.md`.
 - Student monolith `external/paper_reference/sarl_maps.py` (2 721 lignes). Plus shell launcher
   `SARL/SARL_Training_Standard.sh` (restauré via `git show 8c38e4f^:`) qui fournit `-ema 25`.
-- Our port : `src/maps/experiments/sarl/` (1 555 lignes, 7 fichiers), `config/training/sarl.yaml`,
+- Our port : `src/maps/experiments/sarl/` (1 555 lignes, 7 fichiers), `config/domains/sarl/training.yaml`,
   + une constante hardcodée `GAMMA = 0.99` dans `trainer.py:54`.
 
 ### 1. Hyperparameters — Table 11 vs student vs port
@@ -160,7 +161,7 @@ version du code qui n'est pas celle vendored ici. Conséquences pour Phase F :
   `--weight1 40 --weight2 40 --weight3 20` → /100 = **(0.4, 0.4, 0.2)** — student suit le **texte
   paper**, pas Table 11.
 - Our port : `src/maps/experiments/sarl_cl/` (1 536 lignes, 4 fichiers : `model.py`, `trainer.py`,
-  `training_loop.py`, `loss_weighting.py`) + `config/training/sarl_cl.yaml`.
+  `training_loop.py`, `loss_weighting.py`) + `config/domains/sarl_cl/training.yaml`.
 
 ### 1. Hyperparameters — delta-from-SARL
 
@@ -226,7 +227,7 @@ Les 7 settings SARL (1-6 MAPS factorial + 7 ACB) sont **hérités**. CL ajoute u
 
 | Curriculum stage | Paper (p. 9, 17)      | Our port                                     | ∆   |
 |------------------|-----------------------|----------------------------------------------|:---:|
-| Stage 1          | Breakout              | (to verify `config/training/sarl_cl.yaml` ou CLI) | ⚠️ |
+| Stage 1          | Breakout              | (to verify `config/domains/sarl_cl/training.yaml` ou CLI) | ⚠️ |
 | Stage 2          | Space Invaders        | idem                                         | ⚠️ |
 | Stage 3          | Seaquest              | idem                                         | ⚠️ |
 | Stage 4          | Freeway               | idem                                         | ⚠️ |
@@ -281,7 +282,7 @@ etc.).
   (stat plots). Table 9 paper reporte les **valeurs sélectionnées** après la grid search
   (hidden=60, step=25, gamma=0.98).
 - Our port : `src/maps/experiments/blindsight/` (~600 LOC — `trainer.py` 442 L, `data.py` 161 L,
-  `__init__.py` 29 L) + `config/training/blindsight.yaml`.
+  `__init__.py` 29 L) + `config/domains/blindsight/training.yaml`.
 
 ### 1. Hyperparameters — Table 9 vs student grid vs port
 
@@ -460,7 +461,7 @@ z-score passe de +0.40 à qqch de significatif avant d'aller jusqu'à N=500.
 
 **13 hyperparam rows. Divergences majeures : 5 (step, gamma, epochs pre, optimizer, + RG-003 structural × 2 rows).**
 
-**Note config path (rows A7, A8, A12)** : notre `config/training/agl.yaml` semble avoir copié les
+**Note config path (rows A7, A8, A12)** : notre `config/domains/agl/training.yaml` semble avoir copié les
 valeurs Blindsight (step=25, gamma=0.98, ADAMAX) au lieu des valeurs AGL spécifiques
 (step=1, gamma=0.999, RangerVA). C'est une **erreur systématique** au port AGL Sprint-04b.
 
@@ -567,7 +568,7 @@ gap). H2 est nécessaire mais insuffisant.
 
 - **D-agl-training-missing (RG-003)** : cause **structurelle** du gap. Aucune fix config ne pourra
   fermer le gap ; il faut ajouter la phase 2 `training()` dans notre port (Phase D.28).
-- **Notre `config/training/agl.yaml` a copié les valeurs Blindsight** (step=25, gamma=0.98,
+- **Notre `config/domains/agl/training.yaml` a copié les valeurs Blindsight** (step=25, gamma=0.98,
   ADAMAX, 200 epochs) au lieu des valeurs AGL de Table 10 (1, 0.999, RangerVA, 60 epochs).
   Erreur systématique au port Sprint-04b.
 - RangerVA n'est **pas** dans `torch.optim` standard ; il est dans `torch_optimizer as optim2`
@@ -672,7 +673,7 @@ D-marl-attention-extensions (paper silent, student heavy).
 | Student path                                                                          | Role                                                                                  | Paper Fig. 4 component             | Target port module (Phase E.11-E.21)                       |
 |---------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|-------------------------------------|------------------------------------------------------------|
 | `onpolicy/scripts/train/train_meltingpot.py`                                          | Entry point — parse args, init env, run                                               | —                                   | `scripts/run_marl.py` (E.18)                               |
-| `onpolicy/config.py`                                                                  | CLI args + defaults                                                                   | —                                   | `config/training/marl.yaml` (E.17)                         |
+| `onpolicy/config.py`                                                                  | CLI args + defaults                                                                   | —                                   | `config/domains/marl/training.yaml` (E.17)                         |
 | `onpolicy/envs/meltingpot/`                                                           | MeltingPot env wrapper                                                                | Observation input                   | Keep vendored or re-use `external/` (E.6-E.9)              |
 | `onpolicy/runner/separated/meltingpot_runner.py`                                      | **Training orchestrator** — loop rollout → update → second-order branch               | Overall flow                        | `src/maps/experiments/marl/training_loop.py` (E.16)        |
 | `onpolicy/algorithms/r_mappo/algorithm/r_actor_critic_meta.py`                        | **MAPS actor/critic** — encoder conv + GRU + second-order network                     | Encoder Conv + GRU + 2nd-order     | `src/maps/experiments/marl/model.py` (E.11)                |

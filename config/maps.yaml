@@ -10,7 +10,7 @@ cascade:
 
 first_order:
   # Domain-agnostic MLP (FirstOrderMLP). Defaults reflect AGL; Blindsight
-  # overrides input_dim=100 in config/training/blindsight.yaml.
+  # overrides input_dim=100 in config/domains/blindsight/training.yaml.
   input_dim: 48          # AGL: 8 letters × 6 bits
   hidden_dim: 40
   encoder_dropout: 0.1

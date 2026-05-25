@@ -55,7 +55,7 @@ cl:
 
 # ── DQN hyperparameters (paper Table 11) ───────────────────────────────────
 # Sprint-08 D.9+D.12+D.20 (2026-04-20): paper-faithful alignment, same as
-# config/training/sarl.yaml for shared rows, with CL-specific num_frames.
+# config/domains/sarl/training.yaml for shared rows, with CL-specific num_frames.
 # See that file + deviations.md for rationale.
 training:
   # Paper text p.17 CL spec: "100k per env × 4 envs". The port trains one

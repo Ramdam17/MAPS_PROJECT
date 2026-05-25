@@ -211,7 +211,7 @@ agg.to_csv("outputs/marl/table7_reproduction.csv", index=False)
 **Known port deviations that matter for interpretation** :
 - `num_env_steps = 300000` per paper §4 text, not 15 M (Table 12 appears to
   be a template ; same table has `Critic lr = 100` which is clearly a typo).
-  See `config/training/marl.yaml` header for the full justification.
+  See `config/domains/marl/training.yaml` header for the full justification.
 - EMA wager α = 0.45 (paper eq.13), not 0.25 (student code bug).
 - Wager condition : `r_t > EMA_t` (paper eq.14), not `EMA_t > 0` (student).
 - Scope : RIM / SCOFF / PopArt / MLPBase omitted per E.5 scope lock — we
