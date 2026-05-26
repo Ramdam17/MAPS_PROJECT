@@ -158,6 +158,14 @@ class WageringHead(nn.Module):
 
         # Init readout weight uniformly (matches student); leave bias and
         # (if present) hidden layer at PyTorch defaults.
+        #
+        # **Tested 2026-05-25** : aligning the hidden init to Sprint 09's
+        # `uniform(0, 0.1)` (matching the readout) was hypothesized to close
+        # the 4% gap vs paper. Empirically (N=20 paired seeds on Setting 4) :
+        # PyTorch-default `uniform(-0.1, 0.1)` mean wager 0.813 ; Sprint 09
+        # `uniform(0, 0.1)` mean wager 0.795 — the "fix" was actually slightly
+        # *worse* (14/20 seeds down). Hidden-layer init range is NOT the
+        # source of the 4% gap vs paper. Reverted to PyTorch default.
         nn.init.uniform_(self.readout.weight, a=0.0, b=0.1)
 
     def forward(self, comparison: Tensor) -> Tensor:
