@@ -1,4 +1,25 @@
-"""Blindsight — perceptual detection under noise (paper §3, Tables 5a, 9).
+"""Blindsight perceptual domain — paper §3, Table 5a.
 
-Placeholder for Sprint 11 (first domain to rebuild).
+- :mod:`maps.domains.blindsight.data` — stimulus pattern generation.
+- :mod:`maps.domains.blindsight.augmentations` — SimCLR positive-pair
+  augmentation (D12.4).
+- :mod:`maps.domains.blindsight.trainer` — :class:`BlindsightTrainer`
+  (Sprint 12.E).
+- :mod:`maps.domains.blindsight.cli` — Typer CLI (Sprint 12.F).
 """
+
+from maps.domains.blindsight.augmentations import bit_flip
+from maps.domains.blindsight.data import (
+    ConditionParams,
+    StimulusCondition,
+    TrainingBatch,
+    generate_patterns,
+)
+
+__all__ = [
+    "ConditionParams",
+    "StimulusCondition",
+    "TrainingBatch",
+    "bit_flip",
+    "generate_patterns",
+]
