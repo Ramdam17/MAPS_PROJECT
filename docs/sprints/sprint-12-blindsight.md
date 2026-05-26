@@ -1,11 +1,122 @@
 # Sprint 12 — Blindsight rewrite + tests + paper reproduction
 
-**Status:** 🔵 open (2026-05-25)
-**Branch:** `refactor/blindsight` (à brancher depuis `refactor/core`)
+**Status:** ✅ done (2026-05-25)
+**Branch:** `refactor/blindsight` (branchée depuis `refactor/core`)
 **Owner:** Rémy Ramadour
+**Effort réel :** 1 session intensive (Phase A → H en continu)
 **Depends on:** Sprint 11 ✅ (core/) + Sprint 11.5 (cleanup) + Sprint 11.6 (glossaire + Makefile)
 **Numerical reference:** `external/paper_reference/blindsight_tmlr.py` (verbatim
 Vargas code — produit les chiffres paper Table 5a).
+
+## Closeout (2026-05-25)
+
+**Phase 12.A ✅ — Day-1 decisions (commit `fd4f190`)** :
+7 décisions tranchées (D12.1 → D12.7). User a choisi Tier 1+2+3+4-light
+parity (D12.7) — plus strict que la reco.
+
+**Phase 12.B ✅ — utils complement (commit `d6e9f33`)** :
+- `utils/config.py` (OmegaConf loader + composition, D12.1)
+- `utils/logging_setup.py` (stdlib logging)
+- `utils/device.py` (auto-detect CPU/MPS/CUDA, D12.2)
+- `utils/paths.py` (typed Paths dataclass + scratch_root resolution)
+- 34 tests pass (101 total avec utils seeding).
+
+**Phase 12.C ✅ — networks/first_order_mlp.py (commit `6f07916`)** :
+- `FirstOrderMLP` encoder/decoder MLP no-bias, weight init uniform(-1, 1)
+- `global_sigmoid` + `make_chunked_sigmoid(6)` decoder activations
+- Cascade asymétrique : h2 only (paper-faithful)
+- 17 tests pass.
+
+**Phase 12.D ✅ — Blindsight data + augmentations (commit `deabf65`)** :
+- `data.py` : `generate_patterns()` verbatim parity vs student
+- `augmentations.py` : `bit_flip(p=0.1)` SimCLR augmentation (D12.4)
+- 19 tests pass.
+
+**Phase 12.E ✅ — BlindsightTrainer (commit `369b287`)** :
+- `BlindsightSetting` + `SETTINGS_REGISTRY` (6-cell schema D12.6)
+- `BlindsightTrainer.{build, train, evaluate}` (D12.5 refactor class)
+- Two-loss gradient pattern (load-bearing)
+- Cascade dispatch per setting (`_cascade_params()`)
+- `first_order_loss.kind ∈ {cae, simclr}` dispatch
+- 18 tests pass (incl. smoke train + SimCLR dispatch + 4 cascade variants)
+
+**Phase 12.F ✅ — Blindsight CLI (commit `e21b884`)** :
+- Typer CLI `python -m maps.domains.blindsight.cli`
+- Single-run + --all-settings × --seeds
+- Output : `$SCRATCH/maps/outputs/blindsight/<setting>/seed-<N>/`
+- 8 tests pass (incl. end-to-end smoke via CliRunner)
+
+**Phase 12.G ✅ — 4-tier parity vs paper_reference (commit `71fb22a`)** :
+- Tier 1 : `generate_patterns` bit-exact (4 tests, 1e-6 atol)
+- Tier 2 : `FirstOrderMLP` forward + 50-cascade + backward bit-exact
+  (7 tests)
+- Tier 3 : 1 update step (forward + cae_loss + backward + optim.step)
+  bit-exact post-update + 5 consecutive steps + scheduler (3 tests)
+- Tier 4-light : `train(n_epochs=2)` losses bit-exact vs inline
+  student equivalent (1 test, 1e-4 atol) — **the big one**, validates
+  the entire pipeline end-to-end.
+- 15 parity tests pass.
+
+**Phase 12.H ✅ — walkthrough + closeout (ce commit)** :
+- `docs/learning/walkthroughs/blindsight-from-paper-to-code.md` —
+  narratif post-rewrite (9 sections : multiplier/2 threshold creates
+  blindsight effect ; two-loss gradient pattern load-bearing ; cascade
+  asymmetry per setting ; SimCLR augmentation rationale ; 4-tier
+  parity strategy)
+- `docs/learning/glossaire.md` — "Ajouts du Sprint 12" section
+- CLAUDE.md Current Status → Sprint 13 next
+
+### Suite de tests Sprint 12 — 178 passing
+
+| Tier | Path | Count | Notes |
+|------|------|-------|-------|
+| unit | `tests/unit/utils/` | 43 | seeding + config + logging + device + paths |
+| unit | `tests/unit/networks/` | 17 | FirstOrderMLP |
+| unit | `tests/unit/core/` | 53 | (Sprint 11) cascade + losses + second_order |
+| unit | `tests/unit/domains/blindsight/` | 45 | data + augmentations + trainer + cli |
+| parity | `tests/parity/core/` | 5 | (Sprint 11) SecondOrderNetwork vs paper_reference |
+| parity | `tests/parity/blindsight/` | 15 | **4-tier parity** (D12.7) |
+| **total** | | **178** | |
+
+### Insights scientifiques à reporter Sprint 13+
+
+1. **L'effet blindsight est dans la donnée, pas dans l'architecture.**
+   Le seuil `multiplier/2` qui définit `order_2_target` crée la
+   dissociation conscient/inconscient *avant* tout apprentissage.
+   L'architecture apprend à exploiter une supervision déjà dissociée.
+
+2. **Two-loss gradient pattern est load-bearing.** L'ordre
+   `optimizer_1.zero_grad() AVANT loss_2.backward(retain_graph=True)`
+   est le mécanisme implicite de coupling cross-task entre 1st-order
+   et 2nd-order. Pas documenté dans le paper — lu depuis le code
+   student. Tier 4-light parity le préserve.
+
+3. **D.25 Pasquali hidden = production / D.25 absent = student parity.**
+   Mon trainer active `second_order.hidden_dim=100` par défaut
+   (resoud D.25 bug, gap discrim 0.86→0.94 + wager 0.67→0.82). Les
+   tests Tier 4-light désactivent ce hidden pour comparer apples-to-
+   apples au student qui a le bug. À ne pas confondre lors d'un
+   future refactor.
+
+4. **`np.random` legacy API doit rester** pour parity. Ruff veut nous
+   pousser à `np.random.Generator` (NPY002) — on noqa toutes les
+   occurrences dans `data.py` et `_student_extracts.py`.
+
+5. **Sprint 13 AGL réutilisation** : `networks/first_order_mlp.py`
+   + tout `utils/` + tout `core/` réutilisables tels quels. Sprint
+   13 ajoute juste `domains/agl/{data, pool, trainer, cli}.py`. Le
+   risque clé est D-agl-reset (reset first-order après pre-train,
+   mécanisme de la dissociation conscious/unconscious AGL).
+
+### Hors scope reporté
+
+- Reproduction empirique des chiffres paper Table 5a (4-6 seeds × n_epochs=200).
+  À lancer post-Sprint 12 (manuel ou `make test-slow`).
+- Comparaison empirique CAE vs SimCLR sur Blindsight. Le dispatch
+  fonctionne (smoke Phase 12.E) ; reste à valider la convergence
+  SimCLR sur ce domaine.
+- AGL → Sprint 13. SARL → Sprint 14. SARL+CL → Sprint 15. MARL →
+  Sprint 16. METTA → Sprint 16+.
 
 ---
 

@@ -237,6 +237,38 @@ ancrages utilisés dans les docstrings et walkthroughs.)
 
 ---
 
+## Ajouts du Sprint 12 (2026-05-25) — Blindsight end-to-end
+
+- **Blindsight effect** : dissociation discrimination réussie + wager
+  bas qui apparaît quand un stimulus est PRÉSENT mais sous le seuil
+  `multiplier/2`. Encodé directement dans la cible
+  `order_2_target` par la fonction `generate_patterns`. MAPS *apprend*
+  cette dissociation à partir d'une supervision déjà dissociée — il
+  ne la découvre pas.
+- **Two-loss gradient pattern** (load-bearing) : ordre
+  `optimizer_1.zero_grad() → loss_2.backward(retain_graph=True) →
+  optimizer_2.step() → loss_1.backward(retain_graph=True) →
+  optimizer_1.step()`. Le 1st-order reçoit la SOMME des gradients de
+  ses deux backwards — c'est le mécanisme implicite de coupling
+  cross-task. Non documenté dans le paper, lu depuis le code student
+  `pre_train`.
+- **`BlindsightSetting`** : dataclass(frozen) avec 3 flags
+  `(cascade_1st, cascade_2nd, second_order)`. 6-cell schema (D12.6),
+  pas de backward-compat 2x2.
+- **`SETTINGS_REGISTRY`** : dict mapping `setting-N-slug` → `BlindsightSetting`
+  pour les 6 paper settings.
+- **`multiplier/2`** : seuil de "détection" qui crée l'effet blindsight
+  (cf. ci-dessus). Hypothèse : médiane de `U(0, multiplier)` pour
+  un mix 50/50 high/low wager.
+- **Tier 4-light parity** : test parity end-to-end qui compare
+  `BlindsightTrainer.train(n_epochs=2)` losses au student inline
+  équivalent. Seuil 1e-4 (multi-epoch float drift). C'est *le* filet
+  qui protège la dynamique two-loss vs un futur refactor.
+- **D12.1-D12.7** : décisions Day-1 du Sprint 12.
+- **`bit_flip` (D12.4)** : augmentation SimCLR pour Blindsight —
+  replace p=10% des éléments par U(0, 1) noise. Pour continuous
+  inputs (binaire = literal flip côté AGL Sprint 13).
+
 ## Ajouts du Sprint 11.6 (2026-05-25) — création du glossaire
 
 Première version. Sources extraites de :

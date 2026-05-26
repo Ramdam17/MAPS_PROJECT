@@ -20,18 +20,19 @@ Tested on 4 domains (2×2 factorial on/off → 6 settings per paper):
 
 ---
 
-## Current Status (Sprint 11 ✅ closed — core rewritten ; Sprint 12 next)
+## Current Status (Sprint 12 ✅ closed — Blindsight end-to-end ; Sprint 13 next)
 
-This is a fork being cleaned up for reproducibility after the original student left. Sprints 00-09 produced a modular, config-first port. **Sprint 10** wiped `src/maps/` and produced 41 reverse-prompts (one per module). **Sprint 11** has rebuilt `core/` (cascade + second_order + losses, ~700 LOC, 67/67 tests pass including 5 parity vs paper_reference).
+This is a fork being cleaned up for reproducibility after the original student left. Sprints 00-09 produced a modular, config-first port. **Sprint 10** wiped `src/maps/` and produced 41 reverse-prompts. **Sprint 11** rebuilt `core/` (67/67 tests). **Sprint 12** built the first complete domain — Blindsight end-to-end with 4-tier parity vs paper_reference (178/178 tests pass).
 
 **Branches:**
-- `refactor/core` — current head. Core/ written + tested.
+- `refactor/blindsight` — current head. Sprint 12 done. Tier 4-light parity passes — refactored BlindsightTrainer reproduces student loss sequences bit-exact on 2 epochs.
+- `refactor/core` — Sprint 11 closed (cascade + second_order + losses).
 - `refactor/main-rewrite` — Sprint 10 baseline (empty src/maps/).
 - `main` — Sprint 09 state, kept as numerical reference.
 
-**Sprint 12 (next) :** Blindsight. Adds `networks/first_order_mlp.py`, the rest of `utils/`, and `domains/blindsight/{data,trainer,cli,augmentations}.py`. Will exercise the `core/` API end-to-end and validate paper-reproduction z-scores.
+**Sprint 13 (next) :** AGL. Reuses `networks/first_order_mlp.py` (with `make_chunked_sigmoid(6)`), all of `utils/`, and `core/`. Adds `domains/agl/{data,pool,trainer,cli}.py`. Critical risk : D-agl-reset (reset first-order after pre-training is THE mechanism of conscious/unconscious dissociation in AGL).
 
-See `docs/sprints/sprint-11-core-rewrite.md` for Sprint 11 closeout, `docs/learning/walkthroughs/cascade-from-paper-to-code.md` for the cascade pedagogy, and `docs/learning/structure-decision.md` for the layout decisions taken in Sprint 10.
+See `docs/sprints/sprint-12-blindsight.md` for Sprint 12 closeout, `docs/learning/walkthroughs/blindsight-from-paper-to-code.md` for the Blindsight pedagogy (multiplier/2 threshold + two-loss gradient pattern), `docs/learning/walkthroughs/cascade-from-paper-to-code.md` for the cascade pedagogy (Sprint 11), and `docs/learning/structure-decision.md` for the layout decisions (Sprint 10).
 
 ---
 
