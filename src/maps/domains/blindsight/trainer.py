@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from omegaconf import DictConfig
 from torch import optim
 from torch.optim.lr_scheduler import StepLR
@@ -385,9 +386,21 @@ class BlindsightTrainer:
                     wager, comparison = self.second_order(batch.patterns, h2, comparison, rate_2)
                 assert wager is not None
 
-                # eq.5 — wager target = first column of order_2_target (high wager prob)
-                target_wager = batch.order_2_target[:, 0].detach()
-                loss_2 = wagering_bce_loss(wager.squeeze(-1), target_wager, reduction="sum")
+                # Wager loss — dispatches on n_wager_units (D-001).
+                n_wu = int(self.cfg.second_order.n_wager_units)
+                if n_wu == 1:
+                    # Code-parity path : sigmoid scalar wager (1-unit).
+                    # eq.5 on probs ; target = first column ("high wager" prob).
+                    target_wager = batch.order_2_target[:, 0].detach()
+                    loss_2 = wagering_bce_loss(wager.squeeze(-1), target_wager, reduction="sum")
+                else:
+                    # Paper-faithful path : raw logits 2-unit (eq.3).
+                    # Per-unit BCE with logits (eq.5 applies sigmoid inside).
+                    # Target = full one-hot ((1,0) high / (0,1) low).
+                    target_wager = batch.order_2_target.detach()
+                    loss_2 = F.binary_cross_entropy_with_logits(
+                        wager, target_wager, reduction="sum"
+                    )
                 self.optimizer_2.zero_grad()
                 loss_2.backward(retain_graph=True)
                 self.optimizer_2.step()
@@ -526,8 +539,15 @@ class BlindsightTrainer:
                 )
                 metrics.discrimination_accuracy[condition_name] = disc_correct.item()
 
-                # Wager accuracy : (wager > t) == (target > t)
-                wagers_flat = wager[delta:].squeeze(-1).cpu().numpy().flatten()
+                # Wager accuracy — extract "high wager" probability.
+                # 1-unit path : wager IS the sigmoid prob, take it.
+                # 2-unit path : wager is raw logits, apply sigmoid then
+                #   take column 0 ("high wager" probability per eq.5).
+                n_wu = int(self.cfg.second_order.n_wager_units)
+                if n_wu == 1:
+                    wagers_flat = wager[delta:].squeeze(-1).cpu().numpy().flatten()
+                else:
+                    wagers_flat = torch.sigmoid(wager[delta:, 0]).cpu().numpy().flatten()
                 # target = first column of order_2_target (high wager prob)
                 target_high = batch.order_2_target[delta:, 0].cpu().numpy().flatten()
                 tp = np.sum((wagers_flat > threshold) & (target_high > threshold))
