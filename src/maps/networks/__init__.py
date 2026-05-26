@@ -1,12 +1,22 @@
 """Shared network architectures used across domains.
 
-This sub-package will hold:
-
-- ``first_order_mlp.py`` — domain-agnostic MLP encoder/decoder shared
-  by Blindsight and AGL.
+- :class:`FirstOrderMLP` — domain-agnostic MLP encoder/decoder shared
+  by Blindsight (Sprint 12) and AGL (Sprint 13).
+- :func:`global_sigmoid`, :func:`make_chunked_sigmoid` — decoder
+  activation helpers.
 
 Domain-specific networks (Q-networks for SARL, policy/value networks
-for MARL) live under ``maps.domains.<domain>``.
-
-Empty during Sprint 10 (Phase 0/1) — populated in Sprint 11+.
+for MARL) live under :mod:`maps.domains.<domain>`.
 """
+
+from maps.networks.first_order_mlp import (
+    FirstOrderMLP,
+    global_sigmoid,
+    make_chunked_sigmoid,
+)
+
+__all__ = [
+    "FirstOrderMLP",
+    "global_sigmoid",
+    "make_chunked_sigmoid",
+]
