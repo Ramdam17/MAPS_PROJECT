@@ -39,8 +39,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
@@ -58,6 +60,11 @@ from maps.utils.logging_setup import configure_logging
 from maps.utils.seeding import set_all_seeds
 
 logger = logging.getLogger("bench.blindsight")
+
+# Per-worker cache of resolved cfg (keyed by cell_id). Populated lazily
+# inside worker processes ; module-level so it survives across calls in
+# the same worker.
+_WORKER_CFG_CACHE: dict[str, DictConfig] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -207,14 +214,47 @@ def execute_one(cell: Cell, setting_id: str, seed: int, cfg: DictConfig) -> dict
 # ---------------------------------------------------------------------------
 
 
+def _worker_init() -> None:
+    """ProcessPoolExecutor initializer — once per worker subprocess.
+
+    Forces single-threaded PyTorch ops. Without this, every worker
+    would try to use 12 perf cores via PyTorch's internal threading,
+    causing massive over-subscription (8 workers × 12 threads = 96
+    thread requests on 12 cores). Single thread per worker means
+    multi-process gives us the parallelism cleanly.
+    """
+    torch.set_num_threads(1)
+    # Per-epoch INFO logging would spam 36k+ lines per process. Mute.
+    logging.getLogger("maps.domains.blindsight.trainer").setLevel(logging.WARNING)
+    logging.getLogger("maps.utils.seeding").setLevel(logging.WARNING)
+
+
+def _worker_execute(args: tuple[Cell, str, int]) -> dict | None:
+    """Worker entry. Returns summary dict (or None if already done)."""
+    cell, setting_id, seed = args
+    if is_done(cell, setting_id, seed):
+        return None  # race-safe : double-check after queueing
+    if cell.cell_id not in _WORKER_CFG_CACHE:
+        _WORKER_CFG_CACHE[cell.cell_id] = _build_cell_cfg(cell)
+    cfg = _WORKER_CFG_CACHE[cell.cell_id]
+    return execute_one(cell, setting_id, seed, cfg)
+
+
 def sweep(
     cells: list[Cell],
     settings: list[str],
     seeds: list[int],
     *,
     dry_run: bool = False,
+    workers: int = 1,
 ) -> None:
-    """Iterate cells × settings × seeds, skipping completed runs."""
+    """Iterate cells × settings × seeds, skipping completed runs.
+
+    When ``workers > 1`` uses :class:`ProcessPoolExecutor` to parallelise
+    runs across worker subprocesses. Each worker forces
+    ``torch.set_num_threads(1)`` to avoid intra-op × inter-process
+    contention.
+    """
     total = len(cells) * len(settings) * len(seeds)
     to_do = [
         (cell, setting, seed)
@@ -233,6 +273,11 @@ def sweep(
         done,
         len(to_do),
     )
+    logger.info(
+        "Parallelism : workers=%d (Mac CPU count : %d)",
+        workers,
+        os.cpu_count() or 1,
+    )
 
     if dry_run:
         logger.info("Dry run — listing first 20 to-do tuples then exiting")
@@ -245,7 +290,6 @@ def sweep(
         return
 
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
-    # Snapshot the plan so we can audit later
     (OUT_ROOT / "plan.json").write_text(
         json.dumps(
             {
@@ -254,42 +298,18 @@ def sweep(
                 "settings": settings,
                 "n_seeds": len(seeds),
                 "total_runs": total,
+                "workers": workers,
             },
             indent=2,
             sort_keys=True,
         )
     )
 
-    # Per-cell loop : build cfg once per cell, reuse across settings/seeds
-    cfg_cache: dict[str, DictConfig] = {}
     t_start = time.perf_counter()
     n_run = 0
-    for cell, setting, seed in to_do:
-        if cell.cell_id not in cfg_cache:
-            cfg_cache[cell.cell_id] = _build_cell_cfg(cell)
-        cfg = cfg_cache[cell.cell_id]
 
-        try:
-            summary = execute_one(cell, setting, seed, cfg)
-        except KeyboardInterrupt:
-            logger.warning(
-                "Interrupted at %s | %s | seed=%d — run NOT marked done, will re-run on resume",
-                cell.cell_id,
-                setting,
-                seed,
-            )
-            raise
-        except Exception as exc:  # noqa: BLE001 — log + continue is the desired sweep behaviour
-            logger.error(
-                "FAILED %s | %s | seed=%d : %s",
-                cell.cell_id,
-                setting,
-                seed,
-                exc,
-            )
-            continue
-
-        n_run += 1
+    def _log_progress(cell, setting, seed, summary):
+        nonlocal n_run
         if n_run % 50 == 0 or n_run < 5:
             elapsed = time.perf_counter() - t_start
             rate = n_run / elapsed if elapsed > 0 else 0
@@ -307,6 +327,56 @@ def sweep(
                 rate,
                 eta_s / 60,
             )
+
+    if workers <= 1:
+        # Sequential fallback (debug / single-cell mode)
+        cfg_cache: dict[str, DictConfig] = {}
+        for cell, setting, seed in to_do:
+            if cell.cell_id not in cfg_cache:
+                cfg_cache[cell.cell_id] = _build_cell_cfg(cell)
+            cfg = cfg_cache[cell.cell_id]
+            try:
+                summary = execute_one(cell, setting, seed, cfg)
+            except KeyboardInterrupt:
+                logger.warning(
+                    "Interrupted at %s | %s | seed=%d — resumable",
+                    cell.cell_id,
+                    setting,
+                    seed,
+                )
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.error("FAILED %s | %s | seed=%d : %s", cell.cell_id, setting, seed, exc)
+                continue
+            n_run += 1
+            _log_progress(cell, setting, seed, summary)
+    else:
+        # Parallel — ProcessPoolExecutor with worker init forcing single-thread torch.
+        with ProcessPoolExecutor(max_workers=workers, initializer=_worker_init) as pool:
+            futures = {
+                pool.submit(_worker_execute, (cell, setting, seed)): (cell, setting, seed)
+                for cell, setting, seed in to_do
+            }
+            try:
+                for fut in as_completed(futures):
+                    cell, setting, seed = futures[fut]
+                    try:
+                        summary = fut.result()
+                    except Exception as exc:  # noqa: BLE001
+                        logger.error(
+                            "FAILED %s | %s | seed=%d : %s", cell.cell_id, setting, seed, exc
+                        )
+                        continue
+                    if summary is None:
+                        continue  # was already done
+                    n_run += 1
+                    _log_progress(cell, setting, seed, summary)
+            except KeyboardInterrupt:
+                logger.warning(
+                    "Interrupted — cancelling pending futures (in-flight runs finish naturally)"
+                )
+                pool.shutdown(wait=False, cancel_futures=True)
+                raise
 
     elapsed = time.perf_counter() - t_start
     logger.info("✓ Sweep done : %d runs in %.0f min", n_run, elapsed / 60)
@@ -341,6 +411,17 @@ def main(argv: list[str] | None = None) -> int:
         default="INFO",
         help="Logging verbosity.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "Parallel worker processes. Default 1 (sequential). "
+            "Recommended : N = number of performance cores. On Mac M4 Max "
+            "use 8-12. Each worker forces single-threaded PyTorch so "
+            "intra-op × inter-process don't fight."
+        ),
+    )
     args = parser.parse_args(argv)
 
     configure_logging(level=args.log_level)
@@ -366,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
             logger.error("Unknown cell_id : %s", args.cell)
             return 1
 
-    sweep(cells, settings, seeds, dry_run=args.dry_run)
+    sweep(cells, settings, seeds, dry_run=args.dry_run, workers=args.workers)
     return 0
 
 
