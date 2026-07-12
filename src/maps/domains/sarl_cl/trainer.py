@@ -41,6 +41,41 @@ GAMMA = 0.99
 CAE_LAMBDA = 1e-4
 
 
+@dataclass(frozen=True)
+class SarlCLSetting:
+    """One row of the SARL+CL factorial (same 6-cell schema as SARL)."""
+
+    id: str
+    label: str
+    meta: bool
+    cascade_iterations_1: int
+    cascade_iterations_2: int
+
+
+def _make_settings(n_iter: int = 50) -> dict[str, SarlCLSetting]:
+    return {
+        "setting-1-baseline": SarlCLSetting("setting-1-baseline", "baseline", False, 1, 1),
+        "setting-2-cascade-1st": SarlCLSetting(
+            "setting-2-cascade-1st", "cascade 1st", False, n_iter, 1
+        ),
+        "setting-3-second-order-only": SarlCLSetting(
+            "setting-3-second-order-only", "2nd-order only", True, 1, 1
+        ),
+        "setting-4-maps-1st": SarlCLSetting(
+            "setting-4-maps-1st", "MAPS (cascade 1st + 2nd)", True, n_iter, 1
+        ),
+        "setting-5-cascade-2nd": SarlCLSetting(
+            "setting-5-cascade-2nd", "cascade 2nd", True, 1, n_iter
+        ),
+        "setting-6-full-maps": SarlCLSetting(
+            "setting-6-full-maps", "Full MAPS (cascade both + 2nd)", True, n_iter, n_iter
+        ),
+    }
+
+
+SETTINGS_REGISTRY: dict[str, SarlCLSetting] = _make_settings()
+
+
 @dataclass
 class ComponentLosses:
     """task / distillation / feature scalars (for logging)."""
