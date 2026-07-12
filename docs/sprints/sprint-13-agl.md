@@ -1,6 +1,6 @@
 # Sprint 13 — AGL rewrite + tests + paper reproduction
 
-**Status:** 🔵 open (2026-07-12)
+**Status:** ✅ done (2026-07-12)
 **Branch:** `refactor/agl` (branchée depuis `6f07916` — cœur partagé complet : core + utils + networks/first_order_mlp)
 **Owner:** Rémy Ramadour
 **Depends on:** Sprint 11 ✅ (core/) + Sprint 12 ✅ (Blindsight, le patron) + shared core à `6f07916`
@@ -90,3 +90,49 @@ source + ablation A4 (RangerVA essentiel : MAE 0.014 vs ADAMAX 0.038).
 AGL n'était PAS dans l'audit pré-production (qui couvrait SARL/MARL). Aucune dette
 d'audit à replier ici. Les déviations connues (D.28.a-i) sont documentées dans les
 specs et **reproduites** telles quelles (D13.2) — non corrigées.
+
+---
+
+## Closeout (2026-07-12)
+
+Toutes les phases livrées sur `refactor/agl` (rien poussé). Un commit par phase.
+
+| Phase | Commit | Contenu | Tests |
+|-------|--------|---------|-------|
+| 13.A | `5b6bc22` | ouvrir sprint + 5 décisions Day-1 | — |
+| 13.C | `30ee56d` | `data.py` (grammaires FSM, encode, wager) | Tier-1 9/9 bit-exact |
+| 13.D | `c62fee5` | `trainer.py` (pre-train + reset + Grammar-A + `_run_training_loop`) | 8 unit |
+| 13.E | `03e4ca2` | `pool.py` (20-cellules High/Low + evaluate) | 5 unit |
+| 13.F | `15ba4ac` | `cli.py` (pipeline 4-phases) | 2 intégration |
+| 13.G | `472652c` | parité Tier-2/4/5 | 7 (réseau + boucle + reset) |
+
+**Total : 31 tests AGL verts** (9 parité data + 7 parité tiers + 8 trainer + 5 pool + 2 CLI).
+
+### Mécaniques load-bearing reproduites (fidèles à la source, D13.2)
+1. **D-agl-reset** (`trainer.py` build cache + `pre_train` L751-equiv) : le 1st-order est
+   remis à ses poids initiaux après le pretrain. Vérifié **bit-exact** (Tier 5). C'est *le*
+   levier de la dissociation High/Low awareness.
+2. **Two-loss gradient pattern** : `optimizer_1.zero_grad()` avant
+   `loss_2.backward(retain_graph=True)`, puis `loss_1.backward()` accumule par-dessus.
+   Vérifié par la parité d'orchestration inline (Tier 4-light, 1e-5).
+3. **2nd-order gelé pendant Grammar-A** (`training()` force `meta=False`, source L969 — que
+   l'étudiant lui-même flaggait « seems inconsistent with parameter »). Reproduit sciemment ;
+   vérifié (le 2nd-order ne bouge pas en training).
+4. **Décodeur `make_chunked_sigmoid(6)`** (winner-takes-all par lettre), vs `global_sigmoid`
+   de Blindsight.
+5. **RangerVA** (paper Table 10) + fallback ADAMAX.
+6. Déterminisme : même seed → courbes de perte identiques (garantie de reproductibilité).
+
+### Décision restée en suspens (à trancher, cf. D13.2)
+`config/domains/agl/training.yaml` a `second_order.hidden_dim: 48` — c'est le choix
+**« production » du Sprint-08** qui *restaure* la couche cachée Pasquali. Le code source
+(fidèle) l'a **absente** (même bug que Blindsight D.25). Le trainer étant piloté par config,
+les deux marchent ; la version fidèle-source (`hidden_dim: null`) reste à acter au moment où
+on voudra une parité *numérique* stricte vs `agl_tmlr.py`. Non bloquant pour Sprint 13
+(mécaniques + reproductibilité validées).
+
+### Hors scope (reporté)
+- Reproduction empirique des chiffres Tables 5b/5c (20 réseaux × 12/3 epochs × seeds) — à
+  lancer post-Sprint 13 (le disque projet plein bloque les runs, pas les tests).
+- Parité *numérique* stricte bout-en-bout vs `agl_tmlr.py` (dépend de la décision hidden_dim).
+- SARL → Sprint 14 (branche `refactor/sarl` depuis `6f07916`).
