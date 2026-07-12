@@ -1,6 +1,6 @@
 # Sprint 16 — MARL rewrite (env-independent core tested; env/runner code-only)
 
-**Status:** 🔵 open (2026-07-12)
+**Status:** 🟢 core done + env/runner/cli vendored (2026-07-12) — voir Closeout en bas.
 **Branch:** `refactor/marl` (branchée depuis `6f07916` — cœur partagé complet)
 **Owner:** Rémy Ramadour
 **Depends on:** Sprint 11 ✅ (core/) + Sprints 12-15 ✅ (patron domaine)
@@ -75,3 +75,64 @@ Re-appliquer sur cette branche (cf. Sprint 15 — contention threads).
 M-C1/C2/C3/C4 (reproduits, documentés), M-H1 (substrat non seedé), M-H2 (cascade rollout vs
 train), M-H4 (troncature=terminaison). Guillaume : D3 (meta sonde vs agissant — la source =
 sonde), D6 (RNN chunk vs time-major — la source = chunk-major).
+
+---
+
+## Closeout (2026-07-12)
+
+### Ce qui a été construit (`refactor/marl`, rien poussé)
+Cœur MARL indépendant de l'env, **testé en parité/structure**, + couche env/runner/cli
+**vendored code-only**. 10 commits (16.A → 16.H). Suite `tests/unit/domains/marl/` :
+**45 passés / 2 skippés** (1 skip = `ppo_update` GPU-only, 1 skip = import env sans meltingpot).
+
+| Fichier | Rôle | Commit | Tests |
+|---------|------|--------|-------|
+| `data.py` | SeparatedReplayBuffer (insert, GAE, recurrent_generator **chunk-major** M-C1) | b51e618 | 5 |
+| `valuenorm.py` | ValueNorm (EMA débiaisée) | 886cf23 | 4 |
+| `util.py` + `encoder.py` + `rnn.py` | init/check/conv-params ; CNNBase (valid conv) ; RNNLayer (GRU+LN, cascade séparée M-H3) | cd5c669 | 4 |
+| `act.py` | ACTLayer Discrete (asymétrie `.log_prob`/`.log_probs` fidèle) | 0bb9fb5 | 5 |
+| `policy.py` | R_Actor + R_Critic (chemin GRU) | ba7c039 | 4 |
+| `policy_meta.py` | SecondOrderNetwork + RNNLayer_Meta + R_Actor_Meta + R_Critic_Meta (poids mort M-C3) | 499a0bd | 7 |
+| `rmappo_policy.py` + `trainer.py` | wrapper 4 réseaux/4 optimizers + R_MAPPO (cal_value_loss, ppo_update, train) | 43897d8 | 9 (+1 gpu skip) |
+| `env.py` + `base_runner.py` + `runner.py` + `cli.py` | **vendored** MeltingPot + boucle d'entraînement + entrée | 1e8df81 | 7 (+1 skip) |
+
+### Détails fidèles verrouillés (à ne pas « corriger » sans décision)
+- **rnn_cells (LSTM) retirés de bout en bout** (chemin GRU, D16) : buffer → réseaux → wrapper →
+  trainer manipulent le **tuple à 12 éléments** (sans cells). La source en a 14.
+- **`ppo_update` épingle `.cuda()`** sur les tenseurs du wager (`r_mappo.py:162-163,220`) *après*
+  `.to(**tpdv)` → no-op sur GPU, plante sur CPU. **Reproduit verbatim** → `ppo_update`/`train`
+  = GPU only ; `cal_value_loss` + construction + evaluate_actions/_meta testés sur CPU.
+- **M-C3 poids mort** : `evaluate_actions_meta` lit `actor_meta` des deux côtés → `critic_meta`
+  jamais entraîné, son `.step()` est un no-op (reproduit).
+- **Correction de note d'audit** : le vrai `get_wager_objective` (base_runner) n'est **pas**
+  un simple `reward>0` : c'est un encodage 2-classes `[reward//100, 1]` si `reward > comparaison`
+  sinon `[1, reward//100]`, complété par `[0,0]` jusqu'à `episode_length`. (La cible BCE est
+  donc de forme `(episode_length, 2)`.)
+- **`check` du trainer** = celui de `algorithms/utils/util.py` (retourne l'entrée si pas ndarray),
+  PAS celui de `utils/util.py` (qui renvoie `None`) → notre `marl/util.check` est le bon.
+
+### Couche vendored (choix utilisateur : « copie quasi à l'identique »)
+`env.py`/`base_runner.py`/`runner.py`/`cli.py` recopiés verbatim depuis `paper_reference`,
+`# ruff: noqa` en tête (pas de reformat). Seuls changements, documentés dans chaque en-tête :
+- chemins d'import `onpolicy.*` → `maps.domains.marl.*` ;
+- `base_runner.__init__` : 3 sites de construction (Policy/TrainAlgo/buffer) recâblés vers nos
+  constructeurs à mots-clés (seule exception inévitable à « imports seulement », car nos modules
+  ont abandonné `args` argparse) ;
+- **`energy_tracker` ABSENT de la référence** (module du repo étudiant, pas du code de référence) →
+  **stubs inertes** (no-op) pour garder les sites d'instrumentation verbatim ; le suivi d'énergie
+  ne fait donc rien ;
+- `cli.py` garde le factoriel MAPS (setting 1-6 → meta × cascade1/2) ; la plomberie générique
+  (`config.get_config`, `env_wrappers`, runner *shared*) reste sur `onpolicy.*` (non portée —
+  hors périmètre du rebuild par domaine).
+
+`runner.py`/`base_runner.py` s'importent localement (aucune dépendance meltingpot à l'import) →
+testés en structure. `env.py` a besoin de dmlab2d (test skip). `env.py`/`cli.py` byte-compilent.
+
+### Reporté / à trancher plus tard
+- **Décisions Guillaume D3 (meta sonde vs agissant) / D6 (chunk vs time-major)** : la source =
+  sonde + chunk-major (reproduits). Version *corrigée* éventuelle = après validation repro.
+- **Parité numérique bout-en-bout** : impossible ici (meltingpot/dmlab2d + GPU absents). À faire
+  sur le cluster : lancer `cli.py` sur 1 substrat, comparer aux logs de référence.
+- **Plomberie générique** (`config.py`, `env_wrappers.py`, runner *shared*) non portée — à
+  vendoriser si on veut un `cli.py` autonome hors `external/`.
+- **conftest `torch.set_num_threads(1)`** (D16.6) : déjà présent (hérité du conftest partagé).
