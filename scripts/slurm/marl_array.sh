@@ -10,25 +10,26 @@
 # .venv-marl (meltingpot). Idempotent: a present metrics.json => skip; otherwise --resume
 # picks up from <out>/checkpoint.pt (saved every save_interval episodes).
 #
-# ⚠️ --time is a PLACEHOLDER pending a real GPU timing (see docs). April bench: 1M steps =
-#    5h22 on H100 baseline. On Narval A100, cascade_iterations1=50 settings
-#    (cascade_1st_no_meta, maps, meta_cascade_both) are ~5x slower on the rollout and may
-#    need up to 3-00:00:00; the fast settings (baseline, meta_no_cascade, meta_cascade_2nd)
-#    ~half a day. Calibrate before the full launch. Narval GPU allows up to 7 days.
+# Timing measured on Narval A100 (20k-step validation, extrapolated to 1M):
+#   fast settings (cascade1=1 : baseline, meta_no_cascade, meta_cascade_2nd)      ~7.6 h / 1M
+#   slow settings (cascade1=50: cascade_1st_no_meta, maps, meta_cascade_both)     ~42 h  / 1M
+# --time=3-00:00:00 (72h) covers the slowest + margin; --requeue + --resume is the backstop.
+# Narval GPU allows up to 7 days. (One --time for the whole array; fast cells just exit early.)
 #
 # Submission:
 #   sbatch scripts/slurm/marl_array.sh                          # full 480 cells
 #   sbatch --array=0-3 scripts/slurm/marl_array.sh              # smoke slice (first 4 cells)
-#   sbatch --array=0-479%8 scripts/slurm/marl_array.sh          # raise concurrency (default %4)
+#   sbatch --array=0-479%40 scripts/slurm/marl_array.sh         # raise concurrency further (default %20)
 #
-# Concurrency default %4 = lab-negotiated shared-queue cap. At %4, 480 cells ≈ the ~1.5-month
-# budget (Guillaume/Natalie). Raise %N to go faster if the allocation permits.
+# Concurrency default %20 (raised from the old %4 lab cap on Rémy's call — the allocation permits
+# more). %N is only a self-cap; SLURM still bounds actual concurrency by the def-gdumas85 GPU limit.
+# Raise further at submit (e.g. %40) if the queue allows; higher N = faster wall-clock for the 480.
 
 #SBATCH --job-name=marl-prod
 #SBATCH --account=def-gdumas85_gpu
-#SBATCH --array=0-479%4
+#SBATCH --array=0-479%20
 #SBATCH --gres=gpu:1
-#SBATCH --time=24:00:00                  # PLACEHOLDER — calibrate (cascade1=50 may need 3-00:00:00)
+#SBATCH --time=3-00:00:00                # 72h: covers slowest cells (~42h/1M) + margin; resume is backstop
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=4
 #SBATCH --requeue                        # survive preemption (resume from checkpoint)
@@ -90,7 +91,7 @@ echo "[marl-prod] task=${TASK_ID} substrate=${SUBSTRATE} setting=${SETTING} seed
 nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv || true
 
 # ── Output dir (rsync'd to outputs/marl/ post-run) ──
-OUT_BASE="${SCRATCH:-${REPO_ROOT}/outputs}/maps/outputs/marl"
+OUT_BASE="${MARL_OUT_BASE:-${SCRATCH:-${REPO_ROOT}/outputs}/maps/outputs/marl}"
 OUT_DIR="${OUT_BASE}/${SUBSTRATE}/setting-${SETTING}/seed-${SEED}"
 mkdir -p "${OUT_DIR}"
 
