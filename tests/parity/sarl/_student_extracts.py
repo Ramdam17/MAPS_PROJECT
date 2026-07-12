@@ -52,3 +52,61 @@ def target_wager(rewards, alpha):
         else:
             new_tensor[i] = torch.tensor([0, 1], device=rewards.device)
     return new_tensor
+
+
+# ── Verbatim networks (maps_v1.py:110-253) ──────────────────────────────────
+import torch.nn.functional as f  # noqa: E402
+from torch import nn  # noqa: E402
+from torch.nn import init  # noqa: E402
+
+
+def size_linear_unit(size, kernel_size=3, stride=1):
+    return (size - (kernel_size - 1) - 1) // stride + 1
+
+
+num_linear_units = size_linear_unit(10) * size_linear_unit(10) * 16
+
+
+class QNetwork(nn.Module):
+    def __init__(self, in_channels, num_actions):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, 16, kernel_size=3, stride=1)
+        self.sigmoid = nn.Sigmoid()
+        self.fc_hidden = nn.Linear(in_features=num_linear_units, out_features=128)
+        self.fc_output = nn.Linear(in_features=128, out_features=num_linear_units)
+        self.actions = nn.Linear(in_features=num_linear_units, out_features=num_actions)
+
+    def forward(self, x, prev_h2, cascade_rate):
+        x = f.relu(self.conv(x))
+        Input = x.view(x.size(0), -1)
+        Hidden = f.relu(self.fc_hidden(Input))
+        Output = f.relu(self.fc_output(Hidden))
+        if prev_h2 is not None:
+            Output = cascade_rate * Output + (1 - cascade_rate) * prev_h2
+        x = self.actions(Output)
+        Comparisson = Input - Output
+        return x, Hidden, Comparisson, Output
+
+
+class SecondOrderNetwork(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.comparison_layer = nn.Linear(
+            in_features=num_linear_units, out_features=num_linear_units
+        )
+        self.wager = nn.Linear(num_linear_units, 2)
+        self.dropout = nn.Dropout(p=0.1)
+        self.softmax = nn.Softmax()
+        self.sigmoid = nn.Sigmoid()
+        self._init_weights()
+
+    def _init_weights(self):
+        init.uniform_(self.comparison_layer.weight, -1.0, 1.0)
+        init.uniform_(self.wager.weight, 0.0, 0.1)
+
+    def forward(self, comparison_matrix, prev_comparison, cascade_rate):
+        comparison_out = self.dropout(f.relu(self.comparison_layer(comparison_matrix)))
+        if prev_comparison is not None:
+            comparison_out = cascade_rate * comparison_out + (1 - cascade_rate) * prev_comparison
+        wager = self.wager(comparison_out)
+        return wager, comparison_out
