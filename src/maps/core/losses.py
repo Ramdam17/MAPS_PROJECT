@@ -45,7 +45,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-_RECON_VARIANTS = ("bce_sum", "mse_mean", "mse_sum")
+_RECON_VARIANTS = ("bce_sum", "mse_mean", "mse_sum", "huber")
 
 
 def cae_loss(
@@ -91,8 +91,9 @@ def cae_loss(
         Weight of the Jacobian regulariser. Paper §2.1 uses
         ``λ = 1e-4`` (also in ``config/maps.yaml``).
     recon : str, optional
-        Reconstruction term. One of ``"bce_sum"`` (default, matches
-        student), ``"mse_mean"``, ``"mse_sum"``.
+        Reconstruction term. One of ``"bce_sum"`` (default, matches the
+        Blindsight/AGL student), ``"mse_mean"``, ``"mse_sum"``, or
+        ``"huber"`` (the SARL v1 term — ``F.huber_loss``, delta=1.0).
 
     Returns
     -------
@@ -127,6 +128,11 @@ def cae_loss(
         reconstruction = F.mse_loss(recons_x, x, reduction="mean")
     elif recon == "mse_sum":
         reconstruction = F.mse_loss(recons_x, x, reduction="sum")
+    elif recon == "huber":
+        # SARL v1 reconstruction term (maps_v1.py CAE_loss: f.huber_loss active,
+        # mse/l1/cross_entropy variants commented out). Default delta=1.0,
+        # reduction="mean" — matches the source's f.huber_loss(recons_x, x).
+        reconstruction = F.huber_loss(recons_x, x)
     else:
         raise ValueError(f"recon must be one of {_RECON_VARIANTS}; got {recon!r}")
 

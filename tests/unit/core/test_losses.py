@@ -98,7 +98,14 @@ def test_cae_loss_recon_variants_differ() -> None:
 def test_cae_loss_invalid_recon_raises() -> None:
     weight, x, recons_x, hidden = _random_cae_inputs()
     with pytest.raises(ValueError, match="recon must be one of"):
-        cae_loss(weight, x, recons_x, hidden, 1e-4, recon="huber")
+        cae_loss(weight, x, recons_x, hidden, 1e-4, recon="not_a_recon")
+
+
+def test_cae_loss_huber_variant_runs() -> None:
+    """huber reconstruction (SARL v1) is a valid recon variant."""
+    weight, x, recons_x, hidden = _random_cae_inputs()
+    loss = cae_loss(weight, x, recons_x, hidden, 1e-4, recon="huber")
+    assert torch.isfinite(loss)
 
 
 def test_cae_loss_weight_is_detached() -> None:
