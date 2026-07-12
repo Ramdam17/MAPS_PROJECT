@@ -1,370 +1,476 @@
-# ruff: noqa
-# -- MAPS rebuild (Sprint 16.H) --------------------------------------------------
-# Vendored VERBATIM from
-#   external/paper_reference/marl_tmlr/onpolicy/envs/meltingpot/MeltingPot_Env.py
-# Only import paths changed (onpolicy.* -> maps.domains.marl.*). CODE-ONLY: requires
-# meltingpot / dmlab2d / ray / ml_collections / tree (absent from this venv) — not
-# importable or testable locally. Kept as-is for the cluster (D16.4, user choice
-# "copie quasi a l'identique"). Lint/format disabled to preserve the verbatim source.
-# --------------------------------------------------------------------------------
-# python3
-# Copyright 2021 InstaDeep Ltd. All rights reserved.
-#
+"""MeltingPot env wrappers (E.10).
 
-"""Wraps a meltingpot environment to be used as a dm_env environment """
-import os
-from typing import  Tuple, Any, Mapping, Callable, Dict, List, Optional, Union, NamedTuple
-import dm_env
-import dmlab2d
-import gymnasium as gym
-from matplotlib import pyplot as plt
-from gymnasium import spaces
-from meltingpot import substrate as meltingpot_substrate
-from ml_collections import config_dict
-import numpy as np
-from ray.rllib.env import multi_agent_env
-import tree
-from maps.domains.marl.runner import flatten_lists
-from gym.vector import VectorEnv
-from ray import cloudpickle
-from ray.util.iter import ParallelIteratorWorker
+Ports student ``onpolicy/envs/meltingpot/MeltingPot_Env.py`` trimmed to :
+
+- :func:`spec_to_space` : dm_env.specs → gymnasium.spaces converter.
+- :func:`timestep_to_observations` : dm_env.TimeStep → per-player dict
+  restricted to ``{"RGB", "WORLD.RGB"}`` per paper Fig.4.
+- :class:`MeltingPotEnv` : gymnasium-style multi-agent wrapper over a
+  dmlab2d environment. Exposes the env contract the E.9b runner expects :
+  ``reset() → (obs_dict, info)`` / ``step(action_dict) → (obs, rew, done, info)``.
+- :func:`downsample_observation` + :class:`DownSamplingSubstrateWrapper` :
+  scales substrate RGB from 8x sprites to 1x (88×88 → 11×11 by default).
+  See paper §A.4 ``obs_shape_agent = (11, 11, 3)``.
+- :func:`env_creator` : substrate_id + roles → DownSample → MeltingPotEnv.
+
+Simplifications vs student (E.5 scope) :
+- Dropped ray.rllib.MultiAgentEnv inheritance — use plain gymnasium.Env
+  protocol. Runner doesn't need RLLib integration.
+- Dropped DataExtractor debug helper (plot/save RGB stills — dev-only).
+- Dropped n_rollout_threads > 1 support (``step`` handles a single
+  dm_env.step call per call — vectorization is a future concern).
+
+Runtime
+-------
+``dmlab2d``, ``meltingpot``, and ``cv2`` are lazy-imported inside the
+constructors/factories because they only exist in ``.venv-marl`` (Python
+3.11) — the main 3.12 venv cannot install them. Tests in the main venv
+can still import this module and exercise the pure-Python helpers
+(``spec_to_space``, ``timestep_to_observations``, ``MeltingPotEnv``) with a
+mock dm_env.
+"""
+
+from __future__ import annotations
+
+import logging
 from collections.abc import Mapping, Sequence
-from meltingpot.utils.substrates.wrappers import observables
-import cv2
-from meltingpot.utils.substrates import substrate
-PLAYER_STR_FORMAT = 'player_{index}'
-_WORLD_PREFIX = ['WORLD.RGB', 'INTERACTION_INVENTORIES', 'NUM_OTHERS_WHO_CLEANED_THIS_STEP']
+from typing import Any, ClassVar
+
+import numpy as np
+from gymnasium import spaces
+
+__all__ = [
+    "DownSamplingSubstrateWrapper",
+    "MeltingPotEnv",
+    "build_env_from_config",
+    "downsample_observation",
+    "env_creator",
+    "remove_world_observations_from_space",
+    "spec_to_space",
+    "timestep_to_observations",
+]
+
+log = logging.getLogger(__name__)
+
+PLAYER_STR_FORMAT = "player_{index}"
 MAX_CYCLES = 400
-
-_OBSERVATION_PREFIX = ['WORLD.RGB', 'RGB']
-
-def timestep_to_observations(timestep: dm_env.TimeStep) -> Mapping[str, Any]:
-  gym_observations = {}
-  for index, observation in enumerate(timestep.observation):
-    gym_observations[PLAYER_STR_FORMAT.format(index=index)] = {
-        key: value
-        for key, value in observation.items()
-        if key in _OBSERVATION_PREFIX
-    }
-  return gym_observations
+_OBSERVATION_PREFIX: tuple[str, ...] = ("WORLD.RGB", "RGB")
+_WORLD_PREFIX: tuple[str, ...] = ("WORLD.RGB", "INTERACTION_INVENTORIES", "NUM_OTHERS_WHO_CLEANED_THIS_STEP")
 
 
-def remove_world_observations_from_space(
-    observation: spaces.Dict) -> spaces.Dict:
-  return spaces.Dict({
-      key: observation[key] for key in observation if key not in _WORLD_PREFIX
-  })
+# ─────────────────────────────────────────────────────────────────────────────
+# Pure-Python helpers (no dmlab2d / meltingpot dependency)
+# ─────────────────────────────────────────────────────────────────────────────
 
 
+def spec_to_space(spec: Any) -> spaces.Space:
+    """Convert a ``dm_env.specs`` node (or nested tuple/dict thereof) to a
+    gymnasium ``Space``.
 
-def spec_to_space(spec: tree.Structure[dm_env.specs.Array]) -> spaces.Space:
-  """Converts a dm_env nested structure of specs to a Gym Space.
-
-  BoundedArray is converted to Box Gym spaces. DiscreteArray is converted to
-  Discrete Gym spaces. Using Tuple and Dict spaces recursively as needed.
-
-  Args:
-    spec: The nested structure of specs
-
-  Returns:
-    The Gym space corresponding to the given spec.
-  """
-  if isinstance(spec, dm_env.specs.DiscreteArray):
-    return spaces.Discrete(spec.num_values)
-  elif isinstance(spec, dm_env.specs.BoundedArray):
-    return spaces.Box(spec.minimum, spec.maximum, spec.shape, spec.dtype)
-  elif isinstance(spec, dm_env.specs.Array):
-    if np.issubdtype(spec.dtype, np.floating):
-      return spaces.Box(-np.inf, np.inf, spec.shape, spec.dtype)
-    elif np.issubdtype(spec.dtype, np.integer):
-      info = np.iinfo(spec.dtype)
-      return spaces.Box(info.min, info.max, spec.shape, spec.dtype)
-    else:
-      raise NotImplementedError(f'Unsupported dtype {spec.dtype}')
-  elif isinstance(spec, (list, tuple)):
-    return spaces.Tuple([spec_to_space(s) for s in spec])
-  elif isinstance(spec, dict):
-    return spaces.Dict({key: spec_to_space(s) for key, s in spec.items()})
-  else:
-    raise ValueError('Unexpected spec of type {}: {}'.format(type(spec), spec))
-###
-
-       
-
-#plotting WORLD.RGB images 
-
-class DataExtractor:
-    def __init__(self, data):
-        self.data = data
-    
-    def extract_world_rgb(self):
-        """
-        Extracts 'WORLD.RGB' arrays from the data.
-        """
-        
-        return [item['WORLD.RGB'] for item in self.data]
-    
-    def plot_and_save_rgb_images(self):
-        """
-        Plots and saves the extracted 'WORLD.RGB' arrays.
-        """
-        # Create a folder named "plot" if it doesn't exist.
-        if not os.path.exists("plot"):
-            os.mkdir("plot")
-        
-        # Extract WORLD.RGB values.
-        world_rgbs = self.extract_world_rgb()
-        
-        # Loop through the extracted RGB arrays, plot them, and save them.
-        for i, rgb in enumerate(world_rgbs):
-            if isinstance(rgb, np.ndarray): 
-               plt.imshow(rgb)
-               plt.title(f'World RGB Image {i+1}')
-               plt.axis('off')  # Do not show axis in the plot
-               filename = os.path.join("plot", f"world_rgb_{i+1}.png")
-               plt.savefig(filename)
-               plt.close()  # Close the plot to avoid showing it while running the code
-            else:
-                raise TypeError("The RGB data is not in the correct numpy array format.")
-# Example data
-
-
-###
-class MeltingPotEnv(multi_agent_env.MultiAgentEnv):
-  """An adapter between the Melting Pot substrates and RLLib MultiAgentEnv."""
-
-  def __init__(self, env: dmlab2d.Environment, max_cycles: int = MAX_CYCLES):
-    """Initializes the instance.
-
-    Args:
-      env: dmlab2d environment to wrap. Will be closed when this wrapper closes.
+    Ports student L51-80. Handles :
+    - :class:`dm_env.specs.DiscreteArray` → :class:`spaces.Discrete`.
+    - :class:`dm_env.specs.BoundedArray` → :class:`spaces.Box`.
+    - :class:`dm_env.specs.Array` → :class:`spaces.Box` with dtype-appropriate bounds.
+    - ``list`` / ``tuple`` → :class:`spaces.Tuple` (recursive).
+    - ``dict`` → :class:`spaces.Dict` (recursive).
     """
-    self._env = env
-    self._num_players = len(self._env.observation_spec())
-    
-    self._ordered_agent_ids = [
-        PLAYER_STR_FORMAT.format(index=index)
-        for index in range(self._num_players)
-    ]
-    # RLLib requires environments to have the following member variables:
-    # observation_space, action_space, and _agent_ids
-    self._agent_ids = set(self._ordered_agent_ids)
-    # RLLib expects a dictionary of agent_id to observation or action,
-    # Melting Pot uses a tuple, so we convert
-    self.observation_space = self._convert_spaces_tuple_to_dict(
-        spec_to_space(self._env.observation_spec()),
-        remove_world_observations=True)
-    self.action_space = self._convert_spaces_tuple_to_dict(
-        spec_to_space(self._env.action_spec()))
-    
-    self.share_observation_space = self._create_world_rgb_observation_space(
+    import dm_env
+
+    if isinstance(spec, dm_env.specs.DiscreteArray):
+        return spaces.Discrete(int(spec.num_values))
+    if isinstance(spec, dm_env.specs.BoundedArray):
+        # dm_env stores minimum/maximum as 0-d arrays ; gymnasium's Box
+        # requires either Python scalars (for broadcast) or arrays matching
+        # ``shape``. Collapse 0-d arrays to ``.item()`` scalars.
+        def _scalarize_bound(b):
+            arr = np.asarray(b)
+            return arr.item() if arr.ndim == 0 else arr
+
+        low = _scalarize_bound(spec.minimum)
+        high = _scalarize_bound(spec.maximum)
+        return spaces.Box(low=low, high=high, shape=spec.shape, dtype=spec.dtype)
+    if isinstance(spec, dm_env.specs.Array):
+        if np.issubdtype(spec.dtype, np.floating):
+            return spaces.Box(-np.inf, np.inf, spec.shape, spec.dtype)
+        if np.issubdtype(spec.dtype, np.integer):
+            info = np.iinfo(spec.dtype)
+            return spaces.Box(info.min, info.max, spec.shape, spec.dtype)
+        raise NotImplementedError(f"Unsupported dtype {spec.dtype}")
+    if isinstance(spec, (list, tuple)):
+        return spaces.Tuple([spec_to_space(s) for s in spec])
+    if isinstance(spec, dict):
+        return spaces.Dict({key: spec_to_space(s) for key, s in spec.items()})
+    raise ValueError(f"Unexpected spec of type {type(spec)}: {spec!r}")
+
+
+def timestep_to_observations(timestep: Any) -> dict[str, dict[str, np.ndarray]]:
+    """Convert a ``dm_env.TimeStep`` to ``{player_i: {"RGB": ..., "WORLD.RGB": ...}}``.
+
+    Drops all per-player observations other than those listed in
+    :data:`_OBSERVATION_PREFIX`. Student L32-40.
+    """
+    gym_observations: dict[str, dict[str, np.ndarray]] = {}
+    for index, observation in enumerate(timestep.observation):
+        gym_observations[PLAYER_STR_FORMAT.format(index=index)] = {
+            key: value for key, value in observation.items() if key in _OBSERVATION_PREFIX
+        }
+    return gym_observations
+
+
+def remove_world_observations_from_space(observation: spaces.Dict) -> spaces.Dict:
+    """Strip the ``WORLD.*`` keys from a per-player :class:`spaces.Dict`."""
+    return spaces.Dict(
+        {key: observation[key] for key in observation if key not in _WORLD_PREFIX}
+    )
+
+
+def downsample_observation(array: np.ndarray, scaled: int) -> np.ndarray:
+    """Downsample an RGB frame by ``scaled`` (spatial integer divisor).
+
+    Uses ``cv2.INTER_AREA`` — the standard anti-aliased downsampling
+    filter. Lazy-imports ``cv2`` so the main ``.venv`` can still import
+    this module for tests that don't call this path.
+
+    Fix vs student L303-315 : student passes ``dsize = (H//s, W//s)`` which
+    cv2 interprets as ``(new_w, new_h)``, producing an axis-swapped output
+    ``(W//s, H//s, C)`` that contradicts the spec reported by
+    :func:`_downsample_multi_spec` (``(H//s, W//s, C)``). The bug was
+    invisible for square obs (11×11 per-agent RGB) but blew up on
+    non-square WORLD.RGB. Logged as D-marl-downsample-axis.
+    """
+    import cv2
+
+    # array.shape = (H, W, C) ; cv2.resize dsize is (W, H) and returns (H, W, C).
+    new_h = array.shape[0] // int(scaled)
+    new_w = array.shape[1] // int(scaled)
+    return cv2.resize(array, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+
+def _downsample_multi_timestep(timestep: Any, scaled: int) -> Any:
+    """Apply :func:`downsample_observation` to each per-player RGB / WORLD.RGB
+    field of a ``dm_env.TimeStep``. Student L318-321."""
+    return timestep._replace(
+        observation=[
+            {
+                k: downsample_observation(v, scaled) if k in _OBSERVATION_PREFIX else v
+                for k, v in observation.items()
+            }
+            for observation in timestep.observation
+        ]
+    )
+
+
+def _downsample_multi_spec(spec: Any, scaled: int) -> Any:
+    """Shrink a dm_env Array spec by ``scaled`` along the first two axes."""
+    import dm_env
+
+    return dm_env.specs.Array(
+        shape=(spec.shape[0] // int(scaled), spec.shape[1] // int(scaled), spec.shape[2]),
+        dtype=spec.dtype,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MeltingPotEnv
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class MeltingPotEnv:
+    """Gymnasium-style multi-agent wrapper over a dmlab2d MeltingPot env.
+
+    Parameters
+    ----------
+    env : dmlab2d.Environment
+        Underlying substrate (or downsampled wrapper). Will be closed by
+        :meth:`close`.
+    max_cycles : int
+        Truncation limit (student default 400 = MAX_CYCLES).
+
+    Contract (matches the runner's env interface from E.9b) :
+    - ``reset() → (obs_dict, info)`` with
+      ``obs_dict[player_i][{"RGB","WORLD.RGB"}]`` of shape ``(1, H, W, C)``.
+    - ``step(action_dict) → (obs_dict, reward_dict, done_dict, info)``.
+      ``action_dict[player_i]`` may be a scalar int, a ``(1,)`` array, or
+      a ``(1, 1)`` array. Rewards and dones are ``(1,)`` arrays.
+    - ``observation_space`` : per-player :class:`spaces.Dict` with ``RGB``
+      only (WORLD.* removed).
+    - ``share_observation_space`` : per-player :class:`spaces.Dict` with
+      ``WORLD.RGB`` only (centralized obs for MAPPO critic).
+    - ``action_space`` : per-player :class:`spaces.Dict` of Discrete.
+
+    Concurrency : this class is NOT vectorized. For ``n_rollout_threads > 1``
+    wrap multiple instances via a VectorEnv at the runner level (future scope).
+    """
+
+    metadata: ClassVar[dict] = {"render.modes": ["rgb_array"]}
+
+    def __init__(self, env: Any, max_cycles: int = MAX_CYCLES):
+        self._env = env
+        self._num_players = len(self._env.observation_spec())
+        self._ordered_agent_ids = [
+            PLAYER_STR_FORMAT.format(index=index) for index in range(self._num_players)
+        ]
+        self._agent_ids = set(self._ordered_agent_ids)
+
+        obs_tuple_space = spec_to_space(self._env.observation_spec())
+        self.observation_space = self._convert_spaces_tuple_to_dict(
+            obs_tuple_space, remove_world_observations=True
+        )
+        self.action_space = self._convert_spaces_tuple_to_dict(
+            spec_to_space(self._env.action_spec())
+        )
+        self.share_observation_space = self._create_world_rgb_observation_space(
             self._env.observation_spec()
         )
-    #territory room share observation Box(0, 255, (168, 168, 3), uint8)
-    
-    #ts=self._env.reset()
-    #extractor = DataExtractor(ts.observation)
-    #extractor.plot_and_save_rgb_images()
-    
-    self.max_cycles = max_cycles
-    self.num_cycles = 0
 
-    super().__init__()
+        self.max_cycles = int(max_cycles)
+        self.num_cycles = 0
 
-  def reset(self, *args, **kwargs):
-      """See base class."""
-      timestep = self._env.reset()
-      self.num_cycles = 0
-      return timestep_to_observations(timestep), {}
+    # ────────────────────────────────────────────────────────────
+    # Gym-style API
+    # ────────────────────────────────────────────────────────────
 
-  def step(self, action_dict, rewards_dict=None):
-    """See base class."""
-    def is_iterable(obj):
-      try:
-          iter(obj)
-          return True
-      except TypeError:
-          return False
+    def reset(self, *args: Any, **kwargs: Any) -> tuple[dict[str, dict[str, np.ndarray]], dict]:
+        """Reset the substrate + wrap obs to ``(1, H, W, C)`` per-thread convention."""
+        timestep = self._env.reset()
+        self.num_cycles = 0
+        obs = timestep_to_observations(timestep)
+        return self._expand_obs_to_thread_dim(obs), {}
 
-    action_dict = action_dict if is_iterable(action_dict[0]) else [[item] for item in action_dict]
-    
+    def step(
+        self, action_dict: Mapping[str, Any]
+    ) -> tuple[
+        dict[str, dict[str, np.ndarray]],
+        dict[str, np.ndarray],
+        dict[str, np.ndarray],
+        dict,
+    ]:
+        """One dm_env step. Accepts per-agent action in scalar or (1,) form."""
+        # Build a flat per-player int vector (N_players,) for dmlab2d.
+        actions = np.asarray(
+            [int(self._scalarize_action(action_dict[agent_id])) for agent_id in self._ordered_agent_ids]
+        )
 
-    if len(action_dict) == 1:
-      action_dict = action_dict[0] 
-    
-    self._ordered_agent_ids=self._ordered_agent_ids[:len(action_dict)]
-    #print(action_dict , list( (enumerate(self._ordered_agent_ids)) ) )
-    
-    actions = [list(map(int, action_dict[agent_id])) for agent_id, player in enumerate(self._ordered_agent_ids)]
-    actions = np.array(actions)
-    
-    # Initialize empty arrays to store rewards and done flags for each agent
-    agent_rewards = {agent_id: [] for agent_id in self._ordered_agent_ids}
-    agent_dones = {agent_id: [] for agent_id in self._ordered_agent_ids}
-    agent_observation = {agent_id: {'RGB':[], 'WORLD.RGB':[]} for agent_id in self._ordered_agent_ids}
-    # Loop through each time step
-    for i in range(actions.shape[1]):
-        # Step the environment for each agent individually
-        
-        timestep = self._env.step(actions[:, i])
-        for agent_id, player in enumerate(self._ordered_agent_ids):
-            # Append rewards and done flags for each agent
-            agent_rewards[player].append(timestep.reward[agent_id])
-            agent_dones[player].append(timestep.last())
-            obs=timestep_to_observations(timestep)
-            agent_observation[player]['RGB'].append(obs[player]['RGB'])
-            agent_observation[player]['WORLD.RGB'].append(obs[player]['WORLD.RGB'])
-            # Check if the maximum number of cycles is reached
-            truncation=self.num_cycles >= self.max_cycles
-            agent_dones[player][-1] = agent_dones[player][-1] or truncation
-            
-    # Extract the final rewards and done flags for each agent
-    rewards = {agent_id: np.array(reward_list) for agent_id, reward_list in agent_rewards.items()}
-    done = {agent_id: np.array(done_list, dtype=bool) for agent_id, done_list in agent_dones.items()}
-    observations = {}
-    for agent_id in self._ordered_agent_ids:
-        observations[agent_id] = {
-            'RGB': np.stack(agent_observation[agent_id]['RGB'], axis=0),
-            'WORLD.RGB': np.stack(agent_observation[agent_id]['WORLD.RGB'], axis=0)
-        }
-    
-    #(n_rollout, 11, 11, 3), (n_rollout, 30, 21, 3)
-    info = {}
-    self.num_cycles += 1
-    return observations, rewards, done, info
+        timestep = self._env.step(actions)
+        self.num_cycles += 1
 
-  def close(self):
-    """See base class."""
-    self._env.close()
-  
+        truncated = self.num_cycles >= self.max_cycles
+        term = bool(timestep.last())
 
-  def get_dmlab2d_env(self):
-    """Returns the underlying DM Lab2D environment."""
-    return self._env
+        obs = timestep_to_observations(timestep)
+        obs = self._expand_obs_to_thread_dim(obs)
 
-  # Metadata is required by the gym `Env` class that we are extending, to show
-  # which modes the `render` method supports.
-  metadata = {'render.modes': ['rgb_array']}
+        rewards: dict[str, np.ndarray] = {}
+        dones: dict[str, np.ndarray] = {}
+        for idx, agent_id in enumerate(self._ordered_agent_ids):
+            rewards[agent_id] = np.asarray([float(timestep.reward[idx])], dtype=np.float32)
+            dones[agent_id] = np.asarray([term or truncated], dtype=bool)
 
-  def render(self) -> np.ndarray:
-    """Render the environment.
+        info: dict = {}
+        return obs, rewards, dones, info
 
-    This allows you to set `record_env` in your training config, to record
-    videos of gameplay.
+    def close(self) -> None:
+        self._env.close()
 
-    Returns:
-        np.ndarray: This returns a numpy.ndarray with shape (x, y, 3),
-        representing RGB values for an x-by-y pixel image, suitable for turning
-        into a video.
+    def render(self) -> np.ndarray:
+        """Render the current world RGB — suitable for video recording.
+
+        Student L240-255.
+        """
+        observation = self._env.observation()
+        return observation[0]["WORLD.RGB"]
+
+    def get_dmlab2d_env(self) -> Any:
+        """Expose the underlying dmlab2d env (e.g. for frame extraction)."""
+        return self._env
+
+    # ────────────────────────────────────────────────────────────
+    # Internal helpers
+    # ────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _scalarize_action(a: Any) -> int:
+        """Accept scalar / (1,) / (1, 1) shapes and return a single int."""
+        arr = np.asarray(a)
+        return int(arr.reshape(-1)[0])
+
+    @staticmethod
+    def _expand_obs_to_thread_dim(
+        obs: Mapping[str, Mapping[str, np.ndarray]],
+    ) -> dict[str, dict[str, np.ndarray]]:
+        """Add a leading (n_rollout_threads=1) dim to each per-player RGB/WORLD.RGB."""
+        out: dict[str, dict[str, np.ndarray]] = {}
+        for player, d in obs.items():
+            out[player] = {k: np.asarray(v)[None, ...] for k, v in d.items()}
+        return out
+
+    def _convert_spaces_tuple_to_dict(
+        self,
+        input_tuple: spaces.Tuple,
+        remove_world_observations: bool = False,
+    ) -> spaces.Dict:
+        """Tuple → Dict keyed by ``player_i``. Student L257-271."""
+        return spaces.Dict(
+            {
+                agent_id: (
+                    remove_world_observations_from_space(input_tuple[i])
+                    if remove_world_observations
+                    else input_tuple[i]
+                )
+                for i, agent_id in enumerate(self._ordered_agent_ids)
+            }
+        )
+
+    def _create_world_rgb_observation_space(self, observation_spec: Sequence[Mapping[str, Any]]) -> spaces.Dict:
+        """Build the centralized-obs Dict space (WORLD.RGB only). Student L273-299."""
+        world_rgb_spec = [player_obs_spec["WORLD.RGB"] for player_obs_spec in observation_spec]
+        world_rgb_space = spaces.Tuple([spec_to_space(spec) for spec in world_rgb_spec])
+        return spaces.Dict(
+            {agent_id: world_rgb_space[i] for i, agent_id in enumerate(self._ordered_agent_ids)}
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DownSamplingSubstrateWrapper — subclass of meltingpot's observables wrapper
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _load_observables_wrapper_base():
+    """Lazy-import ``meltingpot.utils.substrates.wrappers.observables.ObservableLab2dWrapper``
+    — available only in the MARL venv. Used to subclass at runtime."""
+    from meltingpot.utils.substrates.wrappers import observables
+
+    return observables.ObservableLab2dWrapper
+
+
+def _make_downsampling_wrapper_class():
+    """Factory for :class:`DownSamplingSubstrateWrapper` deferred until the
+    meltingpot import is available (avoids import at module load on login node).
+
+    Returns a class subclassing ``observables.ObservableLab2dWrapper`` that
+    downsamples RGB / WORLD.RGB through :func:`downsample_observation`.
     """
-    observation = self._env.observation()
-    world_rgb = observation[0]['WORLD.RGB']
+    Base = _load_observables_wrapper_base()
 
-    # RGB mode is used for recording videos
-    return world_rgb
+    class _DownSamplingSubstrateWrapper(Base):
+        """Downsamples per-step & per-spec RGB observations by an integer factor.
 
-  def _convert_spaces_tuple_to_dict(
-      self,
-      input_tuple: spaces.Tuple,
-      remove_world_observations: bool = False) -> spaces.Dict:
-    """Returns spaces tuple converted to a dictionary.
+        Paper §A.4 uses an 11×11 RGB window → scaled=8 (88×88 → 11×11).
+        Student L326-350. This subclasses the meltingpot ObservableLab2dWrapper
+        so the downstream env sees a standard dmlab2d.Environment interface.
+        """
 
-    Args:
-      input_tuple: tuple to convert.
-      remove_world_observations: If True will remove non-player observations.
-    """
-    return spaces.Dict({
-        agent_id: (remove_world_observations_from_space(input_tuple[i])
-                   if remove_world_observations else input_tuple[i])
-        for i, agent_id in enumerate(self._ordered_agent_ids)
-    })
-  
-  def _create_world_rgb_observation_space(self, observation_spec):
-      """
-        Creates a space for 'WORLD.RGB' observations for each player.
-        
-        Args:
-            observation_spec: A nested structure defining the observation space
-                              for the environment.
+        def __init__(self, substrate_instance: Any, scaled: int):
+            super().__init__(substrate_instance)
+            self._scaled = int(scaled)
 
-        Returns:
-            A Dict space containing the 'WORLD.RGB' observation space for each
-            player.
-      """
-      # Extract 'WORLD.RGB' specs and convert them to Gym spaces
-      world_rgb_spec = [
-            player_obs_spec['WORLD.RGB']
-            for player_obs_spec in observation_spec
-        ]
+        def reset(self):
+            timestep = super().reset()
+            return _downsample_multi_timestep(timestep, self._scaled)
 
-      world_rgb_space = spaces.Tuple([
-            spec_to_space(spec) for spec in world_rgb_spec
-        ])
+        def step(self, actions):
+            timestep = super().step(actions)
+            return _downsample_multi_timestep(timestep, self._scaled)
 
-      # Map agent ids to their respective 'WORLD.RGB' observation space
-      return spaces.Dict({
-            agent_id: world_rgb_space[i]
-            for i, agent_id in enumerate(self._ordered_agent_ids)
-        })
+        def observation_spec(self):
+            spec = super().observation_spec()
+            return [
+                {
+                    k: _downsample_multi_spec(v, self._scaled)
+                    if k in _OBSERVATION_PREFIX
+                    else v
+                    for k, v in s.items()
+                }
+                for s in spec
+            ]
+
+    return _DownSamplingSubstrateWrapper
 
 
-    
-def downsample_observation(array: np.ndarray, scaled) -> np.ndarray:
-    """Downsample image component of the observation.
-    Args:
-      array: RGB array of the observation provided by substrate
-      scaled: Scale factor by which to downsaple the observation
-    
-    Returns:
-      ndarray: downsampled observation  
-    """
-    
-    frame = cv2.resize(
-            array, (array.shape[0]//scaled, array.shape[1]//scaled), interpolation=cv2.INTER_AREA)
-    return frame
+class DownSamplingSubstrateWrapper:
+    """Thin factory that returns an instance of the lazily-built wrapper class.
 
-  
-def _downsample_multi_timestep(timestep: dm_env.TimeStep, scaled) -> dm_env.TimeStep:
-    return timestep._replace(
-        observation=[{k: downsample_observation(v, scaled) if k == 'WORLD.RGB' or k == 'RGB' else v for k, v in observation.items()
-        } for observation in timestep.observation])
+    Usage ::
 
-def _downsample_multi_spec(spec, scaled):
-    return dm_env.specs.Array(shape=(spec.shape[0]//scaled, spec.shape[1]//scaled, spec.shape[2]), dtype=spec.dtype)
+        wrapped = DownSamplingSubstrateWrapper(substrate, scaled=8)
 
-class DownSamplingSubstrateWrapper(observables.ObservableLab2dWrapper):
-    """Downsamples 8x8 sprites returned by substrate to 1x1. 
-    
-    This related to the observation window of each agent and will lead to observation RGB shape to reduce
-    from [88, 88, 3] to [11, 11, 3]. Other downsampling scales are allowed but not tested. Thsi will lead
-    to significant speedups in training.
+    Equivalent to constructing the dynamically-built class.
     """
 
-    def __init__(self, substrate: substrate.Substrate, scaled):
-        super().__init__(substrate)
-        self._scaled = scaled
+    def __new__(cls, substrate_instance: Any, scaled: int = 8):
+        cls_real = _make_downsampling_wrapper_class()
+        return cls_real(substrate_instance, scaled)
 
-    def reset(self) -> dm_env.TimeStep:
-        timestep = super().reset()
-        return _downsample_multi_timestep(timestep, self._scaled)
 
-    def step(self, actions) -> dm_env.TimeStep:
-        timestep = super().step(actions)
-        
-        return _downsample_multi_timestep(timestep, self._scaled)
+# ─────────────────────────────────────────────────────────────────────────────
+# Top-level factory
+# ─────────────────────────────────────────────────────────────────────────────
 
-    def observation_spec(self) -> Sequence[Mapping[str, Any]]:
-        spec = super().observation_spec()
-        return [{k: _downsample_multi_spec(v, self._scaled) if k == 'WORLD.RGB' or k == 'RGB' else v for k, v in s.items()}
-        for s in spec]
-        
-def env_creator(env_config):
-  """Outputs an environment for registering."""
-  env_config = config_dict.ConfigDict(env_config)
-  env = meltingpot_substrate.build(env_config['substrate'], roles=env_config['roles'])
-  
-  env = DownSamplingSubstrateWrapper(env, env_config['scaled'])
-  
-  env = MeltingPotEnv(env)
-  
-  return env
+
+def env_creator(
+    substrate_id: str,
+    roles: Sequence[str] | None = None,
+    scaled: int = 8,
+    max_cycles: int = MAX_CYCLES,
+) -> MeltingPotEnv:
+    """Build a fully-wrapped MeltingPot environment.
+
+    Parameters
+    ----------
+    substrate_id : str
+        E.g. ``"commons_harvest__closed"``, ``"chemistry__three_metabolic_cycles_with_plentiful_distractors"``.
+    roles : sequence of str, optional
+        Per-agent role strings. If ``None``, uses the substrate's
+        ``default_player_roles`` (which defines paper-faithful num_agents).
+    scaled : int
+        RGB downsample factor (paper §A.4 = 8).
+    max_cycles : int
+        Step-count truncation (student default 400).
+
+    Returns
+    -------
+    MeltingPotEnv
+        Ready to ``.reset()`` / ``.step(action_dict)`` per the runner contract.
+    """
+    from meltingpot import substrate as meltingpot_substrate
+
+    if roles is None:
+        cfg = meltingpot_substrate.get_config(substrate_id)
+        roles = list(cfg.default_player_roles)
+
+    raw_env = meltingpot_substrate.build(substrate_id, roles=list(roles))
+    downsampled = DownSamplingSubstrateWrapper(raw_env, scaled=scaled)
+    return MeltingPotEnv(downsampled, max_cycles=max_cycles)
+
+
+def build_env_from_config(env_cfg: Any) -> MeltingPotEnv:
+    """Build a :class:`MeltingPotEnv` from a loaded ``config/env/marl/*.yaml``.
+
+    Thin wrapper over :func:`env_creator` that keeps the runner pipeline free
+    of config-structure knowledge. Expects the following fields on ``env_cfg``
+    (OmegaConf DictConfig or plain dict, both supported) :
+
+    - ``substrate_name`` : str — dmlab2d substrate id.
+    - ``roles`` : list[str] — per-agent role strings (paper-faithful count).
+    - ``downsample_scale`` : int — RGB downsample factor (paper §A.4 = 8).
+    - ``max_cycles`` : int — env truncation, aligned with ``episode_length``
+      of the training config (both 1000 per student train_meltingpot.sh).
+
+    A sanity assertion enforces ``num_agents == len(roles)`` so the runner's
+    per-agent policy/buffer count matches the env's player count.
+    """
+    substrate_name = env_cfg["substrate_name"]
+    roles = list(env_cfg["roles"])
+    num_agents = int(env_cfg["num_agents"])
+    if len(roles) != num_agents:
+        raise ValueError(
+            f"env_cfg inconsistent : num_agents={num_agents} but len(roles)={len(roles)}"
+        )
+    scaled = int(env_cfg.get("downsample_scale", 8))
+    max_cycles = int(env_cfg.get("max_cycles", MAX_CYCLES))
+    return env_creator(
+        substrate_id=substrate_name,
+        roles=roles,
+        scaled=scaled,
+        max_cycles=max_cycles,
+    )
