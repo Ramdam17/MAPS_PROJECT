@@ -1,6 +1,6 @@
 # Sprint 15 — SARL+CL rewrite + tests (CL mechanics first)
 
-**Status:** 🔵 open (2026-07-12)
+**Status:** 🟢 CL mechanics done (2026-07-12) — full curriculum forgetting-eval (Fig 7) deferred
 **Branch:** `refactor/sarl_cl` (branchée depuis `6f07916` — cœur partagé complet)
 **Owner:** Rémy Ramadour
 **Depends on:** Sprint 11 ✅ (core/) + Sprint 14 ✅ (SARL v1 — modèle/loss réutilisés en esprit)
@@ -90,3 +90,49 @@ weight-reg actives, déterminisme d'orchestration).
 CL-C1 (scheduler), CL-C2 (env non seedé), CL-H1 (target-net binding — à vérifier sur
 sarl_cl_maps.py), CL-H2 (handoff curriculum), CL-H3 (pas d'éval forgetting → différé D15.6).
 Décisions Guillaume : D4 (Figure 7), D7 (target net) — après reproduction.
+
+---
+
+## Closeout (2026-07-12) — CL mechanics
+
+Livré sur `refactor/sarl_cl` (rien poussé), un commit vérifié par phase.
+
+| Phase | Commit | Contenu | Tests |
+|-------|--------|---------|-------|
+| 15.A | `deb74ef` | ouvrir sprint + décisions Day-1 | — |
+| 15.C | `524184f` | `data.py` + cœur `cae_loss(huber)` re-ajouté | Tier-1 5 + core |
+| 15.D | `580b21c` | `model.py` (SarlCL nets + AdaptiveQNetwork) | Tier-2 6 bit-exact |
+| 15.E | `638ab7a` | `loss_weighting.py` (DynamicLossWeighter + mixing) | 4 |
+| 15.F | `bcaa4f6` | `trainer.py` (sarl_cl_update_step : task+distill+feature) | Tier-3 4 |
+| 15.G | `5392b29` | `training_loop.py` (curriculum) + `rollout.py` + SarlCLSetting + conftest threads=1 | Tier-4-light 2 |
+| 15.H | `c4494bd` | `cli.py` (curriculum) | 2 intégration |
+
+**Total : ~23 tests SARL+CL verts.**
+
+### Mécaniques CL reproduites (fidèles à `sarl_cl_maps.py`, D15.2)
+1. **AdaptiveQNetwork** bit-exact (adapter 1×1 + zero-pad channels) → transfert cross-jeux ;
+   probe `torch.rand` à l'init préservé (parité RNG).
+2. **3 termes CL** : task (CAE-Huber / BCE), distillation = `weight_regularization` L2
+   (cœur, D15.4 — pas Hinton KL), feature = MSE activations vs teacher.
+3. **DynamicLossWeighter** : normalise chaque terme par son max historique, puis mélange
+   **0.4/0.4/0.2** (D15.5 = défaut argparse source ; tranche l'audit CL-M1).
+4. **Teacher gelé** entre stages (deepcopy + requires_grad_(False)) = ancre anti-oubli.
+   Two-loss pattern préservé.
+
+### Découverte infra
+`torch.set_num_threads(1)` ajouté au conftest : la contention de threads torch faisait
+passer un stage CL de ~3s à >15min sur nœud chargé (ops 1024-dim minuscules). Aucun impact
+numérique. Bénéficie à toute la suite.
+
+### Décisions/limites (à trancher APRÈS reproduction)
+- **Forgetting eval / Figure 7 (CL-H3)** : différé — dépend de la décision D4 de Guillaume
+  (ce que trace exactement la Fig 7). La machinerie `curriculum_evaluation` de la source
+  n'est pas encore portée.
+- **Config v2-era** : comme SARL, aligner num_frames/alpha sur les valeurs v1 paper pour prod.
+- Env MinAtar non seedé (D15.3), scheduler (CL-C1), target-net (CL-H1/D7) : reproduits/à trancher.
+- num_actions du curriculum = max sur les jeux (AdaptiveQNetwork Q-head fixe).
+
+### Hors scope / reporté
+- Orchestration multi-jeux complète + éval forgetting (Figure 7) → post-D4.
+- Reproduction empirique (disque plein).
+- **MARL → Sprint 16** (MeltingPot MAPPO, le plus complexe — 4 bugs critiques de l'audit).
