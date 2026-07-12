@@ -120,3 +120,53 @@ def CAE_loss(W, x, recons_x, h, lam):
     w_sum = w_sum.unsqueeze(1)
     contractive_loss = torch.sum(torch.mm(dh**2, w_sum), 0)
     return mse + contractive_loss.mul_(lam)
+
+
+# ── Verbatim AdaptiveQNetwork (sarl_cl_maps.py:160-219) ─────────────────────
+import numpy  # noqa: E402
+
+
+class AdaptiveQNetwork(nn.Module):
+    def __init__(self, max_input_channels, num_actions):
+        super().__init__()
+        self.max_input_channels = max_input_channels
+        self.input_adapter = nn.Sequential(
+            nn.Conv2d(max_input_channels, max_input_channels, kernel_size=1, stride=1),
+            nn.ReLU(),
+        )
+        self.conv = nn.Conv2d(max_input_channels, 16, kernel_size=3, stride=1)
+        conv_output_size = self._get_conv_output_size((max_input_channels, 10, 10))
+        self.fc_hidden = nn.Linear(in_features=conv_output_size, out_features=128)
+        self.fc_output = nn.Linear(in_features=128, out_features=conv_output_size)
+        self.actions = nn.Linear(in_features=conv_output_size, out_features=num_actions)
+
+    def _get_conv_output_size(self, shape):
+        bs = 1
+        input = torch.rand(bs, *shape)
+        output = self.conv(input)
+        return int(numpy.prod(output.size()[1:]))
+
+    def adapt_input(self, x):
+        if x.size(1) < self.max_input_channels:
+            padding = torch.zeros(
+                x.size(0),
+                self.max_input_channels - x.size(1),
+                x.size(2),
+                x.size(3),
+                device=x.device,
+            )
+            x = torch.cat([x, padding], dim=1)
+        return x
+
+    def forward(self, x, prev_h2, cascade_rate):
+        x = self.adapt_input(x)
+        x = self.input_adapter(x)
+        x = f.relu(self.conv(x))
+        Input = x.view(x.size(0), -1)
+        Hidden = f.relu(self.fc_hidden(Input))
+        Output = f.relu(self.fc_output(Hidden))
+        if prev_h2 is not None:
+            Output = cascade_rate * Output + (1 - cascade_rate) * prev_h2
+        x = self.actions(Output)
+        Comparison = Input - Output
+        return x, Hidden, Comparison, Output
