@@ -1,6 +1,6 @@
 # Sprint 14 — SARL rewrite + tests + paper reproduction
 
-**Status:** 🔵 open (2026-07-12)
+**Status:** 🟢 settings 1-6 done (2026-07-12) — ACB (setting 7) + checkpointing deferred
 **Branch:** `refactor/sarl` (branchée depuis `6f07916` — cœur partagé complet)
 **Owner:** Rémy Ramadour
 **Depends on:** Sprint 11 ✅ (core/) + Sprint 12 ✅ (Blindsight) + Sprint 13 ✅ (AGL, le patron trainer/pool/cli)
@@ -84,3 +84,51 @@ De `docs/reviews/audit-pre-production-20seeds-20260706.md` (section SARL) : env 
 scheduler step_size=1 (T-2), cascade FO no-op settings 2/4/6 (T-3 — à vérifier sur l'archi v1,
 qui cascade sur Output 1024-d), métrique = retours training ε-greedy (S-M3). Décisions Guillaume
 rattachées : D1 (scheduler), D2 (bras cascade), D5 (métrique) — tranchées APRÈS reproduction.
+
+---
+
+## Closeout (2026-07-12) — settings 1-6
+
+Livré sur `refactor/sarl` (rien poussé), un commit vérifié par phase.
+
+| Phase | Commit | Contenu | Tests |
+|-------|--------|---------|-------|
+| 14.A | `f8b1d14` | ouvrir sprint + 5 décisions Day-1 | — |
+| 14.C | `d91ea38` | `data.py` (replay buffer + get_state + target_wager) | Tier-1 5/5 bit-exact |
+| 14.D | `6d3197e` | `model_v1.py` (SarlQNetworkV1 + SarlSecondOrderNetworkV1) | Tier-2 6/6 bit-exact |
+| 14.E | `9349c39` | `rollout.py` (ε-greedy + cascade action selection) | 4 |
+| 14.F | `4ff3349` | `trainer.py` (DQN update + two-loss) + cœur `cae_loss(huber)` | Tier-3 4 + core |
+| 14.G | `be08716` | `training_loop.py` (boucle RL) + `evaluate.py` | Tier-4-light 3 |
+| 14.H | `c6c78dc` | `cli.py` (train → evaluate → summary) | 2 intégration |
+
+**Total : ~24 tests SARL verts** (5 data + 6 model + 4 rollout + 4 update + 3 loop + 2 CLI),
+plus l'extension cœur `cae_loss(recon="huber")` testée.
+
+### Bit-exact vérifié vs `maps_v1.py`
+- `data.py` (buffer cyclique, get_state, target_wager) — Tier 1.
+- `model_v1.py` : les 4 pièces structurelles v1 (Q-head 1024, décodeur dédié, comparison_layer
+  actif, cascade sur Output) + forward/cascade/2nd-order — Tier 2.
+- `cae_loss(recon="huber")` du cœur == `CAE_loss` source (1e-7) ; `sarl_train_step` non-meta ==
+  réplique inline de `train()` (loss + poids post-step, 1e-6) — Tier 3.
+
+### Décisions/limites (à trancher APRÈS reproduction)
+1. **Config v1 vs défauts** ⚠️ : `config/domains/sarl/training.yaml` a `model_variant: v1` mais
+   garde les défauts v2-era (`num_frames=500_000`, `alpha=45`, `gamma=0.999`). La reproduction
+   v1 paper (Table 6) exige `num_frames=2_000_000` + `alpha=25` (cf. `SARL_Training_Standard.sh`).
+   À aligner pour le run de production (mêmes overrides que le CLI documente). Non bloquant pour
+   la phase reproduction (loop config-driven).
+2. **Env MinAtar non seedé** (D14.3) : fidèle à la source (T-1 audit). Le loop n'est donc pas
+   déterministe run-to-run ; le seeding est une décision production (Guillaume).
+3. Bras cascade-FO (settings 2/4/6) : à vérifier sur l'archi v1 (cascade sur Output 1024-d avec
+   ReLU déterministe — potentiellement le même no-op que Blindsight/AGL, T-3). À quantifier.
+4. Scheduler step_size=1 (T-2), métrique (S-M3) : reproduits tels quels (D14.2), décisions D1/D5.
+
+### Hors scope / reporté
+- **ACB (setting 7)** — `sarl_ac_lambda.py`, algo séparé. Phase 14.x / Sprint 14b.
+- **Checkpointing / resume** — infra SLURM (le loop non-CL ne checkpoint pas encore). Pas
+  nécessaire à la parité ; à ajouter pour les longs runs de production. Le fix RNG-GPU
+  (`.cpu().byte()`, audit S-C1) sera à appliquer si/quand on ajoute le resume.
+- Reproduction empirique Table 6 (2M frames × settings × seeds) — disque projet plein bloque
+  les runs, pas les tests.
+- **SARL+CL → Sprint 15** : réutilisera `model_v1` (+ AdaptiveQNetwork), et les branches
+  teacher/curriculum/distillation de `train()` (délibérément exclues ici).
