@@ -12,8 +12,15 @@ fixture in a nested ``conftest.py``.
 from __future__ import annotations
 
 import pytest
+import torch
 
 from maps.utils.seeding import LAB_DEFAULT_SEED, set_all_seeds
+
+# Cap torch to a single thread during tests. On shared HPC nodes the default
+# (all cores) causes severe thread-contention slowdowns on the small tensor ops
+# used here — a MinAtar CL stage went from ~3s to >15min. Single-thread is also
+# more deterministic. Does not affect numerical parity (same config both sides).
+torch.set_num_threads(1)
 
 
 @pytest.fixture(autouse=True)
