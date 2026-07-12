@@ -43,3 +43,42 @@ def get_grad_norm(parameters) -> float:
         if p.grad is not None:
             total += float((p.grad.detach() ** 2).sum().item())
     return total**0.5
+
+
+def update_linear_schedule(optimizer, epoch: int, total_num_epochs: int, initial_lr: float) -> None:
+    """Verbatim ``update_linear_schedule`` (onpolicy/utils/util.py:17-21) — linear LR decay."""
+    lr = initial_lr - (initial_lr * (epoch / float(total_num_epochs)))
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = lr
+
+
+def huber_loss(e, d):
+    """Verbatim ``huber_loss`` (onpolicy/utils/util.py:23-26)."""
+    a = (abs(e) <= d).float()
+    b = (abs(e) > d).float()
+    return a * e**2 / 2 + b * d * (abs(e) - d / 2)
+
+
+def mse_loss(e):
+    """Verbatim ``mse_loss`` (onpolicy/utils/util.py:28-29)."""
+    return e**2 / 2
+
+
+def get_shape_from_obs_space(obs_space) -> tuple[int, ...]:
+    """Verbatim ``get_shape_from_obs_space`` (onpolicy/utils/util.py:31-39)."""
+    if obs_space.__class__.__name__ == "Box":
+        return obs_space.shape
+    if obs_space.__class__.__name__ == "list":
+        return obs_space
+    raise NotImplementedError
+
+
+def get_shape_from_act_space(act_space) -> int:
+    """Verbatim ``get_shape_from_act_space`` (onpolicy/utils/util.py:41-52), Discrete path."""
+    if act_space.__class__.__name__ == "Discrete":
+        return 1
+    if act_space.__class__.__name__ == "MultiDiscrete":
+        return act_space.shape
+    if act_space.__class__.__name__ in ("Box", "MultiBinary"):
+        return act_space.shape[0]
+    return act_space[0].shape[0] + 1
