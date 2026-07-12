@@ -110,3 +110,13 @@ class SecondOrderNetwork(nn.Module):
             comparison_out = cascade_rate * comparison_out + (1 - cascade_rate) * prev_comparison
         wager = self.wager(comparison_out)
         return wager, comparison_out
+
+
+# ── Verbatim CAE_loss (maps_v1.py:305-354; huber recon active) ──────────────
+def CAE_loss(W, x, recons_x, h, lam):
+    mse = f.huber_loss(recons_x, x)
+    dh = h * (1 - h)
+    w_sum = torch.sum(W**2, dim=1)
+    w_sum = w_sum.unsqueeze(1)
+    contractive_loss = torch.sum(torch.mm(dh**2, w_sum), 0)
+    return mse + contractive_loss.mul_(lam)
