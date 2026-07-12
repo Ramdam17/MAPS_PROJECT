@@ -34,13 +34,31 @@ INTERVAL=3600
 TS=$(date '+%Y-%m-%d %H:%M:%S')
 DONE=$(find "${OUT_BASE}" -name metrics.json 2>/dev/null | wc -l)
 
+COMPLETE_SEEDS=""
 {
-    echo "==================== [${TS}] job=${SLURM_JOB_ID:-?} ===================="
-    echo "MARL production (array 65248394): ${DONE} / ${TOTAL} cells complete"
+    echo "==================== [${TS}] watcher job=${SLURM_JOB_ID:-?} ===================="
+    echo "MARL production: ${DONE} / ${TOTAL} cells complete"
+    echo "--- per-seed completion (24 cells = 4 substrates x 6 settings each) ---"
+    for s in $(seq 42 61); do
+        c=$(find "${OUT_BASE}" -path "*/seed-${s}/metrics.json" 2>/dev/null | wc -l)
+        if (( c == 24 )); then COMPLETE_SEEDS="${COMPLETE_SEEDS} ${s}"; fi
+        printf "  seed %2d: %2d/24%s\n" "${s}" "${c}" "$( ((c == 24)) && echo '   <-- COMPLETE (ready to send)' )"
+    done
+    echo "  => complete seeds:${COMPLETE_SEEDS:- none yet}"
     echo "--- completed per substrate/setting ---"
     find "${OUT_BASE}" -name metrics.json 2>/dev/null \
         | sed "s|${OUT_BASE}/||; s|/seed-[0-9]*/metrics.json||" | sort | uniq -c
 } >> "${REP}/progress.txt"
+
+# Per-seed bundle (built once, when a seed's 24 cells are all done) — send these one by one.
+for s in ${COMPLETE_SEEDS}; do
+    tarf="${REP}/marl_seed-${s}.tar.gz"
+    if [[ ! -f "${tarf}" ]]; then
+        ( cd "$(dirname "${OUT_BASE}")" \
+          && tar czf "${tarf}.tmp" marl/*/*/seed-${s}/metrics.json 2>/dev/null \
+          && mv "${tarf}.tmp" "${tarf}" ) || true
+    fi
+done
 
 # Fresh full bundle of everything completed so far (small: ~0.75 MB per cell).
 if (( DONE > 0 )); then

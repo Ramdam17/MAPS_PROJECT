@@ -68,9 +68,11 @@ SUBSTRATES=(commons_harvest_closed commons_harvest_partnership chemistry territo
 SETTINGS=(baseline cascade_1st_no_meta meta_no_cascade maps meta_cascade_2nd meta_cascade_both)
 SEEDS=($(seq 42 61))    # 20 seeds
 
-N_SET=${#SETTINGS[@]}    # 6
-N_SEED=${#SEEDS[@]}      # 20
-N_TASKS=$(( ${#SUBSTRATES[@]} * N_SET * N_SEED ))   # 480
+N_SUB=${#SUBSTRATES[@]}   # 4
+N_SET=${#SETTINGS[@]}     # 6
+N_SEED=${#SEEDS[@]}       # 20
+PER_SEED=$(( N_SUB * N_SET ))     # 24 cells per seed
+N_TASKS=$(( N_SEED * PER_SEED ))  # 480
 
 TASK_ID=${SLURM_ARRAY_TASK_ID:-0}
 if (( TASK_ID >= N_TASKS )); then
@@ -78,10 +80,13 @@ if (( TASK_ID >= N_TASKS )); then
     exit 64
 fi
 
-SUB_IDX=$(( TASK_ID / (N_SET * N_SEED) ))
-REM=$(( TASK_ID % (N_SET * N_SEED) ))
-SET_IDX=$(( REM / N_SEED ))
-SEED_IDX=$(( REM % N_SEED ))
+# Seed-OUTERMOST ordering: tasks 0..23 = seed[0] over all 4x6 (substrate,setting) cells;
+# 24..47 = seed[1]; etc. => a COMPLETE seed finishes early, so results ship seed by seed
+# (Guillaume/Natalie: "after each new seed completes, send the raw results progressively").
+SEED_IDX=$(( TASK_ID / PER_SEED ))
+REM=$(( TASK_ID % PER_SEED ))
+SUB_IDX=$(( REM / N_SET ))
+SET_IDX=$(( REM % N_SET ))
 
 SUBSTRATE=${SUBSTRATES[$SUB_IDX]}
 SETTING=${SETTINGS[$SET_IDX]}
