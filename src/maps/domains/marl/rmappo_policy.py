@@ -1,20 +1,16 @@
 """MARL MAPPO policy wrapper — MAPS §5 (MeltingPot MAPPO).
 
 Ported from ``onpolicy/algorithms/r_mappo/algorithm/rMAPPOPolicy.py`` (``R_MAPPOPolicy``),
-the **GRU non-attention** path. Wraps the four networks — baseline ``actor``/``critic``
-(select actions / predict values) and the meta ``actor_meta``/``critic_meta`` (produce
-the wager) — plus their four optimizers.
+the **GRU non-attention** path. Wraps the ``actor`` and ``critic`` (+ their optimizers).
 
-Faithful properties of the paper's code:
+**Fix (a) — the judge acts (2026-07, run/marl-20seeds-1M).** The paper's separate
+``actor_meta``/``critic_meta`` ghost networks are REMOVED. The confidence judge
+(``SecondOrderNetwork``) now lives inside ``actor`` and reads the acting network's own
+representation, so ``actor_optimizer`` covers it and the wager loss co-trains the acting
+policy (Blindsight/AGL pattern). See ``docs/reviews/fix-a-meta-cotraining-marl.md``.
+Monitoring only: ``get_actions`` is unchanged (the wager never gates env actions).
 
-- **M-C2**: ``get_actions`` uses the baseline ``actor`` only; the meta path never
-  selects env actions.
-- **M-C3**: ``evaluate_actions_meta`` reads the wager from ``actor_meta`` for BOTH the
-  actor- and critic-side losses in the trainer, so ``critic_meta`` gets no gradients.
-- **rnn_cells (LSTM) dropped**: consistent with :mod:`maps.domains.marl.data`,
-  :mod:`maps.domains.marl.policy` and :mod:`maps.domains.marl.policy_meta`, the LSTM
-  ``rnn_cells`` path is removed end-to-end (GRU path only, D16). The wrapper therefore
-  takes/returns 5-tuples where the source (with cells) used 7-tuples.
+- **rnn_cells (LSTM) dropped**: GRU path only (D16); 5-tuples where the source used 7-tuples.
 
 The argparse ``args`` of the source is replaced by explicit keyword parameters (the
 rebuild's convention); the optimizer dispatch reproduces the source's exact
@@ -32,7 +28,6 @@ import torch
 import torch_optimizer as optim2
 
 from maps.domains.marl.policy import R_Actor, R_Critic
-from maps.domains.marl.policy_meta import R_Actor_Meta, R_Critic_Meta
 from maps.domains.marl.util import get_shape_from_obs_space, update_linear_schedule
 
 
@@ -110,6 +105,7 @@ class R_MAPPOPolicy:  # noqa: N801 (source class name)
             hidden_size=hidden_size,
             recurrent_n=recurrent_n,
             cascade_iterations_1=cascade_iterations_1,
+            cascade_iterations_2=cascade_iterations_2,
             use_orthogonal=use_orthogonal,
             gain=gain,
             device=device,
@@ -122,46 +118,18 @@ class R_MAPPOPolicy:  # noqa: N801 (source class name)
             use_orthogonal=use_orthogonal,
             device=device,
         )
-        self.actor_meta = R_Actor_Meta(
-            obs_shape,
-            act_space,
-            hidden_size=hidden_size,
-            recurrent_n=recurrent_n,
-            cascade_iterations_1=cascade_iterations_1,
-            cascade_iterations_2=cascade_iterations_2,
-            use_orthogonal=use_orthogonal,
-            device=device,
-        )
-        self.critic_meta = R_Critic_Meta(
-            share_obs_shape,
-            hidden_size=hidden_size,
-            recurrent_n=recurrent_n,
-            cascade_iterations_1=cascade_iterations_1,
-            cascade_iterations_2=cascade_iterations_2,
-            use_orthogonal=use_orthogonal,
-            device=device,
-        )
-
+        # Fix (a): no ghost meta nets. The judge lives INSIDE self.actor (self.actor.second_order),
+        # so actor_optimizer covers it → the wager loss co-trains the acting network.
         self.actor_optimizer = _build_optimizer(
             optimizer, self.actor.parameters(), lr, opti_eps, weight_decay
         )
         self.critic_optimizer = _build_optimizer(
             optimizer, self.critic.parameters(), critic_lr, opti_eps, weight_decay
         )
-        self.actor_meta_optimizer = _build_optimizer(
-            optimizer, self.actor_meta.parameters(), lr, opti_eps, weight_decay
-        )
-        self.critic_meta_optimizer = _build_optimizer(
-            optimizer, self.critic_meta.parameters(), critic_lr, opti_eps, weight_decay
-        )
 
     def lr_decay(self, episode: int, episodes: int) -> None:
         update_linear_schedule(self.actor_optimizer, episode, episodes, self.lr)
         update_linear_schedule(self.critic_optimizer, episode, episodes, self.critic_lr)
-
-    def lr_decay_meta(self, episode: int, episodes: int) -> None:
-        update_linear_schedule(self.actor_meta_optimizer, episode, episodes, self.lr)
-        update_linear_schedule(self.critic_meta_optimizer, episode, episodes, self.critic_lr)
 
     def get_actions(
         self,
@@ -203,30 +171,12 @@ class R_MAPPOPolicy:  # noqa: N801 (source class name)
         available_actions=None,
         active_masks=None,
     ):
-        """Baseline actor log-probs/entropy + critic values (for the PPO update)."""
-        action_log_probs, dist_entropy = self.actor.evaluate_actions(
+        """Baseline actor log-probs/entropy + co-training wager + critic values.
+
+        Fix (a): the actor also returns the wager (from its own representation); the trainer
+        adds its BCE (vs advantage>0) to the actor loss so it co-trains the acting network."""
+        action_log_probs, dist_entropy, wager = self.actor.evaluate_actions(
             obs, rnn_states_actor, action, masks, available_actions, active_masks
         )
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
-        return values, action_log_probs, dist_entropy
-
-    def evaluate_actions_meta(
-        self,
-        cent_obs,
-        obs,
-        rnn_states_actor,
-        rnn_states_critic,
-        action,
-        masks,
-        available_actions=None,
-        active_masks=None,
-    ):
-        """Read the wager from ``actor_meta`` (M-C3: same net both sides in the trainer).
-
-        ``cent_obs`` and ``rnn_states_critic`` are accepted but unused (the source's
-        block that consumed them is commented out — faithful).
-        """
-        rnn_states_actor_input = torch.tensor(rnn_states_actor).to(self.device)
-        return self.actor_meta.evaluate_actions(
-            obs, rnn_states_actor_input, action, masks, available_actions, active_masks
-        )
+        return values, action_log_probs, dist_entropy, wager

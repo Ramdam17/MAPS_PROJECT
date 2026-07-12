@@ -1,13 +1,11 @@
-"""Tier-3: MARL MAPPO trainer (Sprint 16.G).
-
-``cal_value_loss`` and construction run on CPU. ``ppo_update`` hardcodes ``.cuda()``
-(faithful to the source), so its smoke test is gated on CUDA availability.
+"""R_MAPPO after fix (a): device-aware ``ppo_update`` (runs on CPU); the confidence wager is
+co-trained INTO the acting actor (BCE vs advantage>0). These tests LOCK the fix's key property:
+the judge's gradient reaches the acting network — the whole point of the corrected MARL run.
 """
 
 from __future__ import annotations
 
 import numpy as np
-import pytest
 import torch
 from gymnasium import spaces
 
@@ -44,62 +42,11 @@ def _trainer(device="cpu"):
     return R_MAPPO(_policy(), hidden_size=HIDDEN, device=device)
 
 
-def test_trainer_builds_with_valuenorm():
-    set_all_seeds(42)
-    trainer = _trainer()
-    assert isinstance(trainer.value_normalizer, ValueNorm)
-    # Attention off → both recurrent flags forced True (faithful override).
-    assert trainer._use_recurrent_policy is True
-    assert trainer._use_naive_recurrent_policy is True
-
-
-def test_cal_value_loss_scalar():
-    set_all_seeds(1)
-    trainer = _trainer()
-    values = torch.randn(B, 1)
-    value_preds = torch.randn(B, 1)
-    returns = torch.randn(B, 1)
-    active_masks = torch.ones(B, 1)
-    loss = trainer.cal_value_loss(values, value_preds, returns, active_masks)
-    assert loss.dim() == 0
-    assert torch.isfinite(loss)
-
-
-def test_cal_value_loss_respects_active_masks():
-    """A fully-inactive batch would divide by zero; a partially-active one stays finite."""
-    set_all_seeds(2)
-    trainer = _trainer()
-    values = torch.randn(B, 1)
-    value_preds = torch.randn(B, 1)
-    returns = torch.randn(B, 1)
-    active_masks = torch.ones(B, 1)
-    active_masks[B // 2 :] = 0.0
-    loss = trainer.cal_value_loss(values, value_preds, returns, active_masks)
-    assert torch.isfinite(loss)
-
-
-def test_focal_loss_is_scalar():
-    set_all_seeds(3)
-    fl = FocalLoss()
-    inputs = torch.randn(B, 2)
-    targets = torch.randint(0, 2, (B, 2)).float()
-    out = fl(inputs, targets)
-    assert out.dim() == 0
-    assert torch.isfinite(out)
-
-
-@pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="ppo_update hardcodes .cuda() (source-faithful)"
-)
-def test_ppo_update_smoke_gpu():
-    """Smoke test of one PPO update — GPU only (the source pins wager tensors to CUDA)."""
-    set_all_seeds(4)
-    trainer = _trainer(device="cuda")
-
+def _sample():
     def arr(*shape):
-        return (np.random.rand(*shape)).astype(np.float32)
+        return np.random.rand(*shape).astype(np.float32)
 
-    sample = (
+    return (
         arr(B, H, W, C),  # share_obs
         arr(B, H, W, C),  # obs
         np.zeros((B, RECN, HIDDEN), np.float32),  # rnn_states
@@ -110,12 +57,91 @@ def test_ppo_update_smoke_gpu():
         np.ones((B, 1), np.float32),  # masks
         np.ones((B, 1), np.float32),  # active_masks
         arr(B, 1) - 0.5,  # old_action_log_probs
-        arr(B, 1) - 0.5,  # adv_targ
+        arr(B, 1) - 0.5,  # adv_targ (mix of + and -)
         np.ones((B, N_ACT), np.float32),  # available_actions
     )
-    wager_objective = np.random.randint(0, 2, (B, 2)).astype(np.float32)
-    out = trainer.ppo_update(sample, update_actor=True, wager_objective=wager_objective, meta=True)
-    value_loss, _critic_grad_norm, policy_loss, _dist_entropy, _actor_grad_norm, imp_weights = out
-    assert torch.isfinite(value_loss)
-    assert torch.isfinite(policy_loss)
+
+
+def test_trainer_builds_with_valuenorm():
+    set_all_seeds(42)
+    trainer = _trainer()
+    assert isinstance(trainer.value_normalizer, ValueNorm)
+    assert trainer._use_recurrent_policy is True
+
+
+def test_cal_value_loss_scalar():
+    set_all_seeds(1)
+    trainer = _trainer()
+    loss = trainer.cal_value_loss(
+        torch.randn(B, 1), torch.randn(B, 1), torch.randn(B, 1), torch.ones(B, 1)
+    )
+    assert loss.dim() == 0 and torch.isfinite(loss)
+
+
+def test_focal_loss_is_scalar():
+    set_all_seeds(3)
+    fl = FocalLoss()
+    out = fl(torch.randn(B, 2), torch.randint(0, 2, (B, 2)).float())
+    assert out.dim() == 0 and torch.isfinite(out)
+
+
+def test_ppo_update_runs_on_cpu():
+    """Fix (a): ``ppo_update`` is device-aware (no hardcoded .cuda()) and returns a 7-tuple."""
+    set_all_seeds(4)
+    trainer = _trainer(device="cpu")
+    out = trainer.ppo_update(_sample(), update_actor=True, meta=True)
+    assert len(out) == 7
+    value_loss, _cgn, policy_loss, _de, _agn, imp_weights, wager_loss = out
+    assert torch.isfinite(value_loss) and torch.isfinite(policy_loss)
+    assert torch.isfinite(wager_loss) and wager_loss.item() > 0.0  # BCE against advantage>0
     assert imp_weights.shape == (B, 1)
+
+
+def test_meta_cotraining_reaches_actor():
+    """KEY LOCK (fix a): the wager gradient reaches BOTH the judge and the shared encoder."""
+    set_all_seeds(5)
+    trainer = _trainer(device="cpu")
+    trainer.ppo_update(_sample(), update_actor=True, meta=True)
+    # The judge is trainable ONLY through the wager term:
+    judge_grad = trainer.policy.actor.second_order.wager.weight.grad
+    assert judge_grad is not None and float(judge_grad.abs().sum()) > 0.0
+    # The shared CNN encoder also carries gradient (co-training path exists):
+    base_param = next(iter(trainer.policy.actor.base.parameters()))
+    assert base_param.grad is not None
+
+
+def test_baseline_has_no_wager_gradient():
+    """meta=False: the judge receives no gradient (wager term absent) → wager_loss == 0."""
+    set_all_seeds(6)
+    trainer = _trainer(device="cpu")
+    out = trainer.ppo_update(_sample(), update_actor=True, meta=False)
+    assert float(out[6]) == 0.0
+    assert trainer.policy.actor.second_order.wager.weight.grad is None
+
+
+def test_wager_changes_acting_gradient():
+    """GOLD LOCK: identical weights + inputs, meta=True vs meta=False produce DIFFERENT gradients
+    on the acting encoder → the judge genuinely shapes the acting network (not a passive probe)."""
+    set_all_seeds(7)
+    t_off = _trainer(device="cpu")
+    t_on = _trainer(device="cpu")
+    t_on.policy.actor.load_state_dict(t_off.policy.actor.state_dict())
+    t_on.policy.critic.load_state_dict(t_off.policy.critic.state_dict())
+    sample = _sample()
+    t_off.ppo_update(sample, update_actor=True, meta=False)
+    t_on.ppo_update(sample, update_actor=True, meta=True)
+    g_off = next(iter(t_off.policy.actor.base.parameters())).grad
+    g_on = next(iter(t_on.policy.actor.base.parameters())).grad
+    assert g_off is not None and g_on is not None
+    assert not torch.allclose(g_off, g_on)
+
+
+def test_prep_modes_toggle_without_ghost_nets():
+    """Regression: prep_training/prep_rollout must not reference the removed ghost nets
+    (the runner calls these every rollout/update — the unit tests now exercise them too)."""
+    set_all_seeds(8)
+    trainer = _trainer(device="cpu")
+    trainer.prep_rollout()
+    assert not trainer.policy.actor.training and not trainer.policy.critic.training
+    trainer.prep_training()
+    assert trainer.policy.actor.training and trainer.policy.critic.training

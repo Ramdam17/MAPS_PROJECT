@@ -21,6 +21,7 @@ from torch import nn
 
 from maps.domains.marl.act import ACTLayer
 from maps.domains.marl.encoder import CNNBase
+from maps.domains.marl.policy_meta import SecondOrderNetwork
 from maps.domains.marl.rnn import RNNLayer
 from maps.domains.marl.util import check, init
 
@@ -36,6 +37,7 @@ class R_Actor(nn.Module):  # noqa: N801 (source class name)
         hidden_size: int,
         recurrent_n: int,
         cascade_iterations_1: int,
+        cascade_iterations_2: int = 1,
         use_orthogonal: bool = True,
         gain: float = 0.01,
         device: torch.device | str = "cpu",
@@ -43,11 +45,17 @@ class R_Actor(nn.Module):  # noqa: N801 (source class name)
         super().__init__()
         self.hidden_size = hidden_size
         self.cascade_one = cascade_iterations_1
+        self.cascade_two = cascade_iterations_2
         self.cascade_rate_one = float(1.0 / cascade_iterations_1)
+        self.cascade_rate_two = float(1.0 / cascade_iterations_2)
         self.device = torch.device(device)
         self.base = CNNBase(obs_shape, hidden_size, use_orthogonal, use_relu=True)
         self.rnn = RNNLayer(hidden_size, hidden_size, recurrent_n, use_orthogonal)
         self.act = ACTLayer(action_space, hidden_size, use_orthogonal, gain)
+        # Fix (a): confidence judge attached to the ACTING actor. Built LAST so base/rnn/act keep
+        # their RNG stream (baseline behaviour unchanged for a given seed). Its wager loss
+        # back-props through the shared base/rnn → co-training (see evaluate_actions).
+        self.second_order = SecondOrderNetwork(hidden_size)
         self.to(self.device)
 
     def _cascade(self, features, rnn_states, masks):
@@ -80,8 +88,22 @@ class R_Actor(nn.Module):  # noqa: N801 (source class name)
             available_actions = check(available_actions).to(self.device).float()
         if active_masks is not None:
             active_masks = check(active_masks).to(self.device).float()
-        features, _ = self._cascade(self.base(obs), rnn_states, masks)
-        return self.act.evaluate_actions(features, action, available_actions, active_masks)
+        base_features = self.base(obs)
+        features, _ = self._cascade(base_features, rnn_states, masks)
+        action_log_probs, dist_entropy = self.act.evaluate_actions(
+            features, action, available_actions, active_masks
+        )
+        # Fix (a): the judge reads THIS actor's own representation (pre-RNN − post-cascade),
+        # NON-detached, so the wager BCE co-trains the shared base/rnn (Pasquali & Cleeremans
+        # comparator; Blindsight/AGL co-training). Monitoring only — does not gate actions.
+        comparison = base_features - features
+        prev_comparison = None
+        wager = None
+        for _ in range(self.cascade_two):
+            wager, prev_comparison = self.second_order(
+                comparison, prev_comparison, self.cascade_rate_two
+            )
+        return action_log_probs, dist_entropy, wager
 
 
 class R_Critic(nn.Module):  # noqa: N801 (source class name)

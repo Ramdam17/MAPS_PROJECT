@@ -1,19 +1,17 @@
 """MARL MAPPO trainer — MAPS §5 (MeltingPot MAPPO).
 
 Ported from ``onpolicy/algorithms/r_mappo/r_mappo.py`` (``R_MAPPO``), the GRU path.
-Performs the PPO update over minibatches from the rollout buffer and supervises the
-metacognitive **wager** with a BCE against ``reward>0`` (the ``wager_objective``).
+Performs the PPO update over minibatches from the rollout buffer.
 
-Faithful properties of the paper's code (see :mod:`maps.domains.marl.rmappo_policy`):
+**Fix (a) — the judge acts (2026-07, run/marl-20seeds-1M).** The metacognitive **wager** is
+produced by the ACTING actor (``policy.actor``, which now carries the ``SecondOrderNetwork``),
+NOT a separate ghost network. Its BCE — against ``advantage > 0`` (fix c), computed inside
+:meth:`ppo_update` — is ADDED to the actor loss, so a single backward co-trains the acting
+policy (Blindsight/AGL pattern). There is no ``actor_meta``/``critic_meta``; :meth:`ppo_update`
+is device-aware (no hardcoded ``.cuda()``) and runs on CPU or GPU. See
+``docs/reviews/fix-a-meta-cotraining-marl.md``.
 
-- **M-C2 / M-C3**: both the actor-side and critic-side wager losses call
-  ``policy.evaluate_actions_meta``, which reads the wager from ``actor_meta``. So
-  ``critic_meta`` receives no gradients and its ``.step()`` is a no-op — reproduced.
-- **Hardcoded ``.cuda()``**: the wager tensors are forced onto CUDA
-  (``r_mappo.py:162-163,220``) *after* ``.to(**self.tpdv)``. On GPU (where MARL runs)
-  this is a redundant no-op; on CPU it raises. We reproduce it **verbatim** — so
-  :meth:`ppo_update` (and :meth:`train`) require a GPU. Everything else
-  (:meth:`cal_value_loss`, construction) runs on CPU.
+Other faithful properties (see :mod:`maps.domains.marl.rmappo_policy`):
 - **rnn_cells (LSTM) dropped**: the sample tuple is the 12-element GRU tuple our
   :class:`~maps.domains.marl.data.SeparatedReplayBuffer` yields (no ``rnn_cells``),
   consistent end-to-end (D16).
@@ -73,6 +71,7 @@ class R_MAPPO:  # noqa: N801 (source class name)
         entropy_coef: float = 0.01,
         max_grad_norm: float = 0.01,
         huber_delta: float = 5.0,
+        wager_loss_coef: float = 1.0,
         use_attention: bool = False,
         use_max_grad_norm: bool = True,
         use_clipped_value_loss: bool = True,
@@ -95,6 +94,7 @@ class R_MAPPO:  # noqa: N801 (source class name)
         self.entropy_coef = entropy_coef
         self.max_grad_norm = max_grad_norm
         self.huber_delta = huber_delta
+        self.wager_loss_coef = wager_loss_coef  # fix (a): weight of the co-training wager BCE
 
         self._use_max_grad_norm = use_max_grad_norm
         self._use_clipped_value_loss = use_clipped_value_loss
@@ -154,12 +154,14 @@ class R_MAPPO:  # noqa: N801 (source class name)
 
         return value_loss
 
-    def ppo_update(self, sample, update_actor=True, wager_objective=None, meta=False):
-        """One PPO minibatch update (actor then critic). Verbatim r_mappo.py:113-244.
+    def ppo_update(self, sample, update_actor=True, meta=False):
+        """One PPO minibatch update (actor then critic).
 
         ``sample`` is the 12-element GRU tuple from
         :meth:`~maps.domains.marl.data.SeparatedReplayBuffer.recurrent_generator`.
-        Requires CUDA (the source hardcodes ``.cuda()`` on the wager tensors).
+        Fix (a): device-aware (no hardcoded ``.cuda()``); when ``meta`` is True the acting
+        actor's wager is co-trained by BCE against ``advantage > 0``. Returns a 7-tuple
+        (adds ``wager_loss``).
         """
         (
             share_obs_batch,
@@ -182,8 +184,9 @@ class R_MAPPO:  # noqa: N801 (source class name)
         return_batch = check(return_batch).to(**self.tpdv)
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
 
-        # Reshape to do in a single forward pass for all steps.
-        values, action_log_probs, dist_entropy = self.policy.evaluate_actions(
+        # Single forward pass for all steps: baseline actor (log-probs/entropy) + wager +
+        # critic values. Fix (a): the wager comes from the ACTING actor's own representation.
+        values, action_log_probs, dist_entropy, wager = self.policy.evaluate_actions(
             share_obs_batch,
             obs_batch,
             rnn_states_batch,
@@ -193,29 +196,6 @@ class R_MAPPO:  # noqa: N801 (source class name)
             available_actions_batch,
             active_masks_batch,
         )
-
-        values_meta = self.policy.evaluate_actions_meta(
-            share_obs_batch,
-            obs_batch,
-            rnn_states_batch,
-            rnn_states_critic_batch,
-            actions_batch,
-            masks_batch,
-            available_actions_batch,
-            active_masks_batch,
-        )
-
-        # ################## 2ND ORDER NETWORK (wager BCE) ##################
-        wager_objective = (
-            torch.tensor(wager_objective, dtype=torch.float32).unsqueeze(-1).unsqueeze(0)
-        )
-        values_meta = check(values_meta).to(**self.tpdv).squeeze(-1).squeeze(0).cuda()
-        wager_objective = check(wager_objective).to(**self.tpdv).squeeze(-1).squeeze(0).cuda()
-        loss_2 = torch.nn.functional.binary_cross_entropy_with_logits(values_meta, wager_objective)
-        loss_2_values = loss_2 * self.value_loss_coef
-
-        self.policy.actor_meta_optimizer.zero_grad()
-        self.policy.actor_optimizer.zero_grad()
 
         # ################## 1ST ORDER NETWORK (actor update) ##################
         imp_weights = torch.exp(action_log_probs - old_action_log_probs_batch)
@@ -231,11 +211,22 @@ class R_MAPPO:  # noqa: N801 (source class name)
 
         policy_loss = policy_action_loss
 
+        # Fix (a)+(c): the confidence judge (wager) is trained by BCE against (advantage > 0),
+        # and its loss is ADDED to the actor loss → a single backward co-trains the acting
+        # network (shared base/rnn via actor.second_order). Monitoring only: the wager never
+        # gates env actions. Device-aware (no hardcoded .cuda()).
+        wager_loss = torch.zeros((), **self.tpdv)
+        self.policy.actor_optimizer.zero_grad()
         if update_actor:
             total_loss = policy_loss - dist_entropy * self.entropy_coef
             if meta:
-                loss_2_values.backward(retain_graph=True)
-                self.policy.actor_meta_optimizer.step()
+                pos = (adv_targ > 0).float()
+                wager_target = torch.cat([pos, 1.0 - pos], dim=-1)  # (B,2): [1,0] if adv>0 else [0,1]
+                wager_loss = (
+                    torch.nn.functional.binary_cross_entropy_with_logits(wager, wager_target)
+                    * self.wager_loss_coef
+                )
+                total_loss = total_loss + wager_loss
             total_loss.backward()
 
         if self._use_max_grad_norm:
@@ -247,36 +238,12 @@ class R_MAPPO:  # noqa: N801 (source class name)
         self.policy.actor_optimizer.step()
 
         # ################## CRITIC UPDATE ##################
-        # M-C3: evaluate_actions_meta reads actor_meta again → critic_meta gets no
-        # gradients, so critic_meta_optimizer.step() is a no-op (faithful dead weight).
-        values_meta_critic = self.policy.evaluate_actions_meta(
-            share_obs_batch,
-            obs_batch,
-            rnn_states_batch,
-            rnn_states_critic_batch,
-            actions_batch,
-            masks_batch,
-            available_actions_batch,
-            active_masks_batch,
-        )
-        values_meta_critic = check(values_meta_critic).to(**self.tpdv).squeeze(-1).squeeze(0).cuda()
-        loss_2_critic = torch.nn.functional.binary_cross_entropy_with_logits(
-            values_meta_critic, wager_objective
-        )
-        loss_2_values_critic = loss_2_critic * self.value_loss_coef
-
-        self.policy.critic_meta_optimizer.zero_grad()
+        # Fix (a): no meta term on the critic (the paper wagers only on the actor side).
         self.policy.critic_optimizer.zero_grad()
-
         value_loss = self.cal_value_loss(
             values, value_preds_batch, return_batch, active_masks_batch
         )
-        total_critic_loss = value_loss * self.value_loss_coef
-
-        if meta:
-            loss_2_values_critic.backward(retain_graph=True)
-            self.policy.critic_meta_optimizer.step()
-        total_critic_loss.backward()
+        (value_loss * self.value_loss_coef).backward()
 
         if self._use_max_grad_norm:
             critic_grad_norm = nn.utils.clip_grad_norm_(
@@ -286,13 +253,21 @@ class R_MAPPO:  # noqa: N801 (source class name)
             critic_grad_norm = get_grad_norm(self.policy.critic.parameters())
         self.policy.critic_optimizer.step()
 
-        return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights
+        return (
+            value_loss,
+            critic_grad_norm,
+            policy_loss,
+            dist_entropy,
+            actor_grad_norm,
+            imp_weights,
+            wager_loss,
+        )
 
-    def train(self, buffer, wager_objective=None, update_actor=True, meta=False):
-        """Run ``ppo_epoch`` passes of minibatch PPO. Verbatim r_mappo.py:247-304.
+    def train(self, buffer, update_actor=True, meta=False):
+        """Run ``ppo_epoch`` passes of minibatch PPO.
 
-        Advantage computation/normalisation runs on CPU (numpy); :meth:`ppo_update`
-        requires CUDA.
+        Advantage computation/normalisation runs on CPU (numpy). Fix (a): the wager target is
+        derived from the advantage inside :meth:`ppo_update` (no external ``wager_objective``).
         """
         if self._use_popart or self._use_valuenorm:
             advantages = buffer.returns[:-1] - self.value_normalizer.denormalize(
@@ -313,6 +288,7 @@ class R_MAPPO:  # noqa: N801 (source class name)
             "actor_grad_norm": 0,
             "critic_grad_norm": 0,
             "ratio": 0,
+            "wager_loss": 0,
         }
 
         for _ in range(self.ppo_epoch):
@@ -334,14 +310,16 @@ class R_MAPPO:  # noqa: N801 (source class name)
                     dist_entropy,
                     actor_grad_norm,
                     imp_weights,
-                ) = self.ppo_update(sample, update_actor, wager_objective, meta)
+                    wager_loss,
+                ) = self.ppo_update(sample, update_actor, meta)
 
                 train_info["value_loss"] += value_loss.item()
                 train_info["policy_loss"] += policy_loss.item()
                 train_info["dist_entropy"] += dist_entropy.item()
-                train_info["actor_grad_norm"] += actor_grad_norm
-                train_info["critic_grad_norm"] += critic_grad_norm
-                train_info["ratio"] += imp_weights.mean()
+                train_info["actor_grad_norm"] += float(actor_grad_norm)
+                train_info["critic_grad_norm"] += float(critic_grad_norm)
+                train_info["ratio"] += imp_weights.mean().item()
+                train_info["wager_loss"] += wager_loss.item()
 
         num_updates = self.ppo_epoch * self.num_mini_batch
         for k in train_info:
@@ -352,11 +330,7 @@ class R_MAPPO:  # noqa: N801 (source class name)
     def prep_training(self) -> None:
         self.policy.actor.train()
         self.policy.critic.train()
-        self.policy.actor_meta.train()
-        self.policy.critic_meta.train()
 
     def prep_rollout(self) -> None:
         self.policy.actor.eval()
         self.policy.critic.eval()
-        self.policy.actor_meta.eval()
-        self.policy.critic_meta.eval()

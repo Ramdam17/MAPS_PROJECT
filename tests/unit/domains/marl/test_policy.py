@@ -49,9 +49,10 @@ def test_actor_evaluate_actions_shapes():
     rnn = torch.zeros(B, RECN, HIDDEN)
     masks = torch.ones(B, 1)
     action = torch.randint(0, N_ACT, (B, 1)).float()
-    log_probs, entropy = actor.evaluate_actions(obs, rnn, action, masks)
+    log_probs, entropy, wager = actor.evaluate_actions(obs, rnn, action, masks)
     assert log_probs.shape == (B, 1)
     assert entropy.dim() == 0
+    assert wager.shape == (B, 2)  # fix (a): the acting actor also emits the co-training wager
 
 
 def test_critic_forward_shapes():
