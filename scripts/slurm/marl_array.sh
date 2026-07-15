@@ -10,11 +10,15 @@
 # .venv-marl (meltingpot). Idempotent: a present metrics.json => skip; otherwise --resume
 # picks up from <out>/checkpoint.pt (saved every save_interval episodes).
 #
-# Timing measured on Narval A100 (20k-step validation, extrapolated to 1M):
-#   fast settings (cascade1=1 : baseline, meta_no_cascade, meta_cascade_2nd)      ~7.6 h / 1M
-#   slow settings (cascade1=50: cascade_1st_no_meta, maps, meta_cascade_both)     ~42 h  / 1M
-# --time=3-00:00:00 (72h) covers the slowest + margin; --requeue + --resume is the backstop.
-# Narval GPU allows up to 7 days. (One --time for the whole array; fast cells just exit early.)
+# Timing on Narval A100 (per-cell time scales ~linearly with AGENT COUNT; validation = territory, 5 agents):
+#   fast settings (cascade1=1)  : ~8-18 h / 1M
+#   slow settings (cascade1=50) : ~33-45 h for 4-7 agent substrates, BUT ~105 h for CHEMISTRY (8 agents).
+# => --time=3-00:00:00 (72h) fits ALL cells EXCEPT the 60 chemistry x cascade1=50 cells. Run those longer
+#    (TWO-TIER submission — see also job 65650461, 2026-07-15):
+#      sbatch scripts/slurm/marl_array.sh                                   # the 420 cells that fit in 72h
+#      IDS=$(for s in $(seq 0 19); do for o in 13 15 17; do printf '%s,' $((s*24+o)); done; done); IDS=${IDS%,}
+#      sbatch --time=6-00:00:00 --array="${IDS}%20" --job-name=marl-chemcasc scripts/slurm/marl_array.sh
+# Idempotent (skip-guard) + --resume make re-submission safe & cumulative. Narval GPU max = 7 days.
 #
 # Submission:
 #   sbatch scripts/slurm/marl_array.sh                          # full 480 cells
