@@ -69,7 +69,10 @@ tick() {
                 continue
             fi
             # Any active (pending/running/completing) job already covering this task id?
-            state=$(squeue -u "${USER}" -n marl-chemcasc -h -o "%i %T" 2>/dev/null | awk -v t="_${tid}$" '$1 ~ t {print $2; exit}')
+            # -r is REQUIRED: without it a pending single-task array prints as 65914679_[13]
+            # (brackets) and the _<tid>$ match silently fails -> the guardian re-submitted all
+            # 60 cells EVERY hourly tick (600 queued duplicates by tick 10, caught 2026-07-19).
+            state=$(squeue -r -u "${USER}" -n marl-chemcasc -h -o "%i %T" 2>/dev/null | awk -v t="_${tid}$" '$1 ~ t {print $2; exit}')
             if [[ -n "${state}" ]]; then
                 n_flight=$((n_flight + 1))
                 continue
