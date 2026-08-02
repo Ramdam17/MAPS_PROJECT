@@ -101,7 +101,12 @@ release_if_priority_done() {
         done
     done
     (( n < 9 )) && return 0
-    held=$(squeue -r -u "${USER}" -h -t PENDING -o "%i %r" 2>/dev/null | awk '$2 ~ /JobHeldUser/ {print $1}')
+    # Detect held jobs by PRIORITY==0, not by reason text: `scontrol hold` reports
+    # reason "JobHeldUser" but `scontrol requeuehold` (used on the 10 cells that were running
+    # on 2026-08-02) reports "job requeued in held state" -- and that reason contains spaces,
+    # so an awk field match would silently miss them. Priority 0 marks both, and %Q is always
+    # a single numeric field.
+    held=$(squeue -r -u "${USER}" -h -t PENDING -o "%i %Q" 2>/dev/null | awk '$2 == 0 {print $1}')
     [[ -z "${held}" ]] && return 0
     printf '%s\n' ${held} | xargs -r -n 50 echo | while read -r grp; do
         scontrol release "$(echo "${grp}" | tr ' ' ',')" 2>/dev/null
