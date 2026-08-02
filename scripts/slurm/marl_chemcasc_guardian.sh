@@ -87,12 +87,35 @@ tick() {
     echo "${n_done}"
 }
 
+# PRIORITY MODE (2026-08-02). The 9 chemistry-cascade cells of seeds 42-44 were starved: every
+# job of mine carries the same priority (1709956), so SLURM breaks ties by job id and the main
+# array (65249080) always won over the chemcasc jobs (65914688+) -- they would only have run
+# after all 332 remaining main-array tasks. Everything else is therefore HELD so those 9 take
+# the next free GPUs. This releases the held jobs as soon as the 9 are done: without it the
+# whole run would stall behind the hold forever.
+release_if_priority_done() {
+    local n=0 s st held grp
+    for s in 42 43 44; do
+        for st in cascade_1st_no_meta maps meta_cascade_both; do
+            [[ -s "${OB}/chemistry/setting-${st}/seed-${s}/metrics.json" ]] && n=$((n + 1))
+        done
+    done
+    (( n < 9 )) && return 0
+    held=$(squeue -r -u "${USER}" -h -t PENDING -o "%i %r" 2>/dev/null | awk '$2 ~ /JobHeldUser/ {print $1}')
+    [[ -z "${held}" ]] && return 0
+    printf '%s\n' ${held} | xargs -r -n 50 echo | while read -r grp; do
+        scontrol release "$(echo "${grp}" | tr ' ' ',')" 2>/dev/null
+    done
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] priority cells (seeds 42-44) all done -> released $(printf '%s\n' ${held} | wc -l) held jobs" >> "${LOG}"
+}
+
 # Queue the successor at the START (survives any failure later in this job).
 SUCCESSOR_ID=$(sbatch --parsable --begin=now+86400 "${GUARDIAN_SELF}" 2>/dev/null) \
     || echo "$(date '+%Y-%m-%d %H:%M:%S') WARN: could not queue successor guardian" >> "${LOG}"
 
 for _ in $(seq 1 24); do
     DONE=$(tick)
+    release_if_priority_done
     if (( DONE >= 60 )); then
         echo "$(date '+%Y-%m-%d %H:%M:%S') ALL 60 chemistry-cascade cells complete — guardian stopping." >> "${LOG}"
         [[ -n "${SUCCESSOR_ID:-}" ]] && scancel "${SUCCESSOR_ID}" 2>/dev/null
