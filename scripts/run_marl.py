@@ -167,10 +167,13 @@ def load_checkpoint(path: Path, policies, trainers, device):
         if agent["value_normalizer"] is not None and t.value_normalizer is not None:
             t.value_normalizer.load_state_dict(agent["value_normalizer"])
     np.random.set_state(ckpt["numpy_rng"])  # noqa: NPY002  (global RNG state for exact resume)
-    # S-C1: coerce RNG state to a CPU uint8 tensor (torch.set_rng_state is strict).
+    # S-C1: coerce RNG states to CPU uint8 tensors (torch's set_rng_state* are strict, and
+    # torch.load(map_location="cuda") moves the saved states onto the GPU). The cuda branch
+    # is unreachable in CPU tests (cuda_rng is None there) — it first fired on the first-ever
+    # GPU resume (seed-42 chemistry cells, 2026-07-24: "RNG state must be a torch.ByteTensor").
     torch.set_rng_state(ckpt["torch_rng"].cpu().to(torch.uint8))
     if ckpt.get("cuda_rng") is not None and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(ckpt["cuda_rng"])
+        torch.cuda.set_rng_state_all([s.cpu().to(torch.uint8) for s in ckpt["cuda_rng"]])
     return int(ckpt["next_episode"]), list(ckpt["all_infos"])
 
 
