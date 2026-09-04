@@ -54,7 +54,7 @@ CASCADE_OFFS=(1 3 5)   # cascade_1st_no_meta, maps, meta_cascade_both (within a 
 N_SEEDS=20
 
 tick() {
-    local TS n_done=0 n_flight=0 n_sub=0 s off tid sub_i set_i seed cell out_dir state
+    local TS n_done=0 n_run=0 n_pend=0 n_blocked=0 n_sub=0 s off tid sub_i set_i seed cell out_dir sr state reason
     TS=$(date '+%Y-%m-%d %H:%M:%S')
     for s in $(seq 0 $((N_SEEDS - 1))); do
         for off in "${CASCADE_OFFS[@]}"; do
@@ -72,9 +72,28 @@ tick() {
             # -r is REQUIRED: without it a pending single-task array prints as 65914679_[13]
             # (brackets) and the _<tid>$ match silently fails -> the guardian re-submitted all
             # 60 cells EVERY hourly tick (600 queued duplicates by tick 10, caught 2026-07-19).
-            state=$(squeue -r -u "${USER}" -n marl-chemcasc -h -o "%i %T" 2>/dev/null | awk -v t="_${tid}$" '$1 ~ t {print $2; exit}')
-            if [[ -n "${state}" ]]; then
-                n_flight=$((n_flight + 1))
+            #
+            # Report RUNNING / PENDING / blocked SEPARATELY (2026-08-27). The old counter lumped
+            # all three into one "in_flight" number, so the log read `in_flight=51` for 16 straight
+            # days while ZERO of those 51 cells was on a GPU -- the line looked like healthy
+            # progress and hid a total stall. Resubmission logic is UNCHANGED (a queued job still
+            # counts as covered; resubmitting a PENDING cell would only create duplicates) --
+            # this is purely about not being blind to the difference.
+            # '|' separator, not whitespace: %r reasons contain spaces
+            # ("ReqNodeNotAvail, UnavailableNodes:ng[...]"), which broke field-based parsing.
+            sr=$(squeue -r -u "${USER}" -n marl-chemcasc -h -o "%i|%T|%r" 2>/dev/null \
+                 | awk -F'|' -v t="_${tid}$" '$1 ~ t {print $2"|"$3; exit}')
+            if [[ -n "${sr}" ]]; then
+                state=${sr%%|*}
+                reason=${sr#*|}
+                if [[ "${state}" == RUNNING ]]; then
+                    n_run=$((n_run + 1))
+                elif [[ "${reason}" == ReqNodeNotAvail* || "${reason}" == BadConstraints* ]]; then
+                    # Queued but unschedulable as requested -- will not start on its own.
+                    n_blocked=$((n_blocked + 1))
+                else
+                    n_pend=$((n_pend + 1))
+                fi
                 continue
             fi
             # Not done, not in flight -> (re)submit this single cell at 72h.
@@ -83,7 +102,12 @@ tick() {
                 || echo "[${TS}] WARN: sbatch failed for task ${tid} (${cell})" >> "${LOG}"
         done
     done
-    echo "[${TS}] tick: done=${n_done}/60 in_flight=${n_flight} submitted_this_tick=${n_sub}" >> "${LOG}"
+    echo "[${TS}] tick: done=${n_done}/60 running=${n_run} pending=${n_pend} blocked=${n_blocked} submitted_this_tick=${n_sub}" >> "${LOG}"
+    # A tick with nothing done and nothing on a GPU is a stall, however many jobs are queued.
+    # Say so explicitly: the 2026-08 stall was invisible precisely because every tick looked busy.
+    if (( n_run == 0 && n_done < 60 )); then
+        echo "[${TS}] WARN: no chemistry-cascade cell is RUNNING (${n_pend} pending, ${n_blocked} blocked) — queue-starved, not progressing." >> "${LOG}"
+    fi
     echo "${n_done}"
 }
 
